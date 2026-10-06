@@ -10,10 +10,16 @@ Original art for the voxel mode's trees, drawn for Emerald 3DS:
 - `tree_2_small_trunk.png`, `tree_2_small_crown.png`: the same pair for
   Dewford Town's small tree, trunk on sand.
 
+- `grass_tuft.png`: 16×10 RGBA, a row of tall grass blades on a transparent
+  background.
+- `grass_long_tuft.png`: 16×16 RGBA, the long grass's blades.
+- `grass_ash_tuft.png`: 16×10 RGBA, the tall grass under Route 113's ash.
+- `flowers.png`: 16×10 RGBA, three flowers on their stems.
+
 `scripts/gen_voxel_trees.py` packs them, unscaled, into
 `voxel/trees.rgba5551`: a 128×128 RGBA5551 texture in PICA200 order (large
 crown at 0,0; large trunk at 32,0; small crown at 32,32; small trunk at
-48,32; Dewford's small crown at 64,0 and its trunk at 80,0). It is an engine file and ships inside the 3DSX. The build regenerates
+48,32; Dewford's small crown at 64,0 and its trunk at 80,0; grass tufts at 0,44, 16,44 and 48,50; flowers at 0,54). It is an engine file and ships inside the 3DSX. The build regenerates
 it whenever a source changes; it needs Pillow like the port's other graphics
 tools.
 
@@ -57,3 +63,17 @@ there) is replaced the same way with its own art: the trunk cells `23A` (on
 the sand) and `243` (inside the wood, where the next crown overlaps it, also
 the repeated border) become the trunk and carry the whole crown; the crown top
 `239` gets the sand `124` back.
+
+Grass keeps its drawing on the ground and stands two rows of tufts on it:
+cards at 60°, their feet at 0.45 and 0.95 cells from the north edge, every
+other one mirrored. A walker stands between the rows, hidden by the one in
+front as far up as the grass is tall. Which grass a cell grows is its
+behaviour's (`VoxelWorld_Grass`): tall grass 10 pixels long, long grass 16,
+and Route 113's ash grass in its own greys. Lavaridge's ash grass, drawn in
+other colours, stays flat.
+
+The General tileset's flowers (`004`) stand up the same way, on plain grass.
+The top edge of every tuft and flower card is written with a negative shade:
+`voxel.v.pica` moves those vertices by the frame's wind (`SetWind` in
+`ctr_voxel.c`), so fields sway together. The flowers' own animation is the
+tileset's, on the flat drawing these cards replace.
