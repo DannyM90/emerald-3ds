@@ -1123,9 +1123,27 @@ typedef struct
     const u16 *glyphs;
     const u8 *widths;
     u8 height, lineHeight;
+    bool8 japanese;
 } Font;
 
 static Font sSmall, sNormal;
+
+/* The 2bpp bits of one 8-pixel half of a glyph row. A Latin glyph is four
+ * tiles (top-left, top-right, bottom-left, bottom-right); a Japanese one is a
+ * single 8-pixel column of a sheet of 16 glyphs a row, its lower tile 0x80
+ * further on (text.c's DecompressGlyph_*). */
+static inline u16 GlyphBits(const Font *font, u16 glyph, int row, int half)
+{
+    if (font->japanese)
+        return half ? 0 : font->glyphs[0x100 * (glyph >> 4) + 8 * (glyph & 0xF) + (row >= 8 ? 0x80 : 0) + (row & 7)];
+    return font->glyphs[glyph * 0x20 + (row >= 8 ? 0x10 : 0) + half * 8 + (row & 7)];
+}
+
+/* Japanese glyphs are all 8 pixels wide, as the game draws them. */
+static inline int GlyphWidth(const Font *font, u16 glyph)
+{
+    return font->japanese ? 8 : font->widths[glyph];
+}
 
 static const u16 *ResolveFontBase(const u16 *glyphs)
 {
@@ -1139,6 +1157,17 @@ static const u16 *ResolveFontBase(const u16 *glyphs)
 /* The glyph payloads live in the asset cache; resolve them per redraw. */
 static void ResolveFonts(void)
 {
+#if GAME_LANGUAGE == LANGUAGE_JAPANESE
+    /* The Japanese game's strings are in the Japanese glyph set. */
+    sSmall.glyphs = ResolveFontBase(gFontSmallJapaneseGlyphs);
+    sSmall.height = 12;
+    sSmall.lineHeight = 13;
+    sSmall.japanese = TRUE;
+    sNormal.glyphs = ResolveFontBase(gFontNormalJapaneseGlyphs);
+    sNormal.height = 16;
+    sNormal.lineHeight = 16;
+    sNormal.japanese = TRUE;
+#else
     sSmall.glyphs = ResolveFontBase(gFontSmallLatinGlyphs);
     sSmall.widths = gFontSmallLatinGlyphWidths;
     sSmall.height = 13;
@@ -1147,6 +1176,7 @@ static void ResolveFonts(void)
     sNormal.widths = gFontNormalLatinGlyphWidths;
     sNormal.height = 16;
     sNormal.lineHeight = 16;
+#endif
 }
 
 /* Walks a game string: returns the next glyph, 0xFFFE for a line break or
@@ -1201,29 +1231,28 @@ static int StrWidth(const Font *font, const u8 *str)
             width = 0;
             continue;
         }
-        width += font->widths[g];
+        width += GlyphWidth(font, g);
     }
     return width > best ? width : best;
 }
 
 static int DrawGlyph(const Font *font, u16 glyph, int x, int y, u16 fg, u16 shadow)
 {
-    const u16 *base = font->glyphs + glyph * 0x20;
-    int width = font->widths[glyph];
+    int width = GlyphWidth(font, glyph);
     int sx = x + sOX;
     bool8 inside = sx >= sClipX0 && y >= sClipY0 && sx + width <= sClipX1 && y + font->height <= sClipY1;
     u16 *origin = sDst + (inside ? sx * H + (H - 1 - y) : 0);
 
     /* Wholly outside the clip: nothing to write. */
     if (sx >= sClipX1 || y >= sClipY1 || sx + width <= sClipX0 || y + font->height <= sClipY0)
-        return font->widths[glyph];
+        return GlyphWidth(font, glyph);
     if (width > 16)
         width = 16;
     for (int row = 0; row < font->height; ++row)
     {
         for (int half = 0; half < 2 && half * 8 < width; ++half)
         {
-            u16 bits = base[(row >= 8 ? 0x10 : 0) + half * 8 + (row & 7)];
+            u16 bits = GlyphBits(font, glyph, row, half);
 
             if (!bits)
                 continue;
@@ -1242,7 +1271,7 @@ static int DrawGlyph(const Font *font, u16 glyph, int x, int y, u16 fg, u16 shad
             }
         }
     }
-    return font->widths[glyph];
+    return GlyphWidth(font, glyph);
 }
 
 /* Draws a game string; returns the x where it ended. */
@@ -1278,7 +1307,7 @@ static void DrawStrCentered(const Font *font, const u8 *str, int cx, int y, u16 
 /* Whether a glyph paints (glyph or shadow) the pixel at column px of row. */
 static bool8 GlyphInk(const Font *font, u16 glyph, int px, int row)
 {
-    u16 bits = font->glyphs[glyph * 0x20 + (row >= 8 ? 0x10 : 0) + (px / 8) * 8 + (row & 7)];
+    u16 bits = GlyphBits(font, glyph, row, px / 8);
     u8 byte = (px & 7) < 4 ? bits >> 8 : bits & 0xFF;
     u8 v = (byte >> (6 - 2 * (px & 3))) & 3;
 
@@ -1295,7 +1324,7 @@ static void InkColumns(const Font *font, const u8 *str, int *x0, int *x1)
     *x1 = 0;
     for (u16 g; (g = NextGlyph(&str)) != 0xFFFF && g != 0xFFFE;)
     {
-        int width = font->widths[g] > 16 ? 16 : font->widths[g];
+        int width = GlyphWidth(font, g) > 16 ? 16 : GlyphWidth(font, g);
 
         for (int px = 0; px < width; ++px)
             for (int row = 0; row < font->height; ++row)
@@ -1305,7 +1334,7 @@ static void InkColumns(const Font *font, const u8 *str, int *x0, int *x1)
                     if (x + px + 1 > *x1) *x1 = x + px + 1;
                     break;
                 }
-        x += font->widths[g];
+        x += GlyphWidth(font, g);
     }
 }
 
@@ -1316,7 +1345,7 @@ static void CapRows(const Font *font, int *top, int *bottom)
     *top = font->height;
     *bottom = 0;
     for (int row = 0; row < font->height; ++row)
-        for (int px = 0; px < font->widths[CHAR_H]; ++px)
+        for (int px = 0; px < GlyphWidth(font, CHAR_H); ++px)
             if (GlyphInk(font, CHAR_H, px, row))
             {
                 if (row < *top) *top = row;
@@ -1341,7 +1370,36 @@ static void DrawStrIn(const Font *font, const u8 *str, int x0, int x1, int y0, i
             shadow);
 }
 
-/* Latin labels for the few words the game has no standalone string for. */
+/* The kana of the game's character set, in code order: hiragana from 0x01,
+ * katakana from 0x51 (charmap.txt). */
+static const char sKana[] =
+    "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん"
+    "ぁぃぅぇぉゃゅょがぎぐげござじずぜぞだぢづでどばびぶべぼぱぴぷぺぽっ"
+    "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン"
+    "ァィゥェォャュョガギグゲゴザジズゼゾダヂヅデドバビブベボパピプペポッ";
+
+/* A UTF-8 kana (or ー) at *text as a game character, advancing past it; 0 if
+ * *text starts no such character. */
+static u8 Kana(const char **text)
+{
+    const char *k = sKana;
+
+    if (strncmp(*text, "ー", 3) == 0)
+    {
+        *text += 3;
+        return 0xAE;
+    }
+    for (u8 code = 1; *k; k += 3, ++code)
+        if (strncmp(*text, k, 3) == 0)
+        {
+            *text += 3;
+            return code;
+        }
+    return 0;
+}
+
+/* Labels for the few words the game has no standalone string for: ASCII, and
+ * kana for the Japanese game. */
 static const u8 *Ascii(const char *text)
 {
     static u8 ring[8][40];
@@ -1349,11 +1407,23 @@ static const u8 *Ascii(const char *text)
     u8 *out = ring[next++ & 7];
     int n = 0;
 
-    for (; *text && n < 39; ++text)
+    while (*text && n < 39)
     {
         char c = *text;
         u8 v;
 
+        if ((u8)c >= 0x80)
+        {
+            v = Kana(&text);
+            if (!v)
+            {
+                ++text;
+                continue;
+            }
+            out[n++] = v;
+            continue;
+        }
+        ++text;
         if (c >= 'A' && c <= 'Z') v = CHAR_A + (c - 'A');
         else if (c >= 'a' && c <= 'z') v = CHAR_a + (c - 'a');
         else if (c >= '0' && c <= '9') v = CHAR_0 + (c - '0');
@@ -1660,13 +1730,12 @@ static void StepSmoothJob(void)
                 sJob.glyphX = x;
                 return;
             }
-            const u16 *base = font->glyphs + g * 0x20;
-            int width = font->widths[g] > 16 ? 16 : font->widths[g];
+            int width = GlyphWidth(font, g) > 16 ? 16 : GlyphWidth(font, g);
 
             for (int row = 0; row < font->height; ++row)
                 for (int px = 0; px < width; ++px)
                 {
-                    u16 bits = base[(row >= 8 ? 0x10 : 0) + (px / 8) * 8 + (row & 7)];
+                    u16 bits = GlyphBits(font, g, row, px / 8);
                     u8 byte = (px & 7) < 4 ? bits >> 8 : bits & 0xFF;
 
                     if (((byte >> (6 - 2 * (px & 3))) & 3) != 1)
@@ -1674,7 +1743,7 @@ static void StepSmoothJob(void)
                     for (int dy = 0; dy < k; ++dy)
                         memset(glyph + ((SMOOTH_PAD + row) * k + dy) * w4 + (x + px) * k, 255, k);
                 }
-            x += font->widths[g];
+            x += GlyphWidth(font, g);
         }
         /* The outline: blurred and hardened, and never thinner than a dilation. */
         memcpy(ring, glyph, (size_t)w4 * h4);
@@ -1855,13 +1924,12 @@ static void DrawFlatStr(const Font *font, const u8 *str, int x, int y, int k, Rg
 
         for (u16 g; (g = NextGlyph(&s)) != 0xFFFF && g != 0xFFFE;)
         {
-            const u16 *base = font->glyphs + g * 0x20;
-            int width = font->widths[g] > 16 ? 16 : font->widths[g];
+            int width = GlyphWidth(font, g) > 16 ? 16 : GlyphWidth(font, g);
 
             for (int row = 0; row < font->height; ++row)
                 for (int px = 0; px < width; ++px)
                 {
-                    u16 bits = base[(row >= 8 ? 0x10 : 0) + (px / 8) * 8 + (row & 7)];
+                    u16 bits = GlyphBits(font, g, row, px / 8);
                     u8 byte = (px & 7) < 4 ? bits >> 8 : bits & 0xFF;
                     int x0 = x + ((gx + px) * k >> 2), y0 = y + (row * k >> 2);
                     int x1 = x + ((gx + px + 1) * k >> 2), y1 = y + ((row + 1) * k >> 2);
@@ -1873,7 +1941,7 @@ static void DrawFlatStr(const Font *font, const u8 *str, int x, int y, int k, Rg
                     else
                         FillRect(x0, y0, x1 - x0, y1 - y0, colours[1]);
                 }
-            gx += font->widths[g];
+            gx += GlyphWidth(font, g);
         }
     }
 }
@@ -3453,7 +3521,7 @@ enum { PLATE_NORMAL, PLATE_CHOSEN, PLATE_PRESSED, PLATE_OFF };
 static void DrawColumnButton(const ViewState *s, int i, u8 state)
 {
     const u8 *labels[SCR_COUNT] = {
-        Ascii(CTR_TEXT("MAP", "MAPA")), gText_MenuPokemon, gText_MenuBag, s->name, gText_MenuPokedex, gText_MenuPokenav,
+        Ascii(CTR_TEXT("MAP", "MAPA", "マップ")), gText_MenuPokemon, gText_MenuBag, s->name, gText_MenuPokedex, gText_MenuPokenav,
         gText_MenuSave, gText_MenuOption,
     };
     const Icon *icon = &sRes.column[i];
@@ -3723,7 +3791,7 @@ static void DrawPanel(const ViewState *s, int y, const u8 *hint)
         DrawPanelMessage(s->text, y, ht - 4, FALSE);
         DrawLabelButton(0, H - 32, 7, 4, up, s->pressed == HIT_UP, TRUE, HIT_UP);
         DrawLabelButton(56, H - 32, 7, 4, down, s->pressed == HIT_DOWN, TRUE, HIT_DOWN);
-        DrawLabelButton(112, H - 32, 8, 4, Ascii(CTR_TEXT("OK", "VALE")), s->pressed == HIT_OK, TRUE, HIT_OK);
+        DrawLabelButton(112, H - 32, 8, 4, Ascii(CTR_TEXT("OK", "VALE", "OK")), s->pressed == HIT_OK, TRUE, HIT_OK);
         DrawLabelButton(176, H - 32, 8, 4, gText_Cancel2, s->pressed == HIT_CANCEL, TRUE, HIT_CANCEL);
         break;
     }
@@ -3764,9 +3832,9 @@ static void DrawParty(const ViewState *s)
 
 static void DrawSummary(const ViewState *s)
 {
-    static const char *const statNames[6] = {CTR_TEXT("HP", "PS"), CTR_TEXT("ATTACK", "ATAQUE"), CTR_TEXT("DEFENSE", "DEFENSA"),
-                                             CTR_TEXT("SP. ATK", "AT. ESP."), CTR_TEXT("SP. DEF", "DEF. ESP."),
-                                             CTR_TEXT("SPEED", "VELOC.")};
+    static const char *const statNames[6] = {CTR_TEXT("HP", "PS", "HP"), CTR_TEXT("ATTACK", "ATAQUE", "こうげき"), CTR_TEXT("DEFENSE", "DEFENSA", "ぼうぎょ"),
+                                             CTR_TEXT("SP. ATK", "AT. ESP.", "とくこう"), CTR_TEXT("SP. DEF", "DEF. ESP.", "とくぼう"),
+                                             CTR_TEXT("SPEED", "VELOC.", "すばやさ")};
     const MonView *m = &s->party[s->summary];
     u8 text[24];
 
@@ -4102,7 +4170,7 @@ static void DrawSave(const ViewState *s)
     DrawStr(&sNormal, s->text, 18, 52, TXT_WHITE, TXT_DARK);
     if (s->saveStep == SAVE_DONE)
     {
-        DrawLabelButton(64, 136, 14, 5, Ascii(CTR_TEXT("OK", "VALE")), s->pressed == HIT_OK, TRUE, HIT_OK);
+        DrawLabelButton(64, 136, 14, 5, Ascii(CTR_TEXT("OK", "VALE", "OK")), s->pressed == HIT_OK, TRUE, HIT_OK);
         return;
     }
     DrawLabelButton(8, 136, 13, 6, gText_Yes, s->pressed == HIT_YES, s->canSave, HIT_YES);
@@ -4254,7 +4322,9 @@ static void DrawExtraCell(const ViewState *s, int row, const CtrExtra *extra)
 /* The tabs: SETTINGS (the options) and each page that has extras. */
 static void DrawOptionTabs(const ViewState *s)
 {
-    static const char *const names[CTR_EXTRAS_PAGES] = {"SETTINGS", "ENHANCEMENTS", "CHEATS"};
+    static const char *const names[CTR_EXTRAS_PAGES] = {CTR_TEXT("SETTINGS", "SETTINGS", "せってい"),
+                                                        CTR_TEXT("ENHANCEMENTS", "ENHANCEMENTS", "かいりょう"),
+                                                        CTR_TEXT("CHEATS", "CHEATS", "チート")};
     u8 pages[CTR_EXTRAS_PAGES], count = 0;
     int capTop, capBottom, cap;
 
@@ -4291,9 +4361,9 @@ static void DrawOptions(const ViewState *s)
         DrawOptionTabs(s);
 
     const u8 *names[OPTION_ROWS] = {gText_TextSpeed, gText_BattleScene, gText_BattleStyle, gText_Sound,
-                                    gText_ButtonMode, gText_Frame, Ascii(CTR_TEXT("SHOW FPS", "MOSTRAR FPS")), Ascii("VOXEL 3D"),
-                                    Ascii(CTR_TEXT("3D ANGLE", "ANGULO 3D")), Ascii(CTR_TEXT("3D ZOOM", "ZOOM 3D")),
-                                    Ascii(CTR_TEXT("3D BLUR", "DESENFOQUE 3D")), Ascii(CTR_TEXT("3D BATTLE", "COMBATE 3D"))};
+                                    gText_ButtonMode, gText_Frame, Ascii(CTR_TEXT("SHOW FPS", "MOSTRAR FPS", "FPS ひょうじ")), Ascii("VOXEL 3D"),
+                                    Ascii(CTR_TEXT("3D ANGLE", "ANGULO 3D", "3D アングル")), Ascii(CTR_TEXT("3D ZOOM", "ZOOM 3D", "3D ズーム")),
+                                    Ascii(CTR_TEXT("3D BLUR", "DESENFOQUE 3D", "3D ぼかし")), Ascii(CTR_TEXT("3D BATTLE", "COMBATE 3D", "3D バトル"))};
     bool8 voxel = OPTION_SHOWN > OPT_VOXEL && s->options[OPT_VOXEL];
 
     if (s->optPage != CTR_EXTRAS_OPTIONS)
@@ -4942,11 +5012,11 @@ static void MoveBody(const ViewState *s, int i)
     PpColours(s->moves4.currentPp[i], s->moves4.maxPp[i], &fg, &sh);
     DrawStrRight(&sNormal, text, x + MOVE_W - 12, oy + 32, fg, sh);
     {
-        int tx = DrawStr(&sSmall, Ascii(CTR_TEXT("POW ", "POT. ")), x + 12, oy + 56, TXT_DARK, TXT_LIGHT);
+        int tx = DrawStr(&sSmall, Ascii(CTR_TEXT("POW ", "POT. ", "いりょく ")), x + 12, oy + 56, TXT_DARK, TXT_LIGHT);
 
         DrawStr(&sSmall, data->power > 1 ? Number(data->power, 3, STR_CONV_MODE_LEFT_ALIGN) : Ascii("---"), tx,
                 oy + 56, TXT_DARK, TXT_LIGHT);
-        StringCopy(text, Ascii(CTR_TEXT("ACC ", "PREC. ")));
+        StringCopy(text, Ascii(CTR_TEXT("ACC ", "PREC. ", "めいちゅう ")));
         StringAppend(text, data->accuracy ? Number(data->accuracy, 3, STR_CONV_MODE_LEFT_ALIGN) : Ascii("---"));
         DrawStrRight(&sSmall, text, x + MOVE_W - 12, oy + 56, TXT_DARK, TXT_LIGHT);
     }

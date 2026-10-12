@@ -16,7 +16,8 @@ class MetricPokedexTests(unittest.TestCase):
         # The public repository's layout, or the private workspace's.
         path = next(p for p in (ROOT / name, ROOT / 'public' / name) if p.exists())
         patch = path.read_text(encoding='utf-8')
-        branches = re.findall(r'\+#if defined\(PORT_BRIDGE\) && GAME_LANGUAGE == LANGUAGE_SPANISH\n(.*?)\+#else', patch, re.S)
+        branches = re.findall(r'\+#if defined\(PORT_BRIDGE\) && \(GAME_LANGUAGE == LANGUAGE_SPANISH'
+                              r' \|\| GAME_LANGUAGE == LANGUAGE_JAPANESE\)\n(.*?)\+#else', patch, re.S)
         self.assertEqual(len(branches), 2)
         code = '''
 #include <stdio.h>

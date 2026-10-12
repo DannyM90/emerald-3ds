@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+New and improved:
+
+- Japanese (experimental): the game in Japanese from your own Pocket Monsters
+  Emerald (Japan) ROM. The web and Windows builders accept it and pick the
+  language from the ROM; every release carries the Japanese variant too
+  (`Emerald3DS-ja.3dsx` for Quick Update). The texts, graphics, fonts,
+  credits and the maps that differ come from your ROM; text is drawn in the
+  game's Japanese glyphs, the naming screen has the Japanese keyboard and
+  5-character names, the touch screen has Japanese labels and the Pokédex
+  shows metres and kilograms. Not yet tested on a console; see
+  docs/JAPANESE.md for what is still in English.
+- Locale manifests can be regenerated: `tools/locale_research/` holds the
+  matcher that finds the English game's objects in another language's ROM
+  and the generator of the Japanese manifest, and `rebase_manifest.py` moves
+  a manifest onto a changed tree without the ROM.
+
+Fixed:
+
+- `tools/port_common/gen_asset_table.py` runs on Python 3.11 again, as the
+  development guide says (a backslash in an f-string needs 3.12).
+
 ## 0.3.1 — 2026-10-10
 
 New and improved:

@@ -18,12 +18,17 @@
 #include "constants/item.h"
 #include "constants/items.h"
 #include "constants/songs.h"
+#include "3ds_locale.h"
 
-const char *const gCtrExtrasOffOn[2] = {"OFF", "ON"};
+/* The labels are the port's own words: English, and Japanese for the Japanese
+ * game (kana only, like the game's own text). */
+#define J(english, japanese) CTR_TEXT(english, english, japanese)
 
-static const char *const sVisibleWild[] = {"OFF", "FEW", "SOME", "MANY"};
-static const char *const sEncounterRate[] = {"NORMAL", "OFF", "1/4", "1/2", "2X"};
-static const char *const sShinyOdds[] = {"1/8192", "1/4096", "1/1024", "1/256", "1/64", "ALWAYS"};
+const char *const gCtrExtrasOffOn[2] = {J("OFF", "オフ"), J("ON", "オン")};
+
+static const char *const sVisibleWild[] = {J("OFF", "オフ"), J("FEW", "すこし"), J("SOME", "ふつう"), J("MANY", "たくさん")};
+static const char *const sEncounterRate[] = {J("NORMAL", "ふつう"), J("OFF", "オフ"), "1/4", "1/2", J("2X", "2ばい")};
+static const char *const sShinyOdds[] = {"1/8192", "1/4096", "1/1024", "1/256", "1/64", J("ALWAYS", "かならず")};
 /*
  * Pokedex (CHEATS): the Hoenn Pokedex complete, the National Pokedex
  * unlocked, or complete (and unlocked): every Pokemon seen and caught. OPTIONS
@@ -56,13 +61,14 @@ static void CompleteNationalDex(void)
     PlaySE(SE_SUCCESS);
 }
 
-static const char *const sDexDone[] = {"TAP TO SET"};
+static const char *const sDexDone[] = {J("TAP TO SET", "タッチで せってい")};
 /*
  * Give items (CHEATS): a pocket, an item of it, a count, and GIVE puts them in
  * the bag (OPTIONS is only open in the field). The item steps through the
  * pocket's items in the game's order, skipping unused ids.
  */
-static const char *const sGivePockets[] = {"ITEMS", "POKE BALLS", "TMS & HMS", "BERRIES", "KEY ITEMS"};
+static const char *const sGivePockets[] = {J("ITEMS", "どうぐ"), J("POKE BALLS", "ボール"), J("TMS & HMS", "わざマシン"),
+                                             J("BERRIES", "きのみ"), J("KEY ITEMS", "たいせつなもの")};
 static const char *const sGiveCounts[] = {"1", "5", "10", "50", "99"};
 static const u8 sGiveCountValues[] = {1, 5, 10, 50, 99};
 
@@ -140,9 +146,9 @@ static void GiveItemsNow(void)
         PlaySE(SE_FAILURE);
 }
 
-static const char *const sGiveText[] = {"TAP TO GIVE"};
-static const char *const sGiveOpenText[] = {"TAP TO OPEN"};
-static const char *const sGiveBackText[] = {"BACK TO CHEATS"};
+static const char *const sGiveText[] = {J("TAP TO GIVE", "タッチで もらう")};
+static const char *const sGiveOpenText[] = {J("TAP TO OPEN", "タッチで ひらく")};
+static const char *const sGiveBackText[] = {J("BACK TO CHEATS", "チートに もどる")};
 
 /* The cells have a screen of their own, opened from the first. */
 static void GiveOpen(void)
@@ -178,27 +184,27 @@ static const u8 *SpeedText(void)
 const CtrExtra gCtrExtras[] =
 {
     /* Features add their lines here. */
-    {CTR_EXTRAS_ENHANCEMENTS, "SPEED", "speed", 0, 0, NULL, NULL, SpeedStep, SpeedText},
-    {CTR_EXTRAS_ENHANCEMENTS, "EXP FOR CATCHING", "exp_catch", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
-    {CTR_EXTRAS_ENHANCEMENTS, "PARTY EXP SHARE", "exp_share", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
-    {CTR_EXTRAS_ENHANCEMENTS, "TRADE EVO LV. 40", "trade_evo", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
-    {CTR_EXTRAS_ENHANCEMENTS, "HMS WITHOUT MOVE", "field_hms", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
-    {CTR_EXTRAS_ENHANCEMENTS, "VISIBLE WILD", "visible_wild", 4, 0, sVisibleWild, NULL, NULL, NULL},
-    {CTR_EXTRAS_CHEATS, "WILD ENCOUNTERS", "encounter_rate", 5, 0, sEncounterRate, NULL, NULL, NULL},
-    {CTR_EXTRAS_CHEATS, "SHINY ODDS", "shiny_odds", 6, 0, sShinyOdds, NULL, NULL, NULL},
-    {CTR_EXTRAS_CHEATS, "ALWAYS CATCH", "always_catch", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
-    {CTR_EXTRAS_CHEATS, "INSTANT VICTORY", "instant_victory", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
-    {CTR_EXTRAS_CHEATS, "FAST EGGS", "fast_eggs", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
-    {CTR_EXTRAS_CHEATS, "INFINITE MONEY", "infinite_money", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
-    {CTR_EXTRAS_CHEATS, "HOENN DEX FULL", "dex_hoenn", 0, 0, sDexDone, CompleteHoennDex, NULL, NULL},
-    {CTR_EXTRAS_CHEATS, "NATIONAL DEX ON", "dex_national_on", 0, 0, sDexDone, UnlockNationalDex, NULL, NULL},
-    {CTR_EXTRAS_CHEATS, "NATIONAL DEX FULL", "dex_national", 0, 0, sDexDone, CompleteNationalDex, NULL, NULL},
-    {CTR_EXTRAS_CHEATS, "GIVE ITEMS", "give_open", 0, 0, sGiveOpenText, GiveOpen, NULL, NULL},
-    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_CHEATS, 1), "GIVE ITEMS", "give_back", 0, 0, sGiveBackText, GiveBack, NULL, NULL},
-    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_CHEATS, 1), "POCKET", "give_pocket", 5, 0, sGivePockets, NULL, NULL, NULL},
-    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_CHEATS, 1), "ITEM", "give_item", 0, 0, NULL, NULL, GiveItemStep, GiveItemText},
-    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_CHEATS, 1), "HOW MANY", "give_count", 5, 0, sGiveCounts, NULL, NULL, NULL},
-    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_CHEATS, 1), "GIVE", "give_now", 0, 0, sGiveText, GiveItemsNow, NULL, NULL},
+    {CTR_EXTRAS_ENHANCEMENTS, J("SPEED", "スピード"), "speed", 0, 0, NULL, NULL, SpeedStep, SpeedText},
+    {CTR_EXTRAS_ENHANCEMENTS, J("EXP FOR CATCHING", "つかまえて けいけんち"), "exp_catch", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    {CTR_EXTRAS_ENHANCEMENTS, J("PARTY EXP SHARE", "みんなに けいけんち"), "exp_share", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    {CTR_EXTRAS_ENHANCEMENTS, J("TRADE EVO LV. 40", "つうしん しんか Lv40"), "trade_evo", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    {CTR_EXTRAS_ENHANCEMENTS, J("HMS WITHOUT MOVE", "ひでんわざ なしで"), "field_hms", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    {CTR_EXTRAS_ENHANCEMENTS, J("VISIBLE WILD", "やせいが みえる"), "visible_wild", 4, 0, sVisibleWild, NULL, NULL, NULL},
+    {CTR_EXTRAS_CHEATS, J("WILD ENCOUNTERS", "やせいの でかた"), "encounter_rate", 5, 0, sEncounterRate, NULL, NULL, NULL},
+    {CTR_EXTRAS_CHEATS, J("SHINY ODDS", "いろちがい"), "shiny_odds", 6, 0, sShinyOdds, NULL, NULL, NULL},
+    {CTR_EXTRAS_CHEATS, J("ALWAYS CATCH", "かならず つかまる"), "always_catch", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    {CTR_EXTRAS_CHEATS, J("INSTANT VICTORY", "すぐに かつ"), "instant_victory", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    {CTR_EXTRAS_CHEATS, J("FAST EGGS", "タマゴが はやい"), "fast_eggs", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    {CTR_EXTRAS_CHEATS, J("INFINITE MONEY", "おかね むげん"), "infinite_money", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    {CTR_EXTRAS_CHEATS, J("HOENN DEX FULL", "ホウエンずかん かんせい"), "dex_hoenn", 0, 0, sDexDone, CompleteHoennDex, NULL, NULL},
+    {CTR_EXTRAS_CHEATS, J("NATIONAL DEX ON", "ぜんこくずかん オン"), "dex_national_on", 0, 0, sDexDone, UnlockNationalDex, NULL, NULL},
+    {CTR_EXTRAS_CHEATS, J("NATIONAL DEX FULL", "ぜんこくずかん かんせい"), "dex_national", 0, 0, sDexDone, CompleteNationalDex, NULL, NULL},
+    {CTR_EXTRAS_CHEATS, J("GIVE ITEMS", "どうぐを もらう"), "give_open", 0, 0, sGiveOpenText, GiveOpen, NULL, NULL},
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_CHEATS, 1), J("GIVE ITEMS", "どうぐを もらう"), "give_back", 0, 0, sGiveBackText, GiveBack, NULL, NULL},
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_CHEATS, 1), J("POCKET", "ポケット"), "give_pocket", 5, 0, sGivePockets, NULL, NULL, NULL},
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_CHEATS, 1), J("ITEM", "どうぐ"), "give_item", 0, 0, NULL, NULL, GiveItemStep, GiveItemText},
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_CHEATS, 1), J("HOW MANY", "いくつ"), "give_count", 5, 0, sGiveCounts, NULL, NULL, NULL},
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_CHEATS, 1), J("GIVE", "もらう"), "give_now", 0, 0, sGiveText, GiveItemsNow, NULL, NULL},
     {0},
 };
 

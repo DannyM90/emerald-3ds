@@ -167,10 +167,13 @@ in the releases.
 python tools/bootstrap.py        # pinned upstream + patches + port -> build/upstream
 python tools/bootstrap.py --make # also builds the 3DSX there
 python tools/bootstrap.py --make --spanish-rom esmeralda.gba  # Spanish build
+python tools/bootstrap.py --make --japanese-rom emerald-ja.gba # Japanese build
 ```
 
-The Spanish build takes its texts and graphics from your own clean Spanish
-(BPES) ROM; see [Pokémon Esmeralda en español](docs/SPANISH.md).
+The Spanish and Japanese builds take their texts and graphics from your own
+clean Spanish (BPES) or Japanese (BPEJ) ROM; see
+[Pokémon Esmeralda en español](docs/SPANISH.md) and
+[ポケットモンスター エメラルド（日本語版）](docs/JAPANESE.md).
 
 Start with the [development guide](docs/DEVELOPMENT.md) for requirements,
 the development loop, loose data, data packs and host tests.
@@ -184,6 +187,7 @@ the development loop, loose data, data packs and host tests.
 | [Install and update](docs/INSTALLATION.md) | Installation, sound setup and updating an existing installation. |
 | [Development](docs/DEVELOPMENT.md) | Build requirements, workflow and tests. |
 | [Spanish build](docs/SPANISH.md) | Playing in Spanish with your own Pokémon Esmeralda (Spain) ROM. |
+| [Japanese build](docs/JAPANESE.md) | Playing in Japanese with your own Pocket Monsters Emerald (Japan) ROM (experimental). |
 | [Architecture](docs/ARCHITECTURE.md) | How the engine and the 3DS backend fit together. |
 | [Asset pipeline](docs/ASSET_PIPELINE.md) | How game data is prepared for the port. |
 | [Releasing](docs/RELEASING.md) | Building and packaging a release. |

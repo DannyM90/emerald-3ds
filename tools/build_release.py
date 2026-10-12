@@ -9,14 +9,15 @@ Steps (each can be skipped when its output is already there):
 1. `make release` in 3ds_port: dist/Emerald3DS.3dsx and .smdh, engine files only;
 2. the recipe (tools/gen_recipe.py) from the build's staging and the ROM;
 3. the payload: executable, recipe and the voxel generator scripts; with
-   --spanish-rom also payload/es/, the Spanish executable and its recipe,
-   built from a copy of this tree localized from that ROM (build/release-es);
+   --spanish-rom also payload/es/ and with --japanese-rom payload/ja/, that
+   language's executable and recipe, built from a copy of this tree localized
+   from its ROM (build/release-es, build/release-ja);
 4. the standalone builder (PyInstaller, one folder, no UPX);
 5. dist/Emerald3DS-v<version>-Windows.zip with the builder, the payload,
    README.txt and LICENSES/;
 6. the standalone dist/Emerald3DS.3dsx and dist/Emerald3DS.smdh (quick update
    of the executable when the data ABI did not change; dist/Emerald3DS-es.3dsx
-   for the Spanish variant), and the HOME Menu
+   and dist/Emerald3DS-ja.3dsx for the other languages), and the HOME Menu
    forwarder dist/Emerald3DS-Forwarder.cia (3ds_port/forwarder, needs makerom
    and bannertool; --skip-cia leaves it out);
 7. dist/Emerald3DS-WebPayload.zip and dist/web-manifest.json for the web
@@ -86,12 +87,25 @@ def local_closure(scripts_dir: Path, names: list[str]) -> tuple[list[str], set[s
     return sorted(seen), external
 
 
-def build_spanish_variant(args, tag: str, out: Path) -> None:
-    """payload/es/: the Spanish executable and recipe. The same code as the
+# The other languages: the option naming the clean ROM, the payload folder and
+# asset suffix, the localization script and its symbol reference.
+VARIANTS = {
+    "spanish": ("es", "tools/localize_spanish.py", "spanish-reference"),
+    "japanese": ("ja", "tools/localize_japanese.py", "japanese-reference"),
+}
+
+
+def variant_roms(args) -> list[tuple[str, Path]]:
+    return [(name, getattr(args, name + "_rom")) for name in VARIANTS if getattr(args, name + "_rom")]
+
+
+def build_variant(args, tag: str, name: str, rom: Path, out: Path) -> None:
+    """payload/<code>/: a language's executable and recipe. The same code as the
     English variant (a copy of this tree's sources: every file Git does not
-    ignore, so no build output), localized from the clean BPES ROM by
-    tools/localize_spanish.py, then built and covered like the English one."""
-    tree = ROOT / "build" / "release-es"
+    ignore, so no build output), localized from that language's clean ROM by
+    its tools/localize_*.py, then built and covered like the English one."""
+    code, localizer, reference_name = VARIANTS[name]
+    tree = ROOT / "build" / ("release-" + code)
     make = args.make.split() if args.make else ["make"]
     if not args.skip_make:
         if tree.exists():
@@ -106,21 +120,21 @@ def build_spanish_variant(args, tag: str, out: Path) -> None:
                 shutil.copy2(src, dst)
         run(make + ["tools"], cwd=tree)
         run(make + ["generated"], cwd=tree)
-        run([sys.executable, ROOT / "tools/localize_spanish.py", "--tree", tree, "--rom", args.spanish_rom])
+        run([sys.executable, ROOT / localizer, "--tree", tree, "--rom", rom])
         run(make + ["release"], cwd=tree / "3ds_port")
     port = tree / "3ds_port"
-    # The Spanish game's symbol names and addresses (no ROM contents), for the recipe's hints.
-    reference = tree / "build" / "spanish-reference.o"
+    # The language's symbol names and addresses (no ROM contents), for the recipe's hints.
+    reference = tree / "build" / (reference_name + ".o")
     assembler = Path(args.nm).with_name(Path(args.nm).name[:-2] + "as")  # arm-none-eabi-nm -> -as
     run([assembler, "-o", reference,
-         tree / "build" / "spanish-reference.s"])
-    recipe = DIST / "emerald3ds-es.recipe"
+         tree / "build" / (reference_name + ".s")])
+    recipe = DIST / ("emerald3ds-%s.recipe" % code)
     if not args.skip_recipe:
-        run([sys.executable, ROOT / "tools/gen_recipe.py", "--romfs", port / "romfs", "--rom", args.spanish_rom,
+        run([sys.executable, ROOT / "tools/gen_recipe.py", "--romfs", port / "romfs", "--rom", rom,
              "--out", recipe, "--release", tag, "--elf", port / "emerald3ds.elf",
              "--gba-elf", reference, "--image-elf", port / "build/gamedata_image.elf",
              "--image-map", port / "build/gamedata_image.map", "--nm", args.nm, "--decomp", tree,
-             "--report", DIST / "recipe-literal-report-es.txt"])
+             "--report", DIST / ("recipe-literal-report-%s.txt" % code)])
     out.mkdir(parents=True, exist_ok=True)
     for name in ("Emerald3DS.3dsx", "Emerald3DS.smdh"):
         shutil.copy2(port / "dist" / name, out / name)
@@ -142,6 +156,8 @@ def main() -> None:
     ap.add_argument("--gba-elf", type=Path, required=True, help="the original game's ELF (symbol names)")
     ap.add_argument("--spanish-rom", type=Path, default=None,
                     help="clean Spanish (BPES) ROM: also build the Spanish variant (payload/es/)")
+    ap.add_argument("--japanese-rom", type=Path, default=None,
+                    help="clean Japanese (BPEJ) ROM: also build the Japanese variant (payload/ja/)")
     ap.add_argument("--nm", default=os.environ.get("NM", "arm-none-eabi-nm"))
     ap.add_argument("--make", default=None, help="command that runs make in 3ds_port (default: make)")
     ap.add_argument("--skip-make", action="store_true")
@@ -188,8 +204,8 @@ def main() -> None:
         dst = payload / "voxelgen" / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(PORT / rel, dst)
-    if args.spanish_rom:
-        build_spanish_variant(args, tag, payload / "es")
+    for name, rom in variant_roms(args):
+        build_variant(args, tag, name, rom, payload / VARIANTS[name][0])
 
     if not args.skip_exe:
         build = ROOT / "builder" / "build"
@@ -222,10 +238,11 @@ def main() -> None:
     for name in ("Emerald3DS.3dsx", "Emerald3DS.smdh"):
         shutil.copy2(payload / name, DIST / name)
         standalone.append(DIST / name)
-    if args.spanish_rom:
+    for name, _ in variant_roms(args):
         # Release asset names are unique; it is installed as Emerald3DS.3dsx all the same.
-        shutil.copy2(payload / "es" / "Emerald3DS.3dsx", DIST / "Emerald3DS-es.3dsx")
-        standalone.append(DIST / "Emerald3DS-es.3dsx")
+        code = VARIANTS[name][0]
+        shutil.copy2(payload / code / "Emerald3DS.3dsx", DIST / ("Emerald3DS-%s.3dsx" % code))
+        standalone.append(DIST / ("Emerald3DS-%s.3dsx" % code))
     cia = None
     if not args.skip_cia:
         forwarder = PORT / "forwarder"
@@ -235,14 +252,15 @@ def main() -> None:
     web_zip, web_manifest = build_web_payload.build(payload, args.version, DIST,
                                                     cia_forwarder=CIA_NAME if cia else None)
 
-    for rom in [args.rom] + ([args.spanish_rom] if args.spanish_rom else []):
+    for rom in [args.rom] + [rom for _, rom in variant_roms(args)]:
         run([sys.executable, ROOT / "tools/release_audit.py", "--zip", archive, "--strict", "--rom", rom])
         run([sys.executable, ROOT / "tools/release_audit.py", "--zip", web_zip, "--strict", "--rom", rom,
              "--web-payload"])
     sums = DIST / "SHA256SUMS.txt"
     assets = [archive] + standalone + ([cia] if cia else []) + [web_zip, web_manifest]
     lines = ["%s  %s" % (sha256(path), path.name) for path in assets]
-    for path in sorted(payload.glob("*")) + sorted(payload.glob("es/*")):
+    for path in sorted(payload.glob("*")) + sorted(p for name in VARIANTS
+                                                   for p in payload.glob(VARIANTS[name][0] + "/*")):
         if path.is_file():
             lines.append("%s  payload/%s" % (sha256(path), path.relative_to(payload).as_posix()))
     sums.write_text("\n".join(lines) + "\n", encoding="ascii")

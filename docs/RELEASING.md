@@ -7,7 +7,7 @@ contains a ROM, a data pack or anything extracted from the game.
 |---|---|
 | `Emerald3DS-vX.Y.Z-Windows.zip` | the Windows builder: builder, engine-only 3DSX, recipe, `README.txt`, `LICENSES/` |
 | `Emerald3DS.3dsx`, `Emerald3DS.smdh` | quick update of the executable when the data ABI did not change |
-| `Emerald3DS-es.3dsx` | the same for the Spanish variant (installed as `Emerald3DS.3dsx`) |
+| `Emerald3DS-es.3dsx`, `Emerald3DS-ja.3dsx` | the same for the Spanish and Japanese variants (installed as `Emerald3DS.3dsx`) |
 | `Emerald3DS-Forwarder.cia` | optional HOME Menu shortcut that starts the installed 3DSX (Luma3DS) |
 | `Emerald3DS-WebPayload.zip` | the web builder (website): payload, builder package, licences, `web-manifest.json` |
 | `web-manifest.json` | the same manifest on its own, read by the website without downloading the payload |
@@ -46,6 +46,7 @@ version.
    | `Emerald3DS.3dsx` | Quick Update (path 2: players who keep their `emerald3ds.pak`) |
    | `Emerald3DS.smdh` | listed with the 3DSX |
    | `Emerald3DS-es.3dsx` | Quick Update of the Spanish variant (offered after the local pack check) |
+   | `Emerald3DS-ja.3dsx` | Quick Update of the Japanese variant (offered after the local pack check) |
    | `Emerald3DS-Forwarder.cia` | the HOME Menu forwarder (download and FBI QR code) |
    | `Emerald3DS-vX.Y.Z-Windows.zip` | the Windows builder (not linked by the site) |
    | `SHA256SUMS.txt` | checksums of everything above |
@@ -111,7 +112,8 @@ always attach `web-manifest.json`. Consequences:
 - The direct download is the English `Emerald3DS.3dsx`. Players of another
   language check their own `emerald3ds.pak`: its header names the ROM it was
   built from, the site compares it with that language's `dataAbi` and offers
-  its executable (`Emerald3DS-es.3dsx`, saved as `Emerald3DS.3dsx`).
+  its executable (`Emerald3DS-es.3dsx` or `Emerald3DS-ja.3dsx`, saved as
+  `Emerald3DS.3dsx`).
 
 ## Languages
 
@@ -119,7 +121,8 @@ One release covers every language: there is never a release per language.
 The 3DS executable cannot be shared (the game data it links against differs
 in size between languages, so each has its own data ABI), but everything else
 is: `payload/` holds the English executable and recipe plus the voxel
-generators, and `payload/es/` the Spanish executable and recipe. The builders
+generators, `payload/es/` the Spanish executable and recipe and `payload/ja/`
+the Japanese ones. The builders
 (Windows and web) pick the variant whose recipe was made from the player's ROM;
 `web-manifest.json` describes the English one at its top level and the others
 in `variants` (a site that predates it ignores them and stays English-only).
@@ -128,13 +131,17 @@ in `variants` (a site that predates it ignores them and stays English-only).
 copies this tree's sources (every file Git does not ignore) to
 `build/release-es`, localizes them with `tools/localize_spanish.py`
 (docs/SPANISH.md), builds the engine there and writes its recipe with the
-symbol names of `build/spanish-reference.s`. Without `--spanish-rom` the
-release is English-only, as before.
+symbol names of `build/spanish-reference.s`. `--japanese-rom <clean BPEJ ROM>`
+does the same for the Japanese variant in `build/release-ja`, with
+`tools/localize_japanese.py` (docs/JAPANESE.md) and
+`build/japanese-reference.s`. Without either the release is English-only, as
+before.
 
 ## Prerequisites (maintainer machine)
 
 - A tree from `tools/bootstrap.py --make` (or the maintainer's workspace).
-- The supported ROM (and, for the Spanish variant, the clean Spanish ROM), and
+- The supported ROM (and, for the Spanish and Japanese variants, the clean
+  Spanish and Japanese ROMs), and
   the ELF of the original game built from the same
   pinned upstream (`make` in the upstream tree's root produces
   `pokeemerald.elf`): the recipe generator needs its symbol table to know
@@ -150,7 +157,7 @@ release is English-only, as before.
 ```
 python tools/build_release.py --version 0.1.0 --rom baserom.gba \
     --gba-elf build/upstream/pokeemerald.elf \
-    --spanish-rom esmeralda.gba \
+    --spanish-rom esmeralda.gba --japanese-rom emerald-ja.gba \
     --make "make -j8 PYTHON=python"
 ```
 
