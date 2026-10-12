@@ -4,6 +4,13 @@
 
 New and improved:
 
+- Brazilian Portuguese: the whole game in Portuguese over your own English
+  ROM, as a build option (`tools/bootstrap.py --make --port-lang pt_br`,
+  docs/PORTUGUESE.md): every text of the game from `tools/locales/pt_br`
+  with Brazil's official names, the port's interface, ã/õ in every font,
+  and the graphics with words redrawn by the port from your own files
+  (icons, summary titles, POKéDEX and POKéNAV menus, contest titles, the
+  title logo). Translation by Carlos Mozart (AllGenWiki).
 - French: the game in French from your own Pokémon Émeraude (France) ROM.
   The web and Windows builders accept it and pick the language from the ROM;
   every release carries the French executable (`Emerald3DS-fr.3dsx` for Quick
