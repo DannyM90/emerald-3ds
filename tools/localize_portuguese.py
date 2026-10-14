@@ -271,12 +271,12 @@ def c_label(source: str, start: int) -> str | None:
     return None
 
 
-FOREIGN = re.compile(r"GAME_LANGUAGE\s*==\s*LANGUAGE_(SPANISH|FRENCH)")
+FOREIGN = re.compile(r"GAME_LANGUAGE\s*==\s*LANGUAGE_(SPANISH|FRENCH|ITALIAN)")
 
 
 def foreign_spans(source: str) -> list[tuple[int, int]]:
     """The parts of a C source that only another language's build compiles:
-    the branch of an #if on GAME_LANGUAGE == LANGUAGE_SPANISH or _FRENCH
+    the branch of an #if on GAME_LANGUAGE == LANGUAGE_SPANISH, _FRENCH or _ITALIAN
     (unless it names CTR_LANG_PT_BR too), up to its #else, #elif or #endif.
     The English text is the one in the other branch."""
     spans, stack, pos = [], [], 0
