@@ -28,6 +28,8 @@
 #include "field_effect.h"
 #include "constants/field_effects.h"
 #include "battle_pyramid.h"
+#include "rtc.h"
+#include "constants/map_types.h"
 #include "sprite.h"
 #include "pokemon.h"
 #include "random.h"
@@ -37,6 +39,30 @@
 #include "script_pokemon_util.h"
 #include "constants/species.h"
 #endif
+#ifdef CTR_MEASURE_AID
+#include "script.h"
+#include "palette.h"
+#include "battle_setup.h"
+#include "script_pokemon_util.h"
+#include "constants/species.h"
+#include "field_screen_effect.h"
+#endif
+#ifdef CTR_TEST_EXT_PALETTE
+#include "palette.h"
+#include "pokemon.h"
+#include "pokemon_icon.h"
+#include "script.h"
+#include "field_weather.h"
+#include "event_object_movement.h"
+#include "constants/field_weather.h"
+#include "constants/pokemon_icon.h"
+#include "constants/species.h"
+#include "constants/maps.h"
+#include "battle_setup.h"
+#include "field_screen_effect.h"
+#include "script_pokemon_util.h"
+#endif
+#include "librfu.h"
 #include "port_platform.h"
 #include "port_log.h"
 #include "port_prof.h"
@@ -208,7 +234,7 @@ static void SampleAudioStats(void)
  * frames keep whatever the last callback said, so a scene change does not
  * flash the next frame at the other scale.
  */
-#define CTR_STAGE_CALLBACKS 24
+#define CTR_STAGE_CALLBACKS 48
 typedef struct
 {
     IntrCallback callbacks[CTR_STAGE_CALLBACKS];
@@ -310,6 +336,20 @@ void CtrCentredShop_SetVBlankCallback(IntrCallback callback)
     SetCentredCallback(callback, CTR_CENTRED_SHOP);
 }
 
+void CtrCentredBlender_SetVBlankCallback(IntrCallback callback)
+{
+    SetCentredCallback(callback, CTR_CENTRED_BLENDER);
+}
+
+/* trade.c: the trade menu's VBlank callback; the trade's is the other. */
+IntrCallback CtrTrade_MenuVBlankCallback(void);
+
+void CtrCentredTrade_SetVBlankCallback(IntrCallback callback)
+{
+    SetCentredCallback(callback, callback == CtrTrade_MenuVBlankCallback() ? CTR_CENTRED_TRADE_MENU
+                                                                           : CTR_CENTRED_TRADE);
+}
+
 /* The bag from the field goes left of the column, from anywhere else over the
  * whole bottom screen. */
 void CtrCentredBag_SetVBlankCallback(IntrCallback callback)
@@ -326,9 +366,8 @@ void CtrCentredParty_SetVBlankCallback(IntrCallback callback)
                                      ? CTR_CENTRED_PARTY : CTR_CENTRED_PARTY_WHOLE);
 }
 
-/* The Pokédex's own callback. The page it shows for a mon just caught puts
- * back the battle's, which stays the battle's. */
 IntrCallback CtrPokedex_VBlankCallback(void);
+bool8 CtrPokedex_IsCaughtMonPage(void);
 
 void CtrCentredPokedex_SetVBlankCallback(IntrCallback callback)
 {
@@ -371,6 +410,7 @@ static void UpdateSet(StageSet *set, IntrCallback callback)
 static void UpdateStage(void)
 {
     IntrCallback callback = gMain.vblankCallback;
+    bool caughtMonPage = CtrPokedex_IsCaughtMonPage();
 
     if (callback)
     {
@@ -393,11 +433,12 @@ static void UpdateStage(void)
                          field ? "on" : "off", (unsigned long)sFrames);
         sFieldTransition = field;
     }
-    CtrVideo_SetStage(sStage.on);
-    CtrVideo_SetStageFaded(sStage.on && sStage.screen == 1);
-    CtrVideo_SetCentred(sCentred.on ? sCentred.screen : CTR_CENTRED_NONE);
-    CtrVideo_SetBattle(sBattle.on);
-    CtrVideo_SetTransition(TransitionOn());
+    CtrVideo_SetStage(!caughtMonPage && sStage.on);
+    CtrVideo_SetStageFaded(!caughtMonPage && sStage.on && sStage.screen == 1);
+    CtrVideo_SetCentred(caughtMonPage ? CTR_CENTRED_POKEDEX_CAUGHT
+                                    : sCentred.on ? sCentred.screen : CTR_CENTRED_NONE);
+    CtrVideo_SetBattle(!caughtMonPage && sBattle.on);
+    CtrVideo_SetTransition(!caughtMonPage && TransitionOn());
 }
 
 /*
@@ -547,6 +588,8 @@ void CtrGame_VBlank(void)
      */
     if (REG_IME && (REG_IE & INTR_FLAG_VBLANK) && gIntrTable[INTR_INDEX_VBLANK])
         gIntrTable[INTR_INDEX_VBLANK]();
+    /* The emulated Wireless Adapter's "interrupts" (3ds_rfu_adapter.c). */
+    PortRfu_Frame();
     CtrEmu_EndVBlank();
     PORT_PROF_END(vblank, PORT_PROF_VBLANK);
     UpdateStage();
@@ -578,6 +621,40 @@ bool CtrGame_IsOverworld(void)
     if (gMapHeader.mapLayout == NULL || gSaveBlock1Ptr == NULL)
         return false;
     return gMain.callback2 == CB2_Overworld || gMain.callback2 == CB2_OverworldBasic;
+}
+
+bool CtrGame_IsOutdoor(void)
+{
+    if (gMapHeader.mapLayout == NULL)
+        return false;
+    switch (gMapHeader.mapType)
+    {
+    case MAP_TYPE_TOWN:
+    case MAP_TYPE_CITY:
+    case MAP_TYPE_ROUTE:
+    case MAP_TYPE_OCEAN_ROUTE:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool CtrGame_LocalTimeSeconds(unsigned *seconds)
+{
+    struct SiiRtcInfo rtc;
+    struct Time local;
+
+    if (gSaveBlock2Ptr == NULL || gMapHeader.mapLayout == NULL)
+        return false;
+    if (RtcGetErrorStatus() & RTC_ERR_FLAG_MASK)
+        return false;
+    RtcGetInfo(&rtc);
+    RtcCalcTimeDifference(&rtc, &local, &gSaveBlock2Ptr->localTimeOffset);
+    if (local.hours < 0 || local.hours >= 24 || local.minutes < 0 || local.minutes >= 60
+     || local.seconds < 0 || local.seconds >= 60)
+        return false;
+    *seconds = local.hours * 3600u + local.minutes * 60u + local.seconds;
+    return true;
 }
 
 /* The poison step's effect is running (see DrawPoisonVeil in 3ds_video.c). */
@@ -736,6 +813,326 @@ static void ScenarioCheckpoints(void)
         CtrScenario_Checkpoint("state", GameStateDigest());
 }
 
+#ifdef CTR_TEST_EXT_PALETTE
+/*
+ * Azahar check of the ext palettes (-DCTR_TEST_EXT_PALETTE, include/palette.h):
+ * the icon of a party mon a tile right of the player, on an ext palette that
+ * holds its icon colours with the channels turned round (red from green, green
+ * from blue, blue from red), so that drawn with any other palette it shows.
+ * It should fade, darken and brighten with the weather exactly as the people
+ * on the map do. Every ten seconds of free walking the screen fades out and
+ * in as a script's fadescreen does (the weather's own fade-in included), the
+ * icon turning into the next party mon's while the screen is black: its
+ * palette freed, the next one loaded into the slot that frees. A warp, a
+ * battle or a menu takes it with the field; it comes back on the field.
+ */
+enum { TEST_EXT_WALK, TEST_EXT_FADING_OUT, TEST_EXT_FADING_IN };
+/* A tag of its own, not the icon's: the visible wild mons load the icon
+ * palettes into the GBA's slots, and a tag held there and here at once would
+ * have one side free the other's palette (FreeSpritePaletteByTag). */
+#define TEST_EXT_TAG 0x7E3D
+static u8 sTestExtSprite = MAX_SPRITES, sTestExtState, sTestExtMon;
+static u16 sTestExtColors[16];
+static u32 sTestExtWalked;
+/* The palettes as loaded, put back while the screen is black, as a warp
+ * reloads them: FadeScreen leaves the weather's colours as the unfaded ones,
+ * and the weather's fade-in would apply its colour map over them again. */
+static u16 sTestExtUnfaded[PLTT_BUFFER_ALLOC];
+
+static void SpriteCB_TestExtPalette(struct Sprite *sprite)
+{
+    const struct Sprite *player = &gSprites[gPlayerAvatar.spriteId];
+
+    sprite->x = player->x + 16;
+    sprite->y = player->y;
+    sprite->invisible = player->invisible;
+    sprite->oam.priority = player->oam.priority;
+    sprite->subpriority = player->subpriority;
+    UpdateMonIconFrame(sprite);
+}
+
+static bool TestExtSpriteAlive(void)
+{
+    return sTestExtSprite < MAX_SPRITES && gSprites[sTestExtSprite].inUse
+        && gSprites[sTestExtSprite].callback == SpriteCB_TestExtPalette
+        && IndexOfSpritePaletteExtTag(TEST_EXT_TAG) != 0xFF;
+}
+
+static void TestExtSpriteCreate(void)
+{
+    u16 species = SPECIES_ZIGZAGOON;
+    u32 personality = 0;
+    const u16 *icon;
+    u8 slot, spriteId;
+
+    if (gPlayerPartyCount != 0)
+    {
+        sTestExtMon %= gPlayerPartyCount;
+        species = GetMonData(&gPlayerParty[sTestExtMon], MON_DATA_SPECIES_OR_EGG);
+        personality = GetMonData(&gPlayerParty[sTestExtMon], MON_DATA_PERSONALITY);
+    }
+    icon = Port_ResolveAssetPointerSized(gMonIconPaletteTable[GetValidMonIconPalIndex(species)].data,
+                                         PLTT_SIZE_4BPP);
+    for (unsigned i = 0; i < 16; ++i)
+    {
+        u16 c = icon[i];
+        sTestExtColors[i] = ((c >> 5) & 31) | (((c >> 10) & 31) << 5) | ((c & 31) << 10);
+    }
+    slot = LoadSpritePaletteExt(&(const struct SpritePalette){sTestExtColors, TEST_EXT_TAG});
+    if (slot == 0xFF)
+    {
+        CtrLog_Write(CTR_LOG_GAME, "ext palette test: no ext palette free");
+        sTestExtSprite = MAX_SPRITES;
+        return;
+    }
+    UpdateSpritePaletteExtWithWeather(slot);
+    spriteId = CreateMonIcon(species, SpriteCB_TestExtPalette, 0, 0, 0, personality, TRUE);
+    if (spriteId >= MAX_SPRITES)
+    {
+        FreeSpritePaletteByTag(TEST_EXT_TAG);
+        sTestExtSprite = MAX_SPRITES;
+        return;
+    }
+    sTestExtSprite = spriteId;
+    /* CreateMonIcon leaves the template pointing at its stack. */
+    gSprites[spriteId].template = &gDummySpriteTemplate;
+    gSprites[spriteId].coordOffsetEnabled = TRUE;
+    /* Bound by hand, as an object event's sprite will be: the icon's template
+     * names the icon's tag, not this one. */
+    SetSpriteExtPalette(&gSprites[spriteId], slot);
+    CtrLog_Write(CTR_LOG_GAME, "ext palette test: species %u on ext palette %u", species, slot);
+    SpriteCB_TestExtPalette(&gSprites[spriteId]);
+}
+
+static void TestExtSpriteDestroy(void)
+{
+    if (sTestExtSprite < MAX_SPRITES && gSprites[sTestExtSprite].inUse
+     && gSprites[sTestExtSprite].callback == SpriteCB_TestExtPalette)
+        FreeAndDestroyMonIconSprite(&gSprites[sTestExtSprite]);
+    if (IndexOfSpritePaletteExtTag(TEST_EXT_TAG) != 0xFF)
+        FreeSpritePaletteByTag(TEST_EXT_TAG);
+    sTestExtSprite = MAX_SPRITES;
+}
+
+/*
+ * Commands from TEST_EXT_COMMANDS, one a file, read while the player walks
+ * freely and removed once read, to reach each case of the extended palettes'
+ * console checks without walking there: "weather N" (as a map's script
+ * sets it: SetSavedWeather, DoCurrentWeather), "warp GROUP NUM X Y" (through
+ * the warp's fade), "battle" (a wild Zigzagoon), "sweet" (Sweet Scent from the
+ * first mon), "fade" (the fade cycle now) and "auto 0/1" (the fade cycle every
+ * ten seconds off/on). True when the command takes the player's controls.
+ */
+#define TEST_EXT_COMMANDS "sdmc:/3ds/emerald3ds/ext_test.txt"
+static bool8 sTestExtAuto = TRUE;
+
+static bool TestExtCommand(void)
+{
+    static u8 sPoll;
+    char line[64];
+    unsigned a, b, c, d;
+    size_t got;
+    FILE *file;
+
+    if (++sPoll < 30)
+        return FALSE;
+    sPoll = 0;
+    file = fopen(TEST_EXT_COMMANDS, "rb");
+    if (file == NULL)
+        return FALSE;
+    got = fread(line, 1, sizeof(line) - 1, file);
+    fclose(file);
+    remove(TEST_EXT_COMMANDS);
+    line[got] = '\0';
+    line[strcspn(line, "\r\n")] = '\0';
+    CtrLog_Write(CTR_LOG_GAME, "ext palette test: command '%s'", line);
+    if (sscanf(line, "weather %u", &a) == 1)
+    {
+        SetSavedWeather(a);
+        DoCurrentWeather();
+    }
+    else if (sscanf(line, "warp %u %u %u %u", &a, &b, &c, &d) == 4)
+    {
+        SetWarpDestination(a, b, WARP_ID_NONE, c, d);
+        DoWarp();
+        return TRUE;
+    }
+    else if (strcmp(line, "battle") == 0)
+    {
+        CreateScriptedWildMon(SPECIES_ZIGZAGOON, 5, 0);
+        BattleSetup_StartScriptedWildBattle();
+        return TRUE;
+    }
+    else if (strcmp(line, "sweet") == 0)
+    {
+        gFieldEffectArguments[0] = 0;
+        FieldEffectStart(FLDEFF_SWEET_SCENT);
+        return TRUE;
+    }
+    else if (strcmp(line, "fade") == 0)
+        sTestExtWalked = 600;
+    else if (sscanf(line, "auto %u", &a) == 1)
+        sTestExtAuto = a != 0;
+    return FALSE;
+}
+
+/*
+ * Once a second with no fade running, the colours of the ext palette and of
+ * its model, OBJ palette 2, against what the weather's colour map makes of
+ * their unfaded ones now (each put back after): a palette left out of a copy
+ * or a fade (Sweet Scent, fadescreenswapbuffers) shows as ext colours off while
+ * the model's are right. Logged when either is off, and every ten seconds.
+ */
+static void TestExtCheck(void)
+{
+    static u16 sTicks, sReports;
+    u16 faded[16], model[16];
+    unsigned extOff = 0, modelOff = 0, i;
+    u8 slot = IndexOfSpritePaletteExtTag(TEST_EXT_TAG);
+    u16 ext = PLTT_EXT_ID(slot), npc = OBJ_PLTT_ID(PLTT_EXT_MODEL);
+
+    if (++sTicks < 60 || slot == 0xFF || gPaletteFade.active || !IsWeatherNotFadingIn()
+     || gWeatherPtr->palProcessingState == WEATHER_PAL_STATE_SCREEN_FADING_OUT)
+        return;
+    sTicks = 0;
+    memcpy(faded, &gPlttBufferFaded[ext], sizeof(faded));
+    UpdateSpritePaletteExtWithWeather(slot);
+    for (i = 0; i < 16; i++)
+        extOff += gPlttBufferFaded[ext + i] != faded[i];
+    memcpy(&gPlttBufferFaded[ext], faded, sizeof(faded));
+    /* ApplyWeatherColorMapToPal on the model applies the ext palettes too. */
+    memcpy(model, &gPlttBufferFaded[npc], sizeof(model));
+    ApplyWeatherColorMapToPal(16 + PLTT_EXT_MODEL);
+    for (i = 0; i < 16; i++)
+        modelOff += gPlttBufferFaded[npc + i] != model[i];
+    memcpy(&gPlttBufferFaded[npc], model, sizeof(model));
+    memcpy(&gPlttBufferFaded[ext], faded, sizeof(faded));
+    if (extOff || modelOff || ++sReports >= 10)
+    {
+        sReports = 0;
+        CtrLog_Write(CTR_LOG_GAME, "ext palette test: check ext %u/16 off, model %u/16 off "
+                     "(weather %u, colour map %d, state %u)", extOff, modelOff, gWeatherPtr->currWeather,
+                     gWeatherPtr->colorMapIndex, gWeatherPtr->palProcessingState);
+    }
+}
+
+/* Run at the start of a frame, before the game's tasks and its palette fade. */
+static void TestExtPalette(void)
+{
+    bool calm;
+
+    if (gMain.callback2 != CB2_Overworld || gPlayerAvatar.spriteId >= MAX_SPRITES)
+    {
+        if (sTestExtState != TEST_EXT_WALK)
+            UnlockPlayerFieldControls();
+        sTestExtState = TEST_EXT_WALK;
+        return;
+    }
+    calm = !gPaletteFade.active && IsWeatherNotFadingIn();
+    switch (sTestExtState)
+    {
+    case TEST_EXT_WALK:
+        if (!calm)
+            break;
+        if (!TestExtSpriteAlive())
+        {
+            TestExtSpriteDestroy();
+            TestExtSpriteCreate();
+        }
+        TestExtCheck();
+        if (ArePlayerFieldControlsLocked() || ScriptContext_IsEnabled())
+            break;
+        if (TestExtCommand())
+            break;
+        if (sTestExtWalked < 600 && (!sTestExtAuto || ++sTestExtWalked < 600))
+            break;
+        sTestExtWalked = 0;
+        LockPlayerFieldControls();
+        memcpy(sTestExtUnfaded, gPlttBufferUnfaded, sizeof(sTestExtUnfaded));
+        FadeScreen(FADE_TO_BLACK, 0);
+        sTestExtState = TEST_EXT_FADING_OUT;
+        break;
+    case TEST_EXT_FADING_OUT:
+        if (gPaletteFade.active)
+            break;
+        memcpy(gPlttBufferUnfaded, sTestExtUnfaded, sizeof(sTestExtUnfaded));
+        TestExtSpriteDestroy();
+        ++sTestExtMon;
+        TestExtSpriteCreate();
+        FadeScreen(FADE_FROM_BLACK, 0);
+        sTestExtState = TEST_EXT_FADING_IN;
+        break;
+    case TEST_EXT_FADING_IN:
+        if (!calm)
+            break;
+        UnlockPlayerFieldControls();
+        sTestExtState = TEST_EXT_WALK;
+        break;
+    }
+}
+#endif
+
+#ifdef CTR_MEASURE_AID
+/*
+ * Measurement aid (-DCTR_MEASURE_AID): measure.txt in the played scenario's
+ * folder (a console queue gives each run its own), else
+ * sdmc:/3ds/emerald3ds/measure.txt. Read once at boot, one step a line, each
+ * run in order once its frame has come and the player walks freely: "FRAME
+ * warp GROUP NUM X Y" or "FRAME battle" (a wild Zigzagoon). One build reaches
+ * every measured place.
+ */
+static void MeasureAid(void)
+{
+    static struct { u32 frame; u8 battle, to[4]; } sSteps[8];
+    static u8 sCount, sNext, sRead;
+
+    if (!sRead)
+    {
+        const char *save = CtrScenario_SavePath();
+        char line[128];
+        FILE *file = NULL;
+        unsigned f, g, n, x, y;
+
+        sRead = 1;
+        if (save != NULL && strlen(save) < sizeof(line) && strrchr(save, '/') != NULL)
+        {
+            strcpy(line, save);
+            strcpy(strrchr(line, '/') + 1, "measure.txt");
+            file = fopen(line, "r");
+        }
+        if (file == NULL)
+            file = fopen("sdmc:/3ds/emerald3ds/measure.txt", "r");
+        while (file != NULL && sCount < ARRAY_COUNT(sSteps) && fgets(line, sizeof(line), file))
+        {
+            if (sscanf(line, "%u warp %u %u %u %u", &f, &g, &n, &x, &y) == 5)
+                sSteps[sCount++] = (typeof(sSteps[0])){f, 0, {g, n, x, y}};
+            else if (sscanf(line, "%u battle", &f) == 1)
+                sSteps[sCount++] = (typeof(sSteps[0])){f, 1, {0}};
+        }
+        if (file != NULL)
+            fclose(file);
+        CtrLog_Write(CTR_LOG_GAME, "measure aid: %u steps", sCount);
+    }
+    if (sNext >= sCount || sFrames < sSteps[sNext].frame || gMain.callback2 != CB2_Overworld
+     || gPaletteFade.active || ArePlayerFieldControlsLocked() || ScriptContext_IsEnabled())
+        return;
+    CtrLog_Write(CTR_LOG_GAME, "measure aid: step %u at frame %lu", sNext, (unsigned long)sFrames);
+    if (sSteps[sNext].battle)
+    {
+        CreateScriptedWildMon(SPECIES_ZIGZAGOON, 5, 0);
+        BattleSetup_StartScriptedWildBattle();
+    }
+    else
+    {
+        const u8 *to = sSteps[sNext].to;
+
+        SetWarpDestination(to[0], to[1], WARP_ID_NONE, to[2], to[3]);
+        DoWarp();
+    }
+    sNext++;
+}
+#endif
+
 void CtrGame_WaitFrame(void)
 {
     static MainCallback lastCallback;
@@ -779,6 +1176,12 @@ void CtrGame_WaitFrame(void)
             BattleSetup_StartScriptedWildBattle();
         }
     }
+#endif
+#ifdef CTR_MEASURE_AID
+    MeasureAid();
+#endif
+#ifdef CTR_TEST_EXT_PALETTE
+    TestExtPalette();
 #endif
     /* Touch was just scanned and the game has not read its keys yet. */
     {

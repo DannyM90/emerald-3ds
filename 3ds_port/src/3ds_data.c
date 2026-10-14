@@ -41,6 +41,13 @@ static const uint8_t sSupportedRomSha1[20] = {
 };
 #define SUPPORTED_ROM_DETAIL "Utilise la ROM de Pokemon Emeraude\n" \
                              "(France, BPEF) avec ce client."
+#elif GAME_LANGUAGE == LANGUAGE_ITALIAN
+static const uint8_t sSupportedRomSha1[20] = {
+    0x16, 0x92, 0xdb, 0x32, 0x24, 0x00, 0xc3, 0x14, 0x1c, 0x5d,
+    0xe2, 0xdb, 0x38, 0x46, 0x99, 0x13, 0xce, 0xb1, 0xf4, 0xd4,
+};
+#define SUPPORTED_ROM_DETAIL "Usa la ROM di Pokemon Smeraldo\n" \
+                             "(Italia, BPEI) con questo client."
 #else
 static const uint8_t sSupportedRomSha1[20] = {
     0xf3, 0xae, 0x08, 0x81, 0x81, 0xbf, 0x58, 0x3e, 0x55, 0xda,
@@ -112,7 +119,7 @@ static bool OpenPak(void)
     sPak = fopen(CTR_DATA_PAK_PATH, "rb");
     if (sPak == NULL)
     {
-        SetError(CTR_TEXT("The game data pack was not found.", "The game data pack was not found.", "The game data pack was not found.", "O pacote de dados nao foi encontrado."),
+        SetError(CTR_TEXT("The game data pack was not found.", "The game data pack was not found.", "The game data pack was not found.", "The game data pack was not found.", "O pacote de dados nao foi encontrado."),
                  CTR_TEXT_PT("Run the builder that came with this\n"
                              "release with your own Pokemon Emerald\n"
                              "ROM and install the data pack to:\n\n"
@@ -131,7 +138,7 @@ static bool OpenPak(void)
     case CTR_PAK_OK:
         break;
     case CTR_PAK_BAD_MAGIC:
-        SetError(CTR_TEXT("This is not a game data pack.", "This is not a game data pack.", "This is not a game data pack.", "Isto nao e um pacote de dados."),
+        SetError(CTR_TEXT("This is not a game data pack.", "This is not a game data pack.", "This is not a game data pack.", "This is not a game data pack.", "Isto nao e um pacote de dados."),
                  CTR_TEXT_PT("/3ds/emerald3ds/emerald3ds.pak is not a\n"
                              "data pack. Run the builder again.",
                              "/3ds/emerald3ds/emerald3ds.pak nao e um\n"
@@ -152,13 +159,13 @@ static bool OpenPak(void)
                              "ABI do pacote: %08lX (schema %lu)"),
                  (unsigned long)sEngineAbi, CTR_PAK_SCHEMA_VERSION,
                  (unsigned long)info.engineAbi, (unsigned long)info.schema);
-        SetError(CTR_TEXT("The data pack does not match this release.", "The data pack does not match this release.", "The data pack does not match this release.", "O pacote de dados nao e desta versao."), detail);
+        SetError(CTR_TEXT("The data pack does not match this release.", "The data pack does not match this release.", "The data pack does not match this release.", "The data pack does not match this release.", "O pacote de dados nao e desta versao."), detail);
         goto fail;
     case CTR_PAK_BAD_ROM:
-        SetError(CTR_TEXT("The data pack comes from another ROM.", "The data pack comes from another ROM.", "The data pack comes from another ROM.", "O pacote de dados veio de outra ROM."), SUPPORTED_ROM_DETAIL);
+        SetError(CTR_TEXT("The data pack comes from another ROM.", "The data pack comes from another ROM.", "The data pack comes from another ROM.", "The data pack comes from another ROM.", "O pacote de dados veio de outra ROM."), SUPPORTED_ROM_DETAIL);
         goto fail;
     default:
-        SetError(CTR_TEXT("The data pack is damaged.", "The data pack is damaged.", "The data pack is damaged.", "O pacote de dados esta corrompido."),
+        SetError(CTR_TEXT("The data pack is damaged.", "The data pack is damaged.", "The data pack is damaged.", "The data pack is damaged.", "O pacote de dados esta corrompido."),
                  CTR_TEXT_PT("It does not pass the integrity check.\n"
                              "Run the builder again.",
                              "Ele nao passa na verificacao de\n"
@@ -171,13 +178,13 @@ static bool OpenPak(void)
      || fseek(sPak, (long)info.indexOffset, SEEK_SET) != 0
      || fread(index, CTR_PAK_ENTRY_BYTES, info.entryCount, sPak) != info.entryCount)
     {
-        SetError(CTR_TEXT("The data pack could not be read.", "The data pack could not be read.", "The data pack could not be read.", "Nao foi possivel ler o pacote de dados."),
-                 CTR_TEXT("The SD card could not deliver its index.", "The SD card could not deliver its index.", "The SD card could not deliver its index.", "O cartao SD nao entregou o seu indice."));
+        SetError(CTR_TEXT("The data pack could not be read.", "The data pack could not be read.", "The data pack could not be read.", "The data pack could not be read.", "Nao foi possivel ler o pacote de dados."),
+                 CTR_TEXT("The SD card could not deliver its index.", "The SD card could not deliver its index.", "The SD card could not deliver its index.", "The SD card could not deliver its index.", "O cartao SD nao entregou o seu indice."));
         goto fail;
     }
     if (CtrPak_ParseIndex(index, &info, sEntries) != CTR_PAK_OK)
     {
-        SetError(CTR_TEXT("The data pack is damaged.", "The data pack is damaged.", "The data pack is damaged.", "O pacote de dados esta corrompido."),
+        SetError(CTR_TEXT("The data pack is damaged.", "The data pack is damaged.", "The data pack is damaged.", "The data pack is damaged.", "O pacote de dados esta corrompido."),
                  CTR_TEXT_PT("Its index does not pass the integrity\n"
                              "check. Run the builder again.",
                              "O indice nao passa na verificacao de\n"
@@ -221,8 +228,8 @@ bool CtrData_Init(void)
     case 1:
         if (!FileExists(CTR_DATA_EMBEDDED_MARKER))
         {
-            SetError(CTR_TEXT("This build has no embedded game data.", "This build has no embedded game data.", "This build has no embedded game data.", "Esta versao nao traz dados embutidos."),
-                     CTR_TEXT("Install a data pack or loose data files.", "Install a data pack or loose data files.", "Install a data pack or loose data files.", "Instale um pacote ou os dados soltos."));
+            SetError(CTR_TEXT("This build has no embedded game data.", "This build has no embedded game data.", "This build has no embedded game data.", "This build has no embedded game data.", "Esta versao nao traz dados embutidos."),
+                     CTR_TEXT("Install a data pack or loose data files.", "Install a data pack or loose data files.", "Install a data pack or loose data files.", "Install a data pack or loose data files.", "Instale um pacote ou os dados soltos."));
             return false;
         }
         sBackend = CTR_DATA_ROMFS;

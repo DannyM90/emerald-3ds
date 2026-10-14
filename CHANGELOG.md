@@ -2,15 +2,120 @@
 
 ## Unreleased
 
+- Follower Pokémon (OPTIONS > ENHANCEMENTS > FOLLOWER, off by default): the
+  party's lead walks behind the player on its HeartGold/SoulSilver overworld
+  sprite, comes out of and goes back into its Poké Ball (warps, surf, bike,
+  rooms too low for it), and answers when talked to with its cry and one of
+  HGSS's messages. The builder fetches those sprites and texts at pinned
+  commits and converts them; a file it cannot get is left out and the build
+  goes on. The visible wild Pokémon use the same sprites where they exist.
+  Sixteen more OBJ palettes, 3DS only, give them colours of their own. Its
+  patch is 0056-follower-pokemon.
+
+- Night lamps light a round pool that brightens the ground under them, in
+  place of the orange squares; on an Old 3DS they are no longer rebuilt at
+  every step of the camera.
+
+- Quick ball: the arrows reach every ball in the pocket when one kind is in
+  two stacks; a change of ball redraws its plate alone.
+
+- Voxel Petalburg: the hedges wrap the houses and the signs stand on their
+  own ground.
+
+- A battle keeps its 3D after the bag or the party is closed: the layers the
+  last screen left are given back to VRAM at once.
+
+- Code audit: the asset loaders checked against bad data, an audio worker
+  race and uninitialised reads fixed, fewer needless redraws of the bottom
+  screen and the battle HUD; the frame budget measures the real end of the
+  frame.
+
+- The builder rejects a modified French (BPEF) ROM, by @andyst-dev (pull
+  request #62).
+
+- Local wireless play between 3DS systems nearby, by @eathanpage (pull
+  request #76): the Union Room, the Direct Corner's Trade Center and
+  Colosseum, the Berry Blender, the wireless minigames, link contests and the
+  Battle Tower's link multi battle, two to four players, through an emulated
+  Wireless Adapter over 3DS local wireless. Only identical builds link (so
+  builds in different languages don't, for now); HOME is refused during a
+  session. Its patch is 0055-local-wireless.
+
+- Day/night, city lights and the berry clock, by @jesus0m (pull request
+  #57), all off by default. The windows' glow and the lamps take memory
+  only while they light: the masks share the voxel page arena and the lamps'
+  buffers are freed shortly after the last one goes out, so with day/night
+  off nothing is reserved. Known limit: at 120X the sun moves every 7.5
+  seconds and each step relights the voxel world, which an Old 3DS shows as
+  frame drops; at 1X it runs smoothly.
+
+- Dewford exterior models and the bounded window-mask pool
+  have user-reported physical-3DS acceptance. Follow-up fixes give the caught-mon
+  Pokédex its own clipped, scroll-isolated bottom-screen layout and recover the
+  gym-side sign from its original two-cell artwork. The user confirms the final
+  preview on a physical 3DS and authorizes publication on October 12, 2026.
+
+- User-tested refinement: brighter, cool-blue outdoor
+  nights with a moonlit ambient blend capped at 6%, eased with the existing clock.
+  Reuse the 2D/voxel texture stages without extra draw calls or assets; keep warm
+  window/lamp emission, neutral interiors/UI and complete black/white fades.
+- Local staging packs now select their ROM fingerprint from the compiled game
+  language, rather than marking Spanish data as English. An explicitly supplied
+  ROM must match that language; synthetic tests cover both profiles and rejection.
+- City lighting (user-reported 3DS acceptance): extend authored voxel
+  glass masks to shared Pokémon Centers, marts and gyms, Rustboro apartment
+  blocks and Devon; correct Littleroot east-house window coordinates.
+  Original Rustboro lamps emit warm glass and bounded floor-only light pools,
+  cached with the visible map state and faded by the existing shared clock.
+  Unmodelled buildings and classic 2D windows remain outside local emission.
+- CI: remove Python 3.12-only f-string expressions from asset-table generation
+  so the Python 3.11 build container can bootstrap. Add URI/offset regression
+  tests in that container and update voxel fixtures for tileset-aware tree APIs,
+  atlas dimensions and clock updates. Package CI's engine-only ZIP under the
+  existing allowed `payload/` layout without weakening publication checks.
+- Experimental follow-up: berry growth shares clock acceleration, with
+  fractional bonus-minute carry, continuous speed changes and save-bound clock
+  persistence. Sleep/offline time stays at 1X; daily RTC events remain original.
+- Correct Spanish clock accents, add display-only EVENING / TARDE and
+  translate modern party EXP text; the wild and foe prefixes stay as the
+  Spanish ROM writes them.
+- Experimental follow-up: clock-driven voxel sun and cast shadows, with
+  15-game-minute direction updates through the existing chunk budget,
+  retained caster caches, and no additional shadow rendering pass.
+- Experimental follow-up: two-hour eased visual transitions and authored
+  amber window emission on shared exterior voxel houses (including Petalburg),
+  disabled with day/night and excluded from interiors. No new encounter bands.
+- Opt-in ORIGINAL / TIMED grass encounters on eleven Hoenn routes, shared
+  by random encounters, Sweet Scent and new visible wild spawns, with original
+  levels/rates and unchanged water, caves, facilities and special encounters.
+- Optional bottom MAP footer showing effective HH:MM, time band and clock
+  rate, independently of lighting, localized in Spanish and partial-redrawn.
+
+- Optional outdoor morning, day, sunset and night lighting in classic 2D and
+  voxel mode, disabled by default and configurable from ENHANCEMENTS.
+- Independent clock speeds from 1X to 120X, without accelerating
+  Emerald's daily RTC events or modifying the GBA save format.
+- Spanish labels for the touch-screen settings tabs, enhancements, cheats,
+  option values and give-items menu; English labels and saved settings stay
+  unchanged.
+
 New and improved:
 
-- Brazilian Portuguese: the whole game in Portuguese over your own English
-  ROM, as a build option (`tools/bootstrap.py --make --port-lang pt_br`,
-  docs/PORTUGUESE.md): every text of the game from `tools/locales/pt_br`
-  with Brazil's official names, the port's interface, ã/õ in every font,
-  and the graphics with words redrawn by the port from your own files
-  (icons, summary titles, POKéDEX and POKéNAV menus, contest titles, the
-  title logo). Translation by Carlos Mozart (AllGenWiki).
+- Italian: the game in Italian from your own Pokémon Versione Smeraldo (Italy) ROM.
+  The texts and graphics are staged from that ROM by `tools/localize_italian.py`
+  (449 source files, 19 349 edits, 104 graphics, 55 credits pages, the four Trainer
+  Hill floors), with the metric Pokédex units and decimal comma, the wider invalid-move
+  type table, the Italian ending tilemap and the port menus in Italian.
+- Italian build: `tools/bootstrap.py --make --italian-rom` builds it, next to the
+  Spanish and French ones.
+- Brazilian Portuguese, by @carlosmozart (pull request #60): the whole game in
+  Portuguese over your own English ROM, as a build option (`tools/bootstrap.py
+  --make --port-lang pt_br`, docs/PORTUGUESE.md): every text of the game from
+  `tools/locales/pt_br` with Brazil's official names, the port's interface,
+  ã/õ in every font, and the graphics with words redrawn by the port from your
+  own files (icons, summary titles, POKéDEX and POKéNAV menus, contest titles,
+  the title logo). Translation by Carlos Mozart (AllGenWiki). Its patches are
+  0057-0066.
 - French: the game in French from your own Pokémon Émeraude (France) ROM.
   The web and Windows builders accept it and pick the language from the ROM;
   every release carries the French executable (`Emerald3DS-fr.3dsx` for Quick
@@ -96,6 +201,14 @@ Fixed:
 - Battles: after opening the bag or the party in a battle, a stat change
   (Growl, Defense Curl and the like) covered the whole screen with its
   pattern instead of only the Pokémon.
+- Voxel mode: Rustboro's and Mauville's streets no longer stand up in low
+  blocks here and there (Rustboro's main road among them). Their paving is
+  the same tile as the middle of the white curbs round lawns and landings,
+  and was raised as curb.
+- Voxel mode: Rustboro's fountain is built again from its drawing: the rim
+  stands over the water, the dish sits on a stem in the middle, and its walls
+  are solid all round (one side was a dark slab and another see-through). Its
+  jet plays the game's animation, as on the GBA.
 
 ## 0.3.1 — 2026-10-10
 

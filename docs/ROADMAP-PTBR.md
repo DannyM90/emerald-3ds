@@ -92,7 +92,7 @@ textos traduzidos.
 
 A tabela de caracteres da Gen 3 não tem `ã`, `õ`, `Ã` nem `Õ`.
 
-- [x] Patch `0049`: `charmap.txt` mapeia `Ã`, `Õ`, `ã` e `õ` para os códigos
+- [x] Patch `0057`: `charmap.txt` mapeia `Ã`, `Õ`, `ã` e `õ` para os códigos
       livres `2F`–`32`.
 - [x] O port desenha os glifos ao carregar as fontes (`3ds_compat.c`), a
       partir dos da ROM. Nada do gráfico é distribuído.
@@ -143,14 +143,14 @@ emulador e no 3DS.
       O texto em PT ficou cerca de 22% maior que o inglês (mediana), e 232 de
       354 crescem mais de 15%.
 - [x] Categorias: as 386, em até 11 bytes, com “POKéMON” antes
-      (patch `0051`); quando não cabe, a palavra mais próxima (MIRMELEÃO,
+      (patch `0059`); quando não cabe, a palavra mais próxima (MIRMELEÃO,
       TATURANA, OTÁRIA).
 - [x] Tipos: `TYPE_NAME_LENGTH` de 6 para 9 (`TERRESTRE`), com os nomes
-      oficiais inteiros (patch `0052`). Na janela de golpes da batalha o
+      oficiais inteiros (patch `0060`). Na janela de golpes da batalha o
       "TIPO/" sai para o nome caber; na busca da Pokédex, um tipo largo usa a
       fonte estreita.
 - [x] `sATypeMove_Table` em PT ("um golpe de FOGO"), alargando a tabela como o
-      patch `0034` fez (`0052`, cortando a cópia no tamanho do buffer).
+      patch `0034` fez (`0060`, cortando a cópia no tamanho do buffer).
 - [x] Estilo do jogo (caixa alta nos termos, tipos e atributos do Glossário):
       aplicado direto nos catálogos.
 - [x] Locais: feitos na Fase 5 (opção a, 09/10): as cidades só com o nome
@@ -174,7 +174,7 @@ Nomes primeiro, porque as descrições e os diálogos citam esses nomes.
       limite `ABILITY_NAME_LENGTH` = 12.
 - [x] **Bagas:** o nome fica no limite de 6 de `BERRY_NAME_LENGTH`, que faz
       parte do save; o "BERRY" que o código acrescenta virou FRUTA / FRUTAS,
-      antes do nome (patch `0056`, 09/10).
+      antes do nome (patch `0064`, 09/10).
 - [x] **Lugares:** no mapa, na placa e no resumo, as cidades só com o nome
       próprio (LITTLEROOT) e o resto em até 16 caracteres (ROTA 101, CAT.
       METEOROS), pelo cabeçalho gerado `region_map_entries.h` (09/10).
@@ -204,7 +204,7 @@ Nomes primeiro, porque as descrições e os diálogos citam esses nomes.
 Ordem sugerida, do que o jogador vê mais para o que vê menos:
 
 - [x] Menus de `src/strings.c` (1205 de 1762 textos em 09/10): menu
-      principal, CONTINUAR, opções (patches `0053` e `0054`), menu START,
+      principal, CONTINUAR, opções (patches `0061` e `0062`), menu START,
       BOLSA, PC e CAIXAS, resumo, equipe, POKéDEX, POKéNAV, a caixa SIM/NÃO
       dos scripts, a janela de subida de nível; o resto (FRONTEIRA,
       concursos, PRESENTE MISTERIOSO, cartão de treinador, decorações,
@@ -221,7 +221,7 @@ Ordem sugerida, do que o jogador vê mais para o que vê menos:
       e a almofada KISS entraram no glossário com a CENTRAL DE TROCAS
       (09/10).
 - [x] FRUTAS no singular e no plural: "FRUTA ORAN", "FRUTAS ORAN", com a
-      palavra antes do nome, como no espanhol (patch `0056`, 09/10).
+      palavra antes do nome, como no espanhol (patch `0064`, 09/10).
 - [x] Janela de subida de nível na batalha (port, `3ds_video.c`, corrigido
       e conferido no 3DS em 09/10): ficava na
       cena ampliada 1,5×, atrás da caixa de mensagem, que esconde AT. ESP.,
@@ -229,18 +229,18 @@ Ordem sugerida, do que o jogador vê mais para o que vê menos:
       (conferido no 3DS em 09/10): é um bug do port, não da tradução.
 - [x] Ícones de tipo do RESUMO (`graphics/types/move_types.4bpp.lz`):
       redesenhados depois de descomprimir, sem comprimir de novo (patch
-      `0058`, 10/10).
+      `0066`, 10/10).
 - [x] Ícones de condição: ENV, PAR, DOR, CON, QUE, DES (PKRS fica), no
-      resumo (patch `0058`, que leva ao port toda folha descomprimida) e na tela de baixo, redesenhados pelo port
+      resumo (patch `0066`, que leva ao port toda folha descomprimida) e na tela de baixo, redesenhados pelo port
       (10/10).
 - [x] Gráficos com palavras, vistos no 3DS em 10/10: o APERTE START da
       tela de título, o logo VERSÃO ESMERALDA (desenho próprio, reto,
       aprovado no 3DS em 12/10), os
       títulos e os ícones de tipo do resumo (10/10) e as categorias de
       concurso (ESTILO, BELEZA, FOFURA, ESPERT., FORÇA, 11/10). Desde 11/10
-      o patch `0058` leva ao port toda folha que o jogo descomprime.
+      o patch `0066` leva ao port toda folha que o jogo descomprime.
 - [ ] Conferir no 3DS os gráficos de 10 e 11/10, já pelo caminho do patch
-      `0058`: títulos e ícones do resumo, ícones de condição e de concurso,
+      `0066`: títulos e ícones do resumo, ícones de condição e de concurso,
       APERTE START, POKéDEX (abas, menu START, busca, lista) e POKéNAV
       (opções, cabeçalhos, legenda do mapa, SAIR). Em teste pelo usuário.
 - [x] Títulos dos concursos (resultado): NÍVEL NORMAL / SUPER / HIPER /
@@ -263,12 +263,12 @@ Ordem sugerida, do que o jogador vê mais para o que vê menos:
       original do port (conferido em 09/10): é uma limitação do port, não da
       tradução, nem da correção da janela de nível. Fica para depois,
       opcional.
-- [x] Mensagens de batalha (`src/battle_message.c`, patch `0050` para a
+- [x] Mensagens de batalha (`src/battle_message.c`, patch `0058` para a
       ordem “ZIGZAGOON selvagem”); conferir larguras com a
       referência do patch `0034`.
 - [x] Resumo do POKéMON (natureza, origem, OVO), tela da equipe com as
       mensagens, telas da POKéDEX (busca, ordem, ALT./PESO) e unidades:
-      metros e quilos com vírgula (patch `0055`, sobre o código do `0035`).
+      metros e quilos com vírgula (patch `0063`, sobre o código do `0035`).
 - [x] PC do jogador, sistema de CAIXAS, loja, opções e salvamento.
 - [x] Concursos, FRONTEIRA DE BATALHA, COLINA DOS TREINADORES e BASES
       SECRETAS (textos de `src/strings.c` e de `data/text`, 09/10). Falta
@@ -350,7 +350,7 @@ O maior volume do projeto, sem equivalente no wiki.
       números, então save e troca não mudam), com a ordem alfabética refeita.
 - [x] Braille das ruínas: fica em inglês (decidido em 09/10).
 - [x] Créditos e cena final: ficam em inglês, com duas páginas novas logo
-      depois do título (patch `0057`): Tradução PT-BR, Carlos Mozart e
+      depois do título (patch `0065`): Tradução PT-BR, Carlos Mozart e
       AllGenWiki; Port para Nintendo 3DS, Daniel Cazalla (09/10).
 - [x] Rever os arquivos de código com texto que nenhum catálogo cobre
       (levantamento de 10/10 no PC dos menus). Nada deles estava no
@@ -417,8 +417,8 @@ Registre aqui cada decisão, com data.
 | 2026-10-07 | O HoennKantoWiki não é alterado. Os dados são copiados para `tools/locales/pt_br/referencia/hoennkantowiki/`. |
 | 2026-10-07 | Traduzir o máximo possível. Quando uma palavra não couber, estudar uma abreviação (registrada no Glossário) em vez de manter o inglês. |
 | 2026-10-08 | **Nomenclatura oficial do Brasil** (jogos, anime, TCG; Bulbapedia `pt_br`) acima do wiki. Substitui as escolhas de 07/10 que divergem: BOLSA (não Mochila), POKé BOLA, PS (não HP), tipos PLANTA e AÇO (não GRAMA e METAL). Referência única: `GLOSSARIO.md`. |
-| 2026-10-08 | Tipos com o nome oficial inteiro (patch `0052`, `TYPE_NAME_LENGTH` 9), como previsto em 07/10. Na janela de golpes da batalha o "TIPO/" sai para o nome caber; na busca da Pokédex, um tipo largo usa a fonte estreita. (As abreviações de 6 bytes, registradas antes neste dia, foram descartadas.) |
-| 2026-10-08 | Categorias da POKéDEX com “POKéMON” antes (“POKéMON SEMENTE”), patch `0051`, em até 11 bytes. |
+| 2026-10-08 | Tipos com o nome oficial inteiro (patch `0060`, `TYPE_NAME_LENGTH` 9), como previsto em 07/10. Na janela de golpes da batalha o "TIPO/" sai para o nome caber; na busca da Pokédex, um tipo largo usa a fonte estreita. (As abreviações de 6 bytes, registradas antes neste dia, foram descartadas.) |
+| 2026-10-08 | Categorias da POKéDEX com “POKéMON” antes (“POKéMON SEMENTE”), patch `0059`, em até 11 bytes. |
 | 2026-10-08 | Um só fluxo PT-BR: `--port-lang pt_br` com `localize_portuguese.py` e os catálogos de `tools/locales/pt_br/`. O fluxo `--locale ptbr` (`localize_ptbr.py`, catálogo TOML) foi retirado; os textos dele já estavam no catálogo `pt_br`. |
 
 ## Glossário
@@ -447,4 +447,4 @@ ele ainda não lista, seguem esta tabela:
 | Códigos reaproveitados para ã/õ aparecem em nomes de saves ingleses | Escolher letras sem uso real; documentar |
 | Volume dos diálogos | Ordem do jogo, cobertura medida e fallback para o inglês |
 | Divergência entre wiki e jogo | O wiki é a referência de termos; o jogo é a referência do texto original |
-| Tipos e atributos em PT mexem em limites e gráficos | Tipos em 9 bytes (patch `0052`); gerar ícones e rótulos no builder a partir da ROM; testar as telas com os nomes mais longos (`TERRESTRE`, `VELOCIDADE`) |
+| Tipos e atributos em PT mexem em limites e gráficos | Tipos em 9 bytes (patch `0060`); gerar ícones e rótulos no builder a partir da ROM; testar as telas com os nomes mais longos (`TERRESTRE`, `VELOCIDADE`) |

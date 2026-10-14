@@ -41,6 +41,7 @@ int main(void)
                               0xB4, 0xB0, 0xB5, 0xB6};
     const uint8_t fallback[] = {0xAC};
     const uint8_t spanish[] = {0x6F, 0x23, 0x27, 0x5A, 0x0E, 0x12, 0x52, 0x51};
+    const uint8_t italian[] = {0x1E, 0x22, 0x09, 0x0D};
     const uint8_t punctuation[] = {0x2D, 0xB8, 0x5B};
     const uint8_t portuguese[] = {0x2F, 0x30, 0x31, 0x32};
     uint8_t tiny[4] = {0x77, 0x77, 0x77, 0x77};
@@ -49,6 +50,7 @@ int main(void)
     expect("ÀÂÇÈÉÊËÎÏÔÙÛàâçèéêëîïôùû", french, sizeof(french));
     expect("ñÑüÜ,%&’…♂♀", special, sizeof(special));
     expect("íóúÍÓÚ¡¿", spanish, sizeof(spanish));
+    expect("ìòÌÒ", italian, sizeof(italian));
     expect("&,%", punctuation, sizeof(punctuation)); /* All languages. */
     expect("ÃÕãõ", portuguese, sizeof(portuguese)); /* The Portuguese build's own codes. */
     expect("\xC3", fallback, 1);             /* incomplete code point */
@@ -66,14 +68,16 @@ int main(void)
     assert(tiny[0] == 0x1B && tiny[1] == 0xff);
 
 #if CTR_LANG_PT_BR
-    assert(strcmp(CTR_TEXT("EN", "ES", "FR", "PT"), "PT") == 0);
+    assert(strcmp(CTR_TEXT("EN", "ES", "FR", "IT", "PT"), "PT") == 0);
     assert(strcmp(CTR_TEXT_PT("EN", "PT"), "PT") == 0);
 #elif GAME_LANGUAGE == LANGUAGE_FRENCH
-    assert(strcmp(CTR_TEXT("EN", "ES", "FR", "PT"), "FR") == 0);
+    assert(strcmp(CTR_TEXT("EN", "ES", "FR", "IT", "PT"), "FR") == 0);
 #elif GAME_LANGUAGE == LANGUAGE_SPANISH
-    assert(strcmp(CTR_TEXT("EN", "ES", "FR", "PT"), "ES") == 0);
+    assert(strcmp(CTR_TEXT("EN", "ES", "FR", "IT", "PT"), "ES") == 0);
+#elif GAME_LANGUAGE == LANGUAGE_ITALIAN
+    assert(strcmp(CTR_TEXT("EN", "ES", "FR", "IT", "PT"), "IT") == 0);
 #else
-    assert(strcmp(CTR_TEXT("EN", "ES", "FR", "PT"), "EN") == 0);
+    assert(strcmp(CTR_TEXT("EN", "ES", "FR", "IT", "PT"), "EN") == 0);
     assert(strcmp(CTR_TEXT_PT("EN", "PT"), "EN") == 0);
 #endif
     return 0;
@@ -84,11 +88,11 @@ int main(void)
             (root / "constants").mkdir()
             (root / "constants/global.h").write_text(
                 "#define LANGUAGE_ENGLISH 2\n#define LANGUAGE_FRENCH 3\n"
-                "#define LANGUAGE_SPANISH 7\n", encoding="utf-8")
+                "#define LANGUAGE_ITALIAN 4\n#define LANGUAGE_SPANISH 7\n", encoding="utf-8")
             source = root / "locale.c"
             source.write_text(code, encoding="utf-8")
-            # English, French, Spanish, and Brazilian Portuguese over English.
-            for language, portuguese in ((2, 0), (3, 0), (7, 0), (2, 1)):
+            # English, French, Italian, Spanish, and Brazilian Portuguese over English.
+            for language, portuguese in ((2, 0), (3, 0), (4, 0), (7, 0), (2, 1)):
                 with self.subTest(language=language, portuguese=portuguese):
                     executable = root / "locale.exe"
                     subprocess.run([CC, "-std=c99", "-Wall", "-Wextra", "-Werror",

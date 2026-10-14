@@ -1,5 +1,5 @@
 Pokémon Emerald 3Ds Dual Screen changes to pret/pokeemerald 76463dac15cad36aca5e2b3f6366abf9e53f814f: the Portuguese translation and the 3DS port in the credits
-Applies after 0056-portuguese-berry-word-order.patch; apply with tools/bootstrap.py.
+Applies after 0064-portuguese-berry-word-order.patch; apply with tools/bootstrap.py.
 
 diff --git a/src/data/credits.h b/src/data/credits.h
 --- a/src/data/credits.h

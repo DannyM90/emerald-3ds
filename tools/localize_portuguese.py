@@ -23,7 +23,7 @@ file (a message box, 27 tiles) may use up to MESSAGE_BOX_WIDTH pixels, a C
 string (often a menu sized to its entries) only the width of its English
 text. A header may end in width=N to allow N pixels.
 
-Run by tools/bootstrap.py --port-lang pt_br, after the patches (0049 gives
+Run by tools/bootstrap.py --port-lang pt_br, after the patches (0057 gives
 the charmap ã, õ, Ã and Õ) and before the build.
 """
 from __future__ import annotations
@@ -224,7 +224,7 @@ MAX_LINES = {"src/data/pokemon/pokedex_text.h": 4}
 # Battle messages: the battle's message box is 26 tiles wide (208 px); the
 # texts of the other windows (menus, the level-up box) carry width=.
 # Type names: the battle's move type window is 64 px, with TIPO/ left out
-# (patch 0052); TERRESTRE, the longest, is 54.
+# (patch 0060); TERRESTRE, the longest, is 54.
 FILE_WIDTH = {"src/data/items.h": 80, "src/battle_message.c": MESSAGE_BOX_WIDTH,
               "src/battle_main.c": 54}
 
@@ -469,7 +469,7 @@ def main() -> int:
         return 0
     charset = Charset(tree)
     if "ã" not in charset.codes:
-        raise SystemExit("localize_portuguese: the charmap has no ã; apply patch 0049 first")
+        raise SystemExit("localize_portuguese: the charmap has no ã; apply patch 0057 first")
     results = [localize(tree, relative, charset, write=False) for relative in present(tree)]
     problems = [p for r in results for p in r.problems]
     if problems:

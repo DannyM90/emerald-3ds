@@ -7,12 +7,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include "3ds_platform.h"
+#include "3ds_daynight.h"
 #include "3ds_gpumem.h"
 #include "3ds_video.h"
 #include "3ds_data.h"
 #include "3ds_bottom.h"
 #include "ctr_battle_layout.h"
 #include "3ds_battle_hud.h"
+#include "3ds_local.h"
 #include "../compat/port_prof.h"
 
 /* A battle is on, transition and all (CtrVideo_InBattle, at the end). */
@@ -190,7 +192,6 @@ static void GpuStartEarly(void)
 static bool GpuFinishEarly(void)
 {
     if (!sGpuEarly) return false;
-    (void)sGpuEarlyStart;
     if (sFrameQueue->lastEntry == sFrameQueue->numEntries)
     {
         gxCmdQueueStop(sFrameQueue);
@@ -289,7 +290,10 @@ static int sSurfaceH = 256;
  * picture ends; below that, behind the box's margins, the scene's last line
  * is carried down (ScenePlaceFrom).
  */
-#define BATTLE_SCENE_BOTTOM (112 + (int)ceilf((CTR_BATTLE_BOX_TOP - (CTR_GAME_HEIGHT - 48)) / CTR_BATTLE_ZOOM))
+#define BATTLE_SCENE_BOX_BOTTOM (112 + (int)ceilf((CTR_BATTLE_BOX_TOP - (CTR_GAME_HEIGHT - 48)) / CTR_BATTLE_ZOOM))
+/* Or the whole picture, with no text box to go behind (BattleSceneBottom). */
+static int BattleSceneBottom(void);
+#define BATTLE_SCENE_BOTTOM BattleSceneBottom()
 static C3D_Tex sSceneTex;
 static C3D_RenderTarget *sScene;
 static bool sSceneFailed;
@@ -350,6 +354,17 @@ typedef struct
     bool valid, visible;
 } Tile;
 static uint32_t sTileSerial;
+
+/*
+ * Tiles are cached by palette: 0-15 the BG banks, 16-31 the OBJ banks, 32 and
+ * 33 the BG and OBJ palettes as one 256-colour bank, and from PAL_EXT the OBJ
+ * banks past the GBA's sixteen (CtrVideo_LatchExtPalettes), whose colours
+ * follow the GBA's 512 here.
+ */
+#define PAL_BG256 32
+#define PAL_OBJ256 33
+#define PAL_EXT 34
+#define PAL_IDS (PAL_EXT + CTR_EXT_PALETTES)
 
 static uint32_t sOamAnchored[4];
 static int16_t sOamAnchor[128];
@@ -466,6 +481,57 @@ void CtrVideo_MarkFogOam(unsigned first, unsigned end)
         sFogOam[i >> 5] |= 1u << (i & 31);
 }
 
+/*
+ * The ext palettes (CtrVideo_LatchExtPalettes): their faded colours as the
+ * game last handed them over, which are in use, and the one each OAM entry
+ * is drawn with, plus one (0: attr2's own).
+ */
+static uint16_t sExtPltt[CTR_EXT_PALETTES * 16];
+static unsigned sExtInUse;
+static uint8_t sOamExt[128];
+static bool sOamExtMarked;
+
+void CtrVideo_LatchExtPalettes(const uint16_t *colors, unsigned inUse)
+{
+    sExtInUse = inUse & ((1u << CTR_EXT_PALETTES) - 1);
+    if (sExtInUse)
+        memcpy(sExtPltt, colors, sizeof(sExtPltt));
+}
+
+const uint16_t *CtrVideo_ExtPalette(unsigned index)
+{
+    return sExtPltt + (index % CTR_EXT_PALETTES) * 16;
+}
+
+void CtrVideo_ClearExtPaletteOam(void)
+{
+    if (!sOamExtMarked) return;
+    memset(sOamExt, 0, sizeof(sOamExt));
+    sOamExtMarked = false;
+}
+
+void CtrVideo_MarkExtPaletteOam(unsigned first, unsigned end, unsigned index)
+{
+    if (index >= CTR_EXT_PALETTES) return;
+    if (end > 128) end = 128;
+    for (unsigned i = first; i < end; ++i)
+        sOamExt[i] = (uint8_t)(index + 1);
+    sOamExtMarked = sOamExtMarked || first < end;
+}
+
+/* The palette bank OAM entry i is drawn with (GetTileSlot): attr2's, or the
+ * ext palette it is marked with while that one is in use - a mark outlives a
+ * scene that stops building OAM, the palettes do not. A 256-colour sprite has
+ * the one bank. */
+static unsigned ObjBank(unsigned i, unsigned attr2)
+{
+    unsigned ext = sOamExt[i];
+
+    if (ext && (sExtInUse >> (ext - 1)) & 1)
+        return PAL_EXT + ext - 1;
+    return 16u + (attr2 >> 12);
+}
+
 /* A battle transition's sprite: on the screen, and not the weather's. */
 static bool TransitionOam(unsigned i)
 {
@@ -509,8 +575,8 @@ static C3D_RenderTarget *sLogical, *sTop, *sTopRight;
 static bool sStereo;
 static Tile sTiles[CACHE_COUNT];
 static uint16_t sHash[HASH_COUNT];
-static uint16_t sPalette[512];
-static uint16_t sTexturePalette[512];
+static uint16_t sPalette[512 + CTR_EXT_PALETTES * 16];
+static uint16_t sTexturePalette[512 + CTR_EXT_PALETTES * 16];
 /* Background colours shown transparent, a bit per colour of each BG
  * palette (KeySectionColours). */
 static uint16_t sKeyed[16];
@@ -520,8 +586,8 @@ static uint8_t sMorton[64];
 static uint8_t sMortonPair[32];
 static bool sMortonPairs;
 static C2D_ImageTint sTint;
-static uint32_t sPaletteVersion[34];
-static uint32_t sPaletteChanges[34][8];
+static uint32_t sPaletteVersion[PAL_IDS];
+static uint32_t sPaletteChanges[PAL_IDS][8];
 static unsigned sUsed;
 
 /*
@@ -573,8 +639,9 @@ static __attribute__((noinline, cold)) void UnannouncedBlock(unsigned b)
     if (sUnannouncedLogged < 200)
     {
         ++sUnannouncedLogged;
-        CtrLog_Write(CTR_LOG_VIDEO, "CONTRACT unannounced vram block=%u (%05x) cb2=%08lx frame=%lu",
-                     b, b * VRAM_BLOCK, (unsigned long)CtrProf_Scene(), (unsigned long)sStats.frames);
+        CtrLog_Write(CTR_LOG_VIDEO, "CONTRACT unannounced vram block=%u (%05x) cb2=%08lx frame=%lu total=%lu",
+                     b, b * VRAM_BLOCK, (unsigned long)CtrProf_Scene(), (unsigned long)sStats.frames,
+                     (unsigned long)sUnannouncedBlocks);
     }
 }
 
@@ -680,12 +747,6 @@ static void VramSyncRange(unsigned address, unsigned bytes)
         SyncBlock(b);
 }
 
-/* Once a frame, before anything reads VRAM: nothing to do now that blocks are
- * compared when asked about (SyncBlock); kept as the frame's VRAM point. */
-static void TrackVram(void)
-{
-}
-
 /* Whether VRAM [address, address + bytes) changed after token t. */
 static bool VramChangedAfter(unsigned address, unsigned bytes, uint32_t t)
 {
@@ -746,6 +807,7 @@ static uint64_t sBgTicks, sObjTicks;
  * 3DS (sVoxelStereo, set at start-up; -DCTR_VOXEL_STEREO=1 or =0 forces
  * AUTO either way). ON and OFF decide outright. 3D DEPTH scales the slider.
  */
+#if CTR_VOXEL_ENABLED
 static bool sVoxelStereo;
 
 static bool VoxelStereoWanted(void)
@@ -764,6 +826,7 @@ static float VoxelStereoSlider(float slider)
     if (depth < 0 || depth >= (int)(sizeof(depths) / sizeof(depths[0]))) depth = 3;
     return slider * depths[depth];
 }
+#endif
 
 /* Displacement per depth unit for the eye being composed, and the resulting
  * displacement of the layer being drawn, both in whole screen pixels. */
@@ -794,6 +857,17 @@ static unsigned sObjWinPass;
 /* The battle's BG0 drew something above its text box (DrawBattleText). */
 static bool sTextAbove;
 static uint32_t sObjMask[4];
+/*
+ * The Wireless Adapter's status indicator: link_rfu puts it in OAM entry 125
+ * itself, at the GBA screen's top right. In the 2D battle (RenderEye) it is
+ * left out of the scene and drawn over the finished picture
+ * (BattleIndicatorCompose): the lines above the scene's surface are filled
+ * from its top rows, repeated, and its top rows came out again there as a
+ * stray line. The 3D battle's surface has no sprites in it.
+ */
+#define WIRELESS_INDICATOR_OAM 125
+static bool sObjIndicatorPass, sIndicatorApartHere;
+static bool WirelessIndicatorApart(void);
 /* Fixed horizontal placement of every layer, on top of the depth parallax.
  * Zero for the 2D compositor, which reproduces the GBA frame as it is. */
 static float sLayerOrigin;
@@ -910,6 +984,8 @@ static const uint16_t *sRegLine;
 
 static unsigned Reg(unsigned offset)
 {
+    if (sCentredScreen == CTR_CENTRED_POKEDEX_CAUGHT && offset >= 0x18 && offset <= 0x1e)
+        return 0;
     if (sRegLine && offset - CTR_LINE_REG_FIRST < CTR_LINE_REGS * 2)
         return sRegLine[(offset - CTR_LINE_REG_FIRST) / 2];
     return sMemory.regs[offset / 2];
@@ -1033,7 +1109,7 @@ static void UpdatePalette(void)
 
         if (memcmp(sPalette + bank * 16, source + bank * 16, 32))
         {
-            unsigned group = bank < 16 ? 32 : 33;
+            unsigned group = bank < 16 ? PAL_BG256 : PAL_OBJ256;
             if (bank < 16 ? !bgChanged : !objChanged)
                 memset(sPaletteChanges[group], 0, sizeof(sPaletteChanges[group]));
             memset(sPaletteChanges[bank], 0, sizeof(sPaletteChanges[bank]));
@@ -1054,10 +1130,27 @@ static void UpdatePalette(void)
     }
     if (bgChanged)
     {
-        ++sPaletteVersion[32];
+        ++sPaletteVersion[PAL_BG256];
         sBgPaletteStamp = sStats.frames + 1;
     }
-    if (objChanged) ++sPaletteVersion[33];
+    if (objChanged) ++sPaletteVersion[PAL_OBJ256];
+    /* The ext banks in use: no 256-colour bank holds them. */
+    for (unsigned live = sExtInUse, ext = 0; live; live >>= 1, ++ext)
+    {
+        unsigned bank = PAL_EXT + ext, base = 512 + ext * 16;
+        const uint16_t *source = sExtPltt + ext * 16;
+
+        if (!(live & 1) || !memcmp(sPalette + base, source, 32)) continue;
+        memset(sPaletteChanges[bank], 0, sizeof(sPaletteChanges[bank]));
+        for (unsigned index = 0; index < 16; ++index)
+        {
+            if (sPalette[base + index] == source[index]) continue;
+            sPalette[base + index] = source[index];
+            sTexturePalette[base + index] = CtrVideo_RGBA5551(source[index]);
+            sPaletteChanges[bank][0] |= 1u << index;
+        }
+        ++sPaletteVersion[bank];
+    }
 }
 
 /*
@@ -1094,9 +1187,9 @@ static void KeySectionColours(void)
          * it: its tiles are rebuilt, and the layers that hold them walked. */
         memset(sPaletteChanges[bank], 0, sizeof(sPaletteChanges[bank]));
         sPaletteChanges[bank][0] = changed;
-        memset(sPaletteChanges[32], 0xff, sizeof(sPaletteChanges[32]));
+        memset(sPaletteChanges[PAL_BG256], 0xff, sizeof(sPaletteChanges[PAL_BG256]));
         ++sPaletteVersion[bank];
-        ++sPaletteVersion[32];
+        ++sPaletteVersion[PAL_BG256];
         sBgPaletteStamp = sStats.frames + 1;
     }
 }
@@ -1132,7 +1225,9 @@ static bool TilePaletteChanged(const Tile *tile, unsigned paletteId)
     /* The last change mask is sufficient only for the next version. Tiles
      * returning after multiple palette changes are conservatively rebuilt. */
     if (tile->paletteVersion + 1 != version) return true;
-    for (unsigned i = 0; i < (paletteId < 32 ? 1u : 8u); ++i)
+    bool color256 = paletteId == PAL_BG256 || paletteId == PAL_OBJ256;
+
+    for (unsigned i = 0; i < (color256 ? 8u : 1u); ++i)
         if (tile->colors[i] & sPaletteChanges[paletteId][i]) return true;
     return false;
 }
@@ -1150,8 +1245,8 @@ static int GetTileSlot(unsigned address, unsigned bank, bool color256)
         Error(1, "tile outside logical VRAM");
         address = 0;
     }
-    unsigned paletteId = color256 ? 32 + (bank >= 16) : bank;
-    uint32_t key = (address / 32) * 34 + paletteId + 1;
+    unsigned paletteId = color256 ? PAL_BG256 + (bank >= 16) : bank;
+    uint32_t key = (address / 32) * PAL_IDS + paletteId + 1;
     unsigned hash = (key * 2654435761u) & (HASH_COUNT - 1);
     while (sHash[hash] && sTiles[sHash[hash] - 1].key != key)
         hash = (hash + 1) & (HASH_COUNT - 1);
@@ -1182,7 +1277,8 @@ static int GetTileSlot(unsigned address, unsigned bank, bool color256)
             else if (palette) ++sDecodePalette;
             else ++sDecodeBytes;
             memcpy(tile->bytes, sMemory.vram + address, bytes);
-            unsigned paletteBase = color256 ? (bank >= 16 ? 256 : 0) : bank * 16;
+            unsigned paletteBase = color256 ? (bank >= 16 ? 256 : 0)
+                                 : bank >= PAL_EXT ? 512 + (bank - PAL_EXT) * 16 : bank * 16;
             uint16_t *dest = (uint16_t *)sAtlas.data + slot * 64;
             uint16_t before[64];
 
@@ -1276,6 +1372,9 @@ static void DrawSlot(int slot, float x, float y, bool flipX, bool flipY)
     DrawSlotTinted(slot, x, y, flipX, flipY, &sTint);
 }
 
+static bool sDayNightObject;
+static bool sDayNightEnv;
+
 static void Blend(unsigned layer, bool effects, bool semiTransparent)
 {
     /*
@@ -1285,12 +1384,22 @@ static void Blend(unsigned layer, bool effects, bool semiTransparent)
      * configuration again is a no-op: an overworld frame with forty sprites
      * asked for it forty times.
      */
-    unsigned key = layer | (effects << 8) | (semiTransparent << 9);
+    const CtrDayNightLight *light = CtrDayNight_Get();
+    bool night = (light->rgb[0] != 1.0f || light->rgb[1] != 1.0f || light->rgb[2] != 1.0f)
+              && !sInLayerTexture && !sStage && !sCentred && !sBattle && CtrGame_IsOverworld()
+              && ((layer >= 1 && layer <= 3) || (layer == 4 && sDayNightObject));
+    unsigned key = layer | (effects << 8) | (semiTransparent << 9) | (night << 10);
 
     if (key == sBlendKey) return;
     sBlendKey = key;
 
     C2D_Flush();
+    if (sDayNightEnv)
+    {
+        C3D_TexEnvInit(C3D_GetTexEnv(4));
+        C3D_TexEnvInit(C3D_GetTexEnv(5));
+        sDayNightEnv = false;
+    }
     C3D_AlphaTest(true, GPU_GREATER, 0);
     if (sObjWinPass != OBJWIN_NONE)
     {
@@ -1323,6 +1432,45 @@ static void Blend(unsigned layer, bool effects, bool semiTransparent)
 
     C2D_PlainImageTint(&sTint, C2D_Color32(fadeTo >> 24, fadeTo >> 16, fadeTo >> 8, 255),
                        paletteTint ? sPaletteFade : 0);
+    if (night)
+    {
+        C3D_TexEnv *env = C3D_GetTexEnv(4);
+
+        C3D_TexEnvSrc(env, C3D_RGB, GPU_PREVIOUS, GPU_CONSTANT, GPU_CONSTANT);
+        C3D_TexEnvFunc(env, C3D_RGB, GPU_MODULATE);
+        C3D_TexEnvColor(env, C2D_Color32((unsigned)(light->rgb[0] * 255 + 0.5f),
+                                       (unsigned)(light->rgb[1] * 255 + 0.5f),
+                                       (unsigned)(light->rgb[2] * 255 + 0.5f), 255));
+        float fade = paletteTint ? sPaletteFade : 0.0f;
+        uint32_t color = C2D_Color32(fadeTo >> 24, fadeTo >> 16, fadeTo >> 8, (unsigned)(fade * 255));
+
+        if (effects && (control & (1u << layer)) && effect >= 2)
+        {
+            unsigned channel = effect == 2 ? 255 : 0;
+
+            fade = Min(Reg(0x54), 16) / 16.0f;
+            color = C2D_Color32(channel, channel, channel, (unsigned)(fade * 255));
+        }
+        float fadeRgb[3] = {(color & 255u) / 255.0f, ((color >> 8) & 255u) / 255.0f,
+                            ((color >> 16) & 255u) / 255.0f};
+        CtrDayNightLight moonLight = *light;
+
+        if (!paletteTint)
+            moonLight.glow *= 1.0f - sPaletteFade;
+        CtrDayNightBlend moon = CtrDayNight_Moonlight(&moonLight, fade, fadeRgb);
+
+        color = C2D_Color32((unsigned)(moon.rgb[0] * 255.0f + 0.5f),
+                           (unsigned)(moon.rgb[1] * 255.0f + 0.5f),
+                           (unsigned)(moon.rgb[2] * 255.0f + 0.5f),
+                           (unsigned)(moon.amount * 255.0f + 0.5f));
+        env = C3D_GetTexEnv(5);
+        C3D_TexEnvSrc(env, C3D_RGB, GPU_CONSTANT, GPU_PREVIOUS, GPU_CONSTANT);
+        C3D_TexEnvOpRgb(env, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_ALPHA);
+        C3D_TexEnvFunc(env, C3D_RGB, GPU_INTERPOLATE);
+        C3D_TexEnvColor(env, color);
+        sDayNightEnv = true;
+        C2D_PlainImageTint(&sTint, C2D_Color32(0, 0, 0, 255), 0);
+    }
     /* A semi-transparent sprite blends even where the window turns colour
      * effects off: the overworld keeps WIN0 over the whole screen without
      * them, and its fog and clouds are still see-through on the GBA. */
@@ -1344,7 +1492,8 @@ static void Blend(unsigned layer, bool effects, bool semiTransparent)
     else if ((control & (1u << layer)) && effect >= 2)
     {
         unsigned c = effect == 2 ? 255 : 0;
-        C2D_PlainImageTint(&sTint, C2D_Color32(c, c, c, 255), Min(Reg(0x54), 16) / 16.0f);
+        if (!night)
+            C2D_PlainImageTint(&sTint, C2D_Color32(c, c, c, 255), Min(Reg(0x54), 16) / 16.0f);
     }
 }
 
@@ -1519,6 +1668,11 @@ static void DrawTextSpanAt(unsigned bg, int left, int right, int top, int bottom
     if (empty)
         return;
 #endif
+    /* The key below records this frame's token for the tilemap, so its
+     * blocks are compared now (the contract above): Read16 does not, and a
+     * map changed and changed back unseen would keep a stale "empty". */
+    if (cached)
+        VramSyncRange(map, 0x800u << ((size & 1) + ((size >> 1) & 1)));
     batch = TileWalkBegin();
 
     ViewBase();
@@ -1811,7 +1965,9 @@ static void MeasureStill(unsigned bg)
     unsigned scrollX = Reg(0x10 + bg * 4) & 511, scrollY = Reg(0x12 + bg * 4) & 511;
     unsigned beyond = 0, inside = 0;
 
-    if (sPictureFrame[bg] && sStats.frames - sPictureFrame[bg] < 8) return;
+    /* Signed: on an even frame the stamp (frames | 1) is one ahead, and the
+     * unsigned difference wrapped, measuring again on every call. */
+    if (sPictureFrame[bg] && (int32_t)(sStats.frames - sPictureFrame[bg]) < 8) return;
     sPictureFrame[bg] = sStats.frames | 1;
     for (unsigned y = 0; y < 20 && !(size & 1); ++y)
     {
@@ -3216,8 +3372,13 @@ static const CentredFill sCentredFills[CTR_CENTRED_SCREENS] =
     /* The Pokédex: a tile its screen on show names (CentredFillOf), or else
      * whatever is at the back of it. */
     [CTR_CENTRED_POKEDEX] = {.backmost = true},
+    [CTR_CENTRED_POKEDEX_CAUGHT] = {.layers = 1u << 3, .tile = true, .tileColumn = 0, .tileRow = 2},
     [CTR_CENTRED_PARTY] = {.section = true},
     [CTR_CENTRED_PARTY_WHOLE] = {.section = true},
+    /* The trade menu's two layers of stripes, which repeat across. */
+    [CTR_CENTRED_TRADE_MENU] = {.layers = (1u << 2) | (1u << 3), .wrap = true},
+    /* The trade itself on its black. */
+    [CTR_CENTRED_TRADE] = {0},
 };
 
 int CtrPokenavList_Bg(void);
@@ -3526,6 +3687,14 @@ static bool sLayerFailLogged;
  */
 static bool sStageWithoutPlanes;
 static bool sPlaneShrinkAsked;
+/* The overworld's ask for VRAM (CtrVideo_RequestPlaneRelease), for the frame
+ * being prepared: the battle's surfaces, the voxel world's stereo surface,
+ * the layer textures and the OBJ window of a screen that is gone give theirs
+ * back too (LayersPrepare, ScenePrepare, SlotsPrepare, StereoSurfaceManage,
+ * ObjWindowPrepare). Held after a battle in 3D, or back from the Fly map or
+ * a menu, they kept the field's atlas out, and the field was drawn in 2D
+ * until they went idle (LAYER_IDLE_FRAMES, three seconds). */
+static bool sVramAsked;
 static bool sBandsReady;
 void CtrVideo_RequestPlaneRelease(void);
 static bool ReleaseIdleSurfaces(void);
@@ -3564,6 +3733,7 @@ static unsigned LineBackgrounds(void)
 {
     unsigned found = 0, text = TextBackgrounds();
 
+    if (sCentredScreen == CTR_CENTRED_POKEDEX_CAUGHT) return 0;
     for (unsigned bg = 0; bg < 4; ++bg)
         if ((text & (1u << bg)) && (sLineMask & (3u << (bg * 2)))) found |= 1u << bg;
     return found;
@@ -3581,6 +3751,24 @@ static void LayerRelease(unsigned bg)
 static void LayersRelease(void)
 {
     for (unsigned bg = 0; bg < 4; ++bg) LayerRelease(bg);
+}
+
+/* The backgrounds the last LayersPrepare drew from a texture. */
+static unsigned sLayersWanted;
+
+/* The layer textures of a screen that is not up any more (the bag's, the
+ * Fly map's), before they go idle: outside the frame, as LayerRelease. */
+static bool ReleaseIdleLayers(void)
+{
+    bool any = false;
+
+    for (unsigned bg = 0; bg < 4; ++bg)
+        if (!(sLayersWanted & (1u << bg)) && sLayers[bg].tex.data)
+        {
+            LayerRelease(bg);
+            any = true;
+        }
+    return any;
 }
 
 /*
@@ -3611,6 +3799,8 @@ static void LayersPrepare(void)
     unsigned want = LineBackgrounds()
                   | (sStage || sFieldLayers || centred || LineWindows() ? TextBackgrounds() : 0);
 
+    sLayersWanted = want;
+
     /* The wanted ones of the wrong size go first, so what they held is
      * free for any of this frame's new ones. */
     for (unsigned bg = 0; bg < 4; ++bg)
@@ -3631,13 +3821,13 @@ static void LayersPrepare(void)
         sLayerReady[bg] = false;
         if (!(want & (1u << bg)))
         {
-            if (layer->tex.data && sStats.frames - layer->usedFrame > LAYER_IDLE_FRAMES)
+            if (layer->tex.data && (sVramAsked || sStats.frames - layer->usedFrame > LAYER_IDLE_FRAMES))
                 LayerRelease(bg);
             continue;
         }
         if (!layer->tex.data)
         {
-            if (sLayerFail[bg] && sStats.frames - sLayerFail[bg] < LAYER_RETRY_FRAMES) continue;
+            if (sLayerFail[bg] && (int32_t)(sStats.frames - sLayerFail[bg]) < (int32_t)LAYER_RETRY_FRAMES) continue;
             if (!LayerCreate(bg, width, height))
             {
                 /*
@@ -3817,7 +4007,8 @@ static bool FastCells(unsigned bg, const uint16_t *cells, unsigned count, const 
     for (unsigned i = 0, t = 0, e = tiles; i < count; ++i)
     {
         unsigned cell = cells[i], entry = cellEntry[cell];
-        int x = (int)(cell % columns) * 8, y = (int)(cell / columns) * 8;
+        /* columns is 32 or 64: no library division per cell (no divider on the ARM11) */
+        int x = (int)(cell & (columns - 1)) * 8, y = (int)(cell >> __builtin_ctz(columns)) * 8;
 
         if (cellSlot[cell] >= 0)
             FastQuad(sFastVertices + (first + t++) * 4, x, y, cellSlot[cell], entry & 1024, entry & 2048);
@@ -3993,7 +4184,7 @@ static bool LayerRenderCells(unsigned bg)
         C3D_AlphaTest(false, GPU_ALWAYS, 0);
         C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
         for (unsigned i = 0; i < count; ++i)
-            C2D_DrawRectSolid((dirty[i] % columns) * 8, (dirty[i] / columns) * 8, 0, 8, 8, 0);
+            C2D_DrawRectSolid((dirty[i] & (columns - 1)) * 8, (dirty[i] >> __builtin_ctz(columns)) * 8, 0, 8, 8, 0);
         C2D_Flush();
         BlendForget();
     }
@@ -4003,10 +4194,15 @@ static bool LayerRenderCells(unsigned bg)
         unsigned cell = dirty[i];
 
         if (cellSlot[cell] >= 0)
-            DrawSlot(cellSlot[cell], (cell % columns) * 8, (cell / columns) * 8,
+            DrawSlot(cellSlot[cell], (cell & (columns - 1)) * 8, (cell >> __builtin_ctz(columns)) * 8,
                      cellEntry[cell] & 1024, cellEntry[cell] & 2048);
     }
     C2D_Flush();
+    /* DrawSlot drops quads past the geometry budget, and their cells already
+     * hold their new signatures: draw the whole layer again next frame, or
+     * they stay holes until their tiles change. */
+    if (sStats.tiles >= MAX_DRAWS - 32)
+        layer->valid = false;
     sInLayerTexture = false;
     BlendForget();
     return true;
@@ -4664,6 +4860,37 @@ static bool DrawLineBg(unsigned bg)
 
 static void DrawAffineBg(unsigned bg)
 {
+    /*
+     * The Berry Blender's bowl turns on an affine layer that wraps round: in
+     * the margins, where centred screens carry their affine maps on (below),
+     * copies of the bowl went round the screen's edges. Kept to the picture.
+     */
+    if (sCentred && sCentredScreen == CTR_CENTRED_BLENDER
+     && (sClipX0 < 0 || sClipY0 < 0 || sClipX1 > 240 || sClipY1 > 160))
+    {
+        int clipX0 = sClipX0, clipY0 = sClipY0, clipX1 = sClipX1, clipY1 = sClipY1;
+        bool scissored = sScissored;
+
+        if (sClipX0 < 0) sClipX0 = 0;
+        if (sClipY0 < 0) sClipY0 = 0;
+        if (sClipX1 > 240) sClipX1 = 240;
+        if (sClipY1 > 160) sClipY1 = 160;
+        if (sClipX0 < sClipX1 && sClipY0 < sClipY1)
+        {
+            C2D_Flush();
+            sScissored = true;
+            Scissor(sClipX0, sClipY0, sClipX1, sClipY1);
+            DrawAffineBg(bg);
+            C2D_Flush();
+        }
+        sClipX0 = clipX0;
+        sClipY0 = clipY0;
+        sClipX1 = clipX1;
+        sClipY1 = clipY1;
+        sScissored = scissored;
+        RestoreScissor();
+        return;
+    }
     unsigned control = Reg(8 + bg * 2), base = bg == 2 ? 0x20 : 0x30;
     float a = (int16_t)Reg(base) / 256.0f, b = (int16_t)Reg(base + 2) / 256.0f;
     float c = (int16_t)Reg(base + 4) / 256.0f, d = (int16_t)Reg(base + 6) / 256.0f;
@@ -4718,7 +4945,7 @@ static void DrawAffineBg(unsigned bg)
         {
             if (!wrap && ((unsigned)x >= tiles || (unsigned)y >= tiles)) continue;
             unsigned entry = map + ((unsigned)y & mask) * tiles + ((unsigned)x & mask);
-            if (entry >= 0x10000) { Error(0, "affine map outside BG VRAM"); continue; }
+            if (entry >= 0x10000) { Error(7, "affine map outside BG VRAM"); continue; }
             DrawTile(chars + sMemory.vram[entry] * 64, 0, true, x * 8, y * 8, false, false);
         }
     ViewBase();
@@ -4791,7 +5018,7 @@ static void PlaceScreenObject(int i, unsigned boxW, unsigned boxH, bool voxel, i
  * care which sprite it starts from, so any wrap of x or y is harmless here.
  * The 64 tiles are looked up once and drawn at every place.
  */
-static void DrawFogLattice(unsigned attr2, unsigned width, unsigned height, bool color256,
+static void DrawFogLattice(unsigned attr2, unsigned bank, unsigned width, unsigned height, bool color256,
                            int x, int y, bool flipX, bool flipY)
 {
     int slots[8 * 8];
@@ -4805,7 +5032,7 @@ static void DrawFogLattice(unsigned attr2, unsigned width, unsigned height, bool
             unsigned sx = flipX ? columns - 1 - tx : tx;
             unsigned sy = flipY ? rows - 1 - ty : ty;
             unsigned tile = CtrVideo_ObjTile(attr2 & 1023, sx, sy, width, color256, Reg(0) & 0x40);
-            slots[ty * columns + tx] = GetTileSlot(0x10000 + tile * 32, 16 + (attr2 >> 12), color256);
+            slots[ty * columns + tx] = GetTileSlot(0x10000 + tile * 32, bank, color256);
         }
     if (x0 > sClipX0) x0 -= (int)width * ((x0 - sClipX0 + (int)width - 1) / (int)width);
     if (y0 > sClipY0) y0 -= (int)height * ((y0 - sClipY0 + (int)height - 1) / (int)height);
@@ -4895,8 +5122,9 @@ static bool SpriteBatchRoom(unsigned tiles)
  * One sprite, already placed: its tiles batched when they can be, drawn one by
  * one otherwise (an affine sprite, a fractional position, a full batch).
  */
-static void DrawObjectAt(int x, int y, unsigned attr1, unsigned attr2, unsigned width, unsigned height,
-                         unsigned boxW, unsigned boxH, bool affine, bool color256, bool effects, unsigned mode)
+static void DrawObjectAt(int x, int y, unsigned attr1, unsigned attr2, unsigned bank, unsigned width,
+                         unsigned height, unsigned boxW, unsigned boxH, bool affine, bool color256, bool effects,
+                         unsigned mode)
 {
     if (x >= sClipX1 || x + (int)boxW <= sClipX0
      || y >= sClipY1 || y + (int)boxH <= sClipY0) return;
@@ -4904,7 +5132,7 @@ static void DrawObjectAt(int x, int y, unsigned attr1, unsigned attr2, unsigned 
     {
         /* A new blend state ends the batch: Blend changes the GPU state. */
         static unsigned batchKey = ~0u;
-        unsigned key = (effects ? 1u : 0u) | (mode == 1 ? 2u : 0u);
+        unsigned key = (effects ? 1u : 0u) | (mode == 1 ? 2u : 0u) | (sDayNightObject ? 4u : 0u);
         float shiftX = x + CTR_VIEW_X + sLayerShift;
         int whole = (int)shiftX;
 
@@ -4926,7 +5154,7 @@ static void DrawObjectAt(int x, int y, unsigned attr1, unsigned attr2, unsigned 
                     unsigned sx = flipX ? width / 8 - 1 - tx : tx;
                     unsigned sy = flipY ? height / 8 - 1 - ty : ty;
                     unsigned tile = CtrVideo_ObjTile(attr2 & 1023, sx, sy, width, color256, Reg(0) & 0x40);
-                    int slot = GetTileSlot(0x10000 + tile * 32, 16 + (attr2 >> 12), color256);
+                    int slot = GetTileSlot(0x10000 + tile * 32, bank, color256);
 
                     if (slot < 0) continue;
                     ++sStats.tiles;
@@ -4964,7 +5192,7 @@ static void DrawObjectAt(int x, int y, unsigned attr1, unsigned attr2, unsigned 
             unsigned sx = flipX ? width / 8 - 1 - tx : tx;
             unsigned sy = flipY ? height / 8 - 1 - ty : ty;
             unsigned tile = CtrVideo_ObjTile(attr2 & 1023, sx, sy, width, color256, Reg(0) & 0x40);
-            DrawTile(0x10000 + tile * 32, 16 + (attr2 >> 12), color256,
+            DrawTile(0x10000 + tile * 32, bank, color256,
                      (affine ? 0 : x + CTR_VIEW_X + sLayerShift) + (int)tx * 8,
                      (affine ? 0 : y + CTR_VIEW_Y) + (int)ty * 8, flipX, flipY);
         }
@@ -5004,6 +5232,7 @@ static void DrawObjects(unsigned priority, bool effects)
         if (sObjFilter != OBJ_ALL && TransitionOam((unsigned)i) != (sObjFilter == OBJ_TRANSITION))
             continue;
         if (sObjMaskOn && !(sObjMask[i >> 5] & (1u << (i & 31)))) continue;
+        if (i == WIRELESS_INDICATOR_OAM && !sObjIndicatorPass && WirelessIndicatorApart()) continue;
         const uint16_t *obj = sMemory.oam + i * 4;
         unsigned attr0 = obj[0], attr1 = obj[1], attr2 = obj[2];
         bool affine = (attr0 & 0x100) != 0, color256 = (attr0 & 0x2000) != 0;
@@ -5068,6 +5297,13 @@ static void DrawObjects(unsigned priority, bool effects)
         /* Below the PokeNav's picture is its background, not the space the
          * GBA parks its unused sprites in. */
         if (sCentredScreen == CTR_CENTRED_POKENAV && y >= 160) continue;
+        bool nightObject = !sStage && !sCentred && !sBattle
+                        && CtrDayNight_Get()->daylight != 1.0f
+                        && (sScreenOam[i >> 5] & (1u << (i & 31))) == 0;
+
+        if (sDayNightObject != nightObject)
+            SpriteBatchFlush();
+        sDayNightObject = nightObject;
         if (sNavBand && NavObjectBand(attr2 & 1023, y) != sNavBand) continue;
         /*
          * Any one of the fog's sprites gives the lattice its phase, on the
@@ -5080,7 +5316,7 @@ static void DrawObjects(unsigned priority, bool effects)
             SpriteBatchFlush();
             Blend(4, effects, mode == 1);
             ViewBase();
-            DrawFogLattice(attr2, width, height, color256, x, y,
+            DrawFogLattice(attr2, ObjBank((unsigned)i, attr2), width, height, color256, x, y,
                            (attr1 & 0x1000) != 0, (attr1 & 0x2000) != 0);
             if (fog) fogDrawn = true;
             else latticeDrawn = true;
@@ -5099,11 +5335,12 @@ static void DrawObjects(unsigned priority, bool effects)
             while (top + (int)boxH > sClipY0) top -= 160;
             for (int cy = top; cy < sClipY1; cy += 160)
                 for (int cx = left; cx < sClipX1; cx += 240)
-                    DrawObjectAt(cx, cy, attr1, attr2, width, height, boxW, boxH, false, color256, effects,
-                                 mode);
+                    DrawObjectAt(cx, cy, attr1, attr2, ObjBank((unsigned)i, attr2), width, height, boxW, boxH,
+                                 false, color256, effects, mode);
             continue;
         }
-        DrawObjectAt(x, y, attr1, attr2, width, height, boxW, boxH, affine, color256, effects, mode);
+        DrawObjectAt(x, y, attr1, attr2, ObjBank((unsigned)i, attr2), width, height, boxW, boxH, affine, color256,
+                     effects, mode);
     }
     SpriteBatchFlush();
     sLayerShift = layerShift;
@@ -5591,10 +5828,19 @@ static unsigned sTransitionLayers;
  * pattern at priority 0 is; a window taking layers away is not reproduced.
  */
 #define OBJWIN_SIZE 128
+/* The link battle's VS letters, two 64x64 sprites at double size moving
+ * apart, are a window wider than that (they were cut off): 256 KB of VRAM
+ * then, for the second they last. */
+#define OBJWIN_SIZE_LARGE 256
 static C3D_Tex sObjWinTex;
 static C3D_RenderTarget *sObjWinTarget;
 static bool sObjWinWanted, sObjWinFailed;
 static uint32_t sObjWinUsedFrame, sObjWinFailFrame;
+/* The side the window's box needed last frame, and when a surface that
+ * large could not be made. */
+static int sObjWinNeed;
+static uint32_t sObjWinLargeFailFrame;
+static bool sObjWinLargeFailed;
 /* This frame's: its box in GBA pixels and the layers it adds. */
 static struct { bool ready; int x0, y0, x1, y1; unsigned layers; } sObjWin;
 /*
@@ -5622,16 +5868,24 @@ static void ObjWindowRelease(void)
 static void ObjWindowPrepare(void)
 {
     bool wanted = sObjWinWanted;
+    bool large = sObjWinNeed > OBJWIN_SIZE
+              && !(sObjWinLargeFailed && sStats.frames - sObjWinLargeFailFrame < LAYER_RETRY_FRAMES);
 
     sObjWinWanted = false;
+    if (!wanted) sObjWinNeed = 0;
     if (wanted) sObjWinUsedFrame = sStats.frames;
-    else if (sObjWinTarget && (sTransitionRequested || sStats.frames - sObjWinUsedFrame > LAYER_IDLE_FRAMES))
+    else if (sObjWinTarget && (sTransitionRequested || sVramAsked
+                               || sStats.frames - sObjWinUsedFrame > LAYER_IDLE_FRAMES))
+        ObjWindowRelease();
+    /* Too small for the window now on screen: made again, larger. */
+    if (wanted && sObjWinTarget && large && sObjWinTex.width < OBJWIN_SIZE_LARGE)
         ObjWindowRelease();
     if (!wanted || sObjWinTarget || (sObjWinFailed && sStats.frames - sObjWinFailFrame < LAYER_RETRY_FRAMES))
         return;
     /* RGBA8: the mask's count needs more than one bit of alpha. 64 KB of
      * VRAM; a Pokemon's 64x64 fits the half size too. */
-    for (unsigned size = OBJWIN_SIZE; size >= OBJWIN_SIZE / 2 && !sObjWinTarget; size /= 2)
+    for (unsigned size = large ? OBJWIN_SIZE_LARGE : OBJWIN_SIZE; size >= OBJWIN_SIZE / 2 && !sObjWinTarget;
+         size /= 2)
     {
         if (C3D_TexInitVRAM(&sObjWinTex, size, size, GPU_RGBA8)
             && (sObjWinTarget = C3D_RenderTargetCreateFromTex(&sObjWinTex, GPU_TEXFACE_2D, 0, -1)))
@@ -5639,6 +5893,13 @@ static void ObjWindowPrepare(void)
         ObjWindowRelease();
     }
     sObjWinFailed = sObjWinTarget == NULL;
+    if (large && (!sObjWinTarget || sObjWinTex.width < OBJWIN_SIZE_LARGE))
+    {
+        sObjWinLargeFailed = true;
+        sObjWinLargeFailFrame = sStats.frames;
+    }
+    else if (large)
+        sObjWinLargeFailed = false;
     if (sObjWinTarget)
     {
         /* Drawn at the scene's whole-number zoom: every texel a block. */
@@ -5702,8 +5963,16 @@ static void ObjWindowCompose(void)
     if (!sBattle && !sStage) return;
     if ((display & 0x9000) != 0x9000 || (display & 7) > 2 || !layers) return;
     if (!ObjWindowBounds(&x0, &y0, &x1, &y1)) return;
+    /* Only what can be on screen: the VS letters end sliding off it as they
+     * grow, a box far wider than any surface. */
+    if (x0 < VIEW_LEFT) x0 = VIEW_LEFT;
+    if (y0 < VIEW_TOP) y0 = VIEW_TOP;
+    if (x1 > VIEW_RIGHT) x1 = VIEW_RIGHT;
+    if (y1 > VIEW_BOTTOM) y1 = VIEW_BOTTOM;
+    if (x0 >= x1 || y0 >= y1) return;
     if (out & 31 & ~in) Error(12, "OBJ window hiding layers not supported");
     sObjWinWanted = true;
+    sObjWinNeed = x1 - x0 > y1 - y0 ? x1 - x0 : y1 - y0;
     if (!sObjWinTarget) return;
     size = (int)sObjWinTex.width;
     if (x1 - x0 > size || y1 - y0 > size)
@@ -5985,7 +6254,7 @@ bool CtrVideo_Init(void)
         sMortonPair[i / 2] = sMorton[i] / 2;
         if ((sMorton[i] & 1) || sMorton[i + 1] != sMorton[i] + 1) sMortonPairs = false;
     }
-    for (unsigned i = 0; i < 512; ++i)
+    for (unsigned i = 0; i < sizeof(sPalette) / sizeof(sPalette[0]); ++i)
         sTexturePalette[i] = CtrVideo_RGBA5551(sPalette[i]);
     C2D_Prepare();
     Flat2D();
@@ -6031,12 +6300,8 @@ void CtrVideo_Bind(CtrVideoMemory memory)
  * directly, and the allocation is tried again later.
  */
 static bool sSceneCached;
-/* The overworld's ask for VRAM (CtrVideo_RequestPlaneRelease), for the frame
- * being prepared: the battle's surfaces and the voxel world's stereo surface
- * give theirs back too (ScenePrepare, SlotsPrepare, StereoSurfaceManage).
- * Held after a battle in 3D they kept the field's atlas out, and the field
- * was drawn in 2D until they went idle. */
-static bool sVramAsked;
+/* A battle without its scene surface has no 3D: tried again soon. */
+#define SCENE_RETRY_FRAMES 60u
 
 static void SceneRelease(void)
 {
@@ -6055,20 +6320,34 @@ static void ScenePrepare(void)
         return;
     }
     sSceneUsedFrame = sStats.frames;
-    if (sScene || (sSceneFailed && sStats.frames - sSceneFailFrame < LAYER_RETRY_FRAMES)) return;
-    for (unsigned attempt = 0; attempt < 2 && !sScene; ++attempt)
+    if (sScene || (sSceneFailed && sStats.frames - sSceneFailFrame < SCENE_RETRY_FRAMES)) return;
+    for (unsigned attempt = 0; attempt < 3 && !sScene; ++attempt)
     {
+        bool freed = false;
+
         if (C3D_TexInitVRAM(&sSceneTex, SCENE_W, SCENE_H, GPU_RGBA5551)
             && (sScene = C3D_RenderTargetCreateFromTex(&sSceneTex, GPU_TEXFACE_2D, 0, -1)))
             break;
         SceneRelease();
-        /* The overworld's atlases of other maps are what a 2D screen gets
-         * back first, as for the depth planes (BandsReady). */
+        /*
+         * Back from the bag or the party (a centred screen), what it held is
+         * not idle yet: its layer textures, its depth planes, the bottom
+         * surface. Kept, they left no 512 KiB gap, the battle had no scene
+         * surface and so no 3D until the retry - the turn was over by then
+         * (port.log, 2026-10-15: 187 frames with the slider up, none in 3D).
+         * Then the overworld's atlases of other maps, as for the depth planes.
+         */
+        if (attempt == 0)
+        {
+            freed = ReleaseIdleLayers();
+            freed = ReleaseIdleSurfaces() || freed;
+        }
 #if CTR_VOXEL_ENABLED
-        if (attempt == 0 && CtrVoxel_ReleaseIdleVram() == 0) break;
-#else
-        break;
+        if (!freed && attempt < 2)
+            freed = CtrVoxel_ReleaseIdleVram() > 0;
 #endif
+        if (!freed)
+            break;
     }
     if (!sScene)
     {
@@ -6542,6 +6821,12 @@ static void SceneRows(C3D_Tex *tex, float u0, float u1, float row, float rows, f
 
 static void ScenePlaceFrom(C3D_RenderTarget *target, float shift, C3D_Tex *tex, int column, bool sky)
 {
+    /* No scenery to carry on above or below: the VS screen's boxes, composed
+     * down to the picture's end (BattleSceneBottom); the lines above them are
+     * composed apart (BattleSkyCompose). Repeated, their top edges came out
+     * again as stripes. */
+    if (BattleSceneBottom() != BATTLE_SCENE_BOX_BOTTOM)
+        sky = false;
     float ox = sScenePut.ox + shift, oy = sScenePut.oy, scale = sScenePut.scale;
     int width = sScenePut.width, height = sScenePut.height;
     float u0 = column / (float)tex->width, u1 = (column + width) / (float)tex->width;
@@ -6612,6 +6897,52 @@ static void BattleScenePlace(C3D_RenderTarget *target, float shift)
  */
 static void Compose(void);
 
+/* Whether this frame's battle draws the wireless indicator apart: in a
+ * session, while the adapter's sprite is on screen. */
+static bool WirelessIndicatorApart(void)
+{
+    static uint32_t frame = ~0u;
+    static bool apart;
+
+    if (frame != sStats.frames)
+    {
+        unsigned attr0 = sMemory.oam[WIRELESS_INDICATOR_OAM * 4];
+
+        frame = sStats.frames;
+        apart = sBattle && (attr0 & 0x300) != 0x200 && LocalLink_InSession();
+    }
+    return apart && sIndicatorApartHere;
+}
+
+/* The wireless indicator over the battle, at the frame's own view. */
+static void BattleIndicatorCompose(void)
+{
+    int clipX0 = sClipX0, clipY0 = sClipY0, clipX1 = sClipX1, clipY1 = sClipY1;
+    uint32_t mask[4];
+    bool maskOn = sObjMaskOn;
+
+    if (!WirelessIndicatorApart() || (Reg(0) & 128) || !(Reg(0) & 0x1000)) return;
+    memcpy(mask, sObjMask, sizeof(mask));
+    memset(sObjMask, 0, sizeof(sObjMask));
+    sObjMask[WIRELESS_INDICATOR_OAM >> 5] = 1u << (WIRELESS_INDICATOR_OAM & 31);
+    sObjMaskOn = true;
+    sObjIndicatorPass = true;
+    ClipToView();
+    C2D_Flush();
+    BlendForget();
+    for (int priority = 3; priority >= 0; --priority)
+        DrawObjects((unsigned)priority, false);
+    C2D_Flush();
+    BlendForget();
+    sObjIndicatorPass = false;
+    sObjMaskOn = maskOn;
+    memcpy(sObjMask, mask, sizeof(mask));
+    sClipX0 = clipX0;
+    sClipY0 = clipY0;
+    sClipX1 = clipX1;
+    sClipY1 = clipY1;
+}
+
 static void BattleSkyCompose(bool sprites)
 {
     int clipX0 = sClipX0, clipY0 = sClipY0, clipX1 = sClipX1, clipY1 = sClipY1;
@@ -6636,6 +6967,27 @@ static void BattleSkyCompose(bool sprites)
     sScissored = scissored;
     RestoreScissor();
     BlendForget();
+}
+
+/*
+ * Where the battle scene is composed down to. With the text box hidden - a
+ * link battle's VS screen, its windows showing only the players' boxes - the
+ * whole picture: carried down from the box's top, the boxes' sides ran on to
+ * the screen's bottom edge and their own bottom edge was never drawn.
+ */
+static int BattleSceneBottom(void)
+{
+    unsigned display = Reg(0), in = Reg(0x48), out = Reg(0x4a);
+    bool shown;
+
+    if (!(display & 0x100))
+        shown = false;
+    else if (!(display & 0xE000))
+        shown = true;
+    else
+        shown = ((display & 0x2000) && (in & 1)) || ((display & 0x4000) && (in & 0x100)) || (out & 1)
+             || ((display & 0x8000) && (out & 0x100));
+    return shown ? BATTLE_SCENE_BOX_BOTTOM : 160;
 }
 
 /*
@@ -6729,7 +7081,8 @@ bool CtrVideo_BottomInUse(void) { return sBottomInUse; }
 static bool BottomWhole(unsigned screen)
 {
     return screen == CTR_CENTRED_STORAGE || screen == CTR_CENTRED_SUMMARY || screen == CTR_CENTRED_BAG_WHOLE
-        || screen == CTR_CENTRED_PARTY_WHOLE || screen == CTR_CENTRED_SHOP;
+        || screen == CTR_CENTRED_PARTY_WHOLE || screen == CTR_CENTRED_SHOP || screen == CTR_CENTRED_TRADE_MENU
+        || screen == CTR_CENTRED_TRADE || screen == CTR_CENTRED_POKEDEX_CAUGHT;
 }
 
 /* The screens drawn on the bottom screen at all. */
@@ -6865,7 +7218,7 @@ static bool BallTexture(void)
     uint16_t *data;
 
     if (sBallTex.data) return true;
-    if (!mask || (sBallFailFrame && sStats.frames - sBallFailFrame < BALL_RETRY_FRAMES)) return false;
+    if (!mask || (sBallFailFrame && (int32_t)(sStats.frames - sBallFailFrame) < BALL_RETRY_FRAMES)) return false;
     if (!C3D_TexInit(&sBallTex, size, size, GPU_RGBA5551))
     {
         memset(&sBallTex, 0, sizeof(sBallTex));
@@ -6973,11 +7326,14 @@ static void RenderEye(C3D_RenderTarget *target, uint32_t clear, float parallax)
     sLayerShift = 0;
     BlendForget();
     ColourClear(sLogical, clear);
+    sIndicatorApartHere = scene;
     if (scene) RenderBattleScene(clear);
     C2D_SceneBegin(sLogical);
     Blend(5, false, false);
     StageUnderlay();
     if (scene) BattleSkyCompose(true);
+    if (scene) BattleIndicatorCompose();
+    sIndicatorApartHere = false;
     if (scene) HudDrawCrisp(HUD_SPRITE_DEPTH);
     /* After a scene composed on its own, only the text box is left. */
     if (scene) sLayerExclude = 63 & ~(1u | 32u | BattleBoxLayers());
@@ -8137,12 +8493,23 @@ static void StereoSurfaceManage(void)
         static const GPU_TEXCOLOR formats[] = {GPU_RGBA8, GPU_RGB565};
         unsigned made = 0;
 
-        for (; made < 2; ++made)
+        for (unsigned round = 0; round < 2 && !sStereoTarget; ++round)
         {
-            if (C3D_TexInitVRAM(&sStereoTex, 512, 256, formats[made])
-                && (sStereoTarget = C3D_RenderTargetCreateFromTex(&sStereoTex, GPU_TEXFACE_2D, 0, -1)))
-                break;
-            StereoSurfaceRelease();
+            for (made = 0; made < 2; ++made)
+            {
+                if (C3D_TexInitVRAM(&sStereoTex, 512, 256, formats[made])
+                    && (sStereoTarget = C3D_RenderTargetCreateFromTex(&sStereoTex, GPU_TEXFACE_2D, 0, -1)))
+                    break;
+                StereoSurfaceRelease();
+            }
+            /* As the scene surface: what a screen left behind goes first. */
+            if (!sStereoTarget && round == 0)
+            {
+                bool freed = ReleaseIdleLayers();
+
+                if (!(ReleaseIdleSurfaces() || freed))
+                    break;
+            }
         }
         if (sStereoTarget)
         {
@@ -9217,7 +9584,7 @@ static bool ReleaseIdleSurfaces(void)
         any = true;
     }
     if (any)
-        CtrLog_Write(CTR_LOG_VIDEO, "VRAM short for a layer: idle 3D planes / bottom surface released "
+        CtrLog_Write(CTR_LOG_VIDEO, "VRAM short: idle 3D planes / bottom surface released "
                      "(VRAM free=%lu)", (unsigned long)vramSpaceFree());
     return any;
 }
@@ -9550,6 +9917,8 @@ static const char *const sFpsGlyphs[] =
     "111101111100100", /* P */
     "001001010100100", /* / */
 };
+#endif
+
 /* Game frames a second, hidden ones included (CtrPlatform_FrameCount): the
  * game's speed, beside the pictures a second the counter always showed.
  * With real-time pacing (3ds_platform.c) the two differ on a slow frame. */
@@ -9570,6 +9939,39 @@ static unsigned PoisonVeil(void)
     return size > 10 ? 150 : size * 15;
 }
 
+/*
+ * The HOME button refused in a local wireless session (3ds_platform.c): the
+ * system draws nothing, so the game shows it was pressed - a house crossed
+ * out, in the top screen's top right corner, for a second and a half.
+ */
+static uint32_t sNoHomeUntil;
+
+void CtrVideo_ShowNoHome(void)
+{
+    sNoHomeUntil = sStats.frames + 90;
+}
+
+static void DrawNoHome(C3D_RenderTarget *target)
+{
+    const float x = CTR_GAME_WIDTH - 34, y = 6, w = 28;
+    const u32 white = C2D_Color32(255, 255, 255, 255), red = C2D_Color32(230, 40, 40, 255);
+
+    C2D_Prepare();
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+    BlendForget();
+    C2D_SceneBegin(target);
+    C2D_ViewReset();
+    Blend(5, false, false);
+    C2D_DrawCircleSolid(x + w / 2, y + w / 2, 0, w / 2, C2D_Color32(0, 0, 0, 170));
+    /* The house: its roof and its walls, a door cut out of them. */
+    C2D_DrawTriangle(x + 6, y + 14, white, x + 14, y + 6, white, x + 22, y + 14, white, 0);
+    C2D_DrawRectSolid(x + 8, y + 14, 0, 12, 8, white);
+    C2D_DrawRectSolid(x + 12, y + 17, 0, 4, 5, C2D_Color32(0, 0, 0, 255));
+    /* Crossed out. */
+    C2D_DrawLine(x + 6, y + 6, red, x + 22, y + 22, red, 3, 0);
+    C2D_Flush();
+}
+
 static void DrawPoisonVeil(C3D_RenderTarget *target, unsigned alpha)
 {
     C2D_Prepare();
@@ -9581,6 +9983,7 @@ static void DrawPoisonVeil(C3D_RenderTarget *target, unsigned alpha)
     C2D_DrawRectSolid(0, 0, 0, CTR_GAME_WIDTH, CTR_GAME_HEIGHT, C2D_Color32(150, 60, 200, alpha));
 }
 
+#if CTR_SHOW_FPS
 static void DrawFps(C3D_RenderTarget *target)
 {
     unsigned fps = (unsigned)(sStats.fps + 0.5f), game = (unsigned)(sGameFps + 0.5f);
@@ -9805,9 +10208,12 @@ void CtrVideo_Present(void)
     LayersPrepare();
     ScenePrepare();
     SlotsPrepare();
-    sVramAsked = false;
     ObjWindowPrepare();
+    sVramAsked = false;
     uint64_t waitStart = svcGetSystemTick();
+#if CTR_VOXEL_ENABLED
+    CtrVoxel_NoteFrameWait(waitStart);
+#endif
     if (!C3D_FrameBegin(C3D_FRAME_SYNCDRAW)) return;
     sUploadCommands = 0;
     sRenderReserve = sBattle ? 28u : 24u;
@@ -9944,7 +10350,7 @@ void CtrVideo_Present(void)
     sStats.display = Reg(0);
     if (sUsed > CACHE_COUNT - 4096) { memset(sHash, 0, sizeof(sHash)); sUsed = 0; ++sCacheGeneration; }
     PORT_PROF_BEGIN(palette);
-    TrackVram();
+    CtrDayNight_Update();
     UpdatePalette();
     KeySectionColours();
     PORT_PROF_END(palette, PORT_PROF_PALETTE);
@@ -10172,6 +10578,11 @@ void CtrVideo_Present(void)
         RenderEye(sTop, clear, sStats.stereo);
         RenderEye(sTopRight, clear, -(float)sStats.stereo);
     }
+    if (sStats.frames < sNoHomeUntil && !bottom)
+    {
+        DrawNoHome(sTop);
+        if (stereo) DrawNoHome(sTopRight);
+    }
     if (field && !bottom && !blank && CtrGame_FieldPoison() && PoisonVeil() != 0)
     {
         DrawPoisonVeil(sTop, PoisonVeil());
@@ -10241,6 +10652,8 @@ void CtrVideo_Present(void)
      * the time the CPU would otherwise wait for the VBlank. */
     if (overworld || battleUpdated)
         CtrVoxel_AfterSubmit(start);
+    else
+        CtrVoxel_Idle();
 #endif
     uint64_t now = CtrPlatform_Milliseconds();
     if (now - sFpsStart >= 1000)

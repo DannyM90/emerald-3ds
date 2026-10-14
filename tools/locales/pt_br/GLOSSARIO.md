@@ -248,7 +248,7 @@ diria (“É super efetivo!”, “Não é muito efetivo…”, “Acerto críti
 “Não dá pra fugir!”, “Manda ver, {B_BUFF1}!”).
 
 - O POKéMON do oponente: “ZIGZAGOON selvagem”, “POLIWAG inimigo” (sufixo,
-  patch 0050). Os POKéMON são tratados no masculino (o POKéMON).
+  patch 0058). Os POKéMON são tratados no masculino (o POKéMON).
 - O lado de cada um: “a equipe aliada” / “a equipe inimiga”.
 - Posse: “ATAQUE de MUDKIP”, “INTIMIDAÇÃO de GYARADOS” (a coisa antes do dono).
 - Atributos nas mensagens: PS, ATAQUE, DEFESA, VELOC., AT. ESP., DEF. ESP.,
@@ -261,12 +261,12 @@ diria (“É super efetivo!”, “Não é muito efetivo…”, “Acerto críti
 
 Os tipos têm os nomes oficiais inteiros (NORMAL, LUTADOR, VOADOR, VENENOSO,
 TERRESTRE, PEDRA, INSETO, FANTASMA, AÇO, FOGO, ÁGUA, PLANTA, ELÉTRICO,
-PSÍQUICO, GELO, DRAGÃO, SOMBRIO). O patch 0052 dá 9 bytes a eles; na janela
+PSÍQUICO, GELO, DRAGÃO, SOMBRIO). O patch 0060 dá 9 bytes a eles; na janela
 de golpes da batalha o “TIPO/” sai para o nome caber, e na busca da POKéDEX
 um nome largo (TERRESTRE) usa a fonte estreita.
 
 As categorias da POKéDEX vêm dos gêneros da cópia do HoennKantoWiki, em até
-11 bytes, com “POKéMON” antes (patch 0051). Quando o nome não cabe, a
+11 bytes, com “POKéMON” antes (patch 0059). Quando o nome não cabe, a
 palavra portuguesa mais próxima: MIRMELEÃO (antlion), ERMITÃO, TATURANA,
 BANANEIRA (handstand), OTÁRIA (sea lion), GUAXININHO, TOURO BRAVO.
 

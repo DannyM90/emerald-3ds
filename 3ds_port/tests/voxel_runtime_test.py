@@ -63,16 +63,17 @@ static BuildRequest sRequests[VOXEL_REQUESTS_MAX];
 static uint8_t sWaitHead[128], sWaitNext[VOXEL_REQUESTS_MAX];
 #define VOXEL_DRAFT_STARVE_FRAMES 90u
 static unsigned sRequestCount, sFrame, starts;
-enum { JOB_GROUND, JOB_TREES, JOB_MODELS, JOB_BORDER, JOB_BORDER_TREES, JOB_SORT, JOB_PACK, JOB_DONE };
+enum { JOB_GROUND, JOB_TREES, JOB_MODELS, JOB_BORDER, JOB_BORDER_TREES, JOB_SORT, JOB_PACK, JOB_STATICS, JOB_DONE };
 #define VOXEL_GROUND_SLICE_CELLS 1
 #define VOXEL_MODEL_SLICE_TRIANGLES 64
+#define VOXEL_STATIC_SLICE_TRIANGLES 64
 #define VOXEL_SLICE_CAP_MS 5.0f
 static float sPhaseMs[JOB_DONE + 1];
 static uint32_t sPhaseFrame[JOB_DONE + 1];
 static bool sHolesOnly = true, validJob = true;
 static struct { bool active, forView, hole, overdue; unsigned waitIndex; ChunkSite site;
     int phase, row, col, models; unsigned buildingFirst;
-    unsigned sortPage, sortScan, sortWrite, terrainCount, terrainFirst[5]; } sJob;
+    unsigned sortPage, sortScan, sortWrite, terrainCount, terrainFirst[5], staticIndex; } sJob;
 typedef struct { float u, marker; } VoxelVertex;
 static VoxelVertex sScratch[6000];
 static bool JobValid(void) { return validJob; }
@@ -86,14 +87,28 @@ static void JobStart(const ChunkSite *s, VoxelAtlasSlot *a, uint32_t h, void *c,
 typedef struct { unsigned maxEntries, numEntries; } gxCmdQueue_s;
 static gxCmdQueue_s *sFrameQueue;
 static unsigned sUploadCommands, sRenderReserve;
+static bool sPrefetchBlocked;
 '''
     for signature in ['static unsigned WaitBucket(', 'static unsigned RequestWait(', 'static bool RequestOverdue(', 'static int CompareRequests(', 'static bool StartNextJob(', 'static bool JobSort(', 'static float PhaseCost(', 'static float PhaseCostInFrame(', 'static void NotePhaseCost(']:
         source += function(voxel, signature)
     for signature in ['static C3D_Tex *AtlasTex(', 'static void FreeAtlasTextures(', 'static unsigned CountAllocatedAtlases(', 'static bool AtlasInView(const VoxelAtlasSlot *slot)\n{', 'static bool AllocateAtlasPage(']:
         source += function(voxel, signature)
     source += r'''
-static struct { unsigned count; } sBuilder;
+static struct { unsigned count, staticCount; } sBuilder;
 static bool sHaveBuildings;
+/* Static models: each mesh cached once its slices of conversion are done. */
+typedef struct { unsigned pageModel; bool lit; } VoxelStaticDraw;
+static VoxelStaticDraw sJobStatics[4];
+static struct StaticMesh { unsigned slicesLeft; } meshes[4];
+static unsigned prepares;
+static const struct StaticMesh *StaticMeshFind(unsigned pageModel, bool lit) {
+    (void)lit; return meshes[pageModel].slicesLeft ? NULL : &meshes[pageModel];
+}
+static bool StaticMeshPrepare(unsigned pageModel, bool lit, unsigned triangles) {
+    (void)lit; assert(triangles == VOXEL_STATIC_SLICE_TRIANGLES); ++prepares;
+    if (meshes[pageModel].slicesLeft) --meshes[pageModel].slicesLeft;
+    return meshes[pageModel].slicesLeft == 0;
+}
 static unsigned cells[2][64];
 static void EmitCells(bool trees, int x0, int y0, int x1, int y1) {
     for (int y = y0; y < y1; ++y) for (int x = x0; x < x1; ++x) {
@@ -114,6 +129,8 @@ typedef struct { float gameMs, vblankMs; } CtrTiming;
 static CtrTiming timing;
 static struct { float afterMs, afterBudgetMs; } sStats;
 static bool sReady, sViewReady, sCrossingSoon;
+static uint64_t sAfterEndTick;
+static float sTailMs;
 static unsigned sAheadBackoff, postStarts;
 static float sLastBuildMs, sInFrameBuildMs;
 typedef struct { float cpuMs, gpuMs, gpuStartMs; bool voxelFrame; } CtrVideoStats;
@@ -146,6 +163,7 @@ static unsigned RunJobs(uint64_t a, float holes, float ahead, bool inFrame, bool
 }
 '''
     source += function(voxel, 'static float InFrameBudget(')
+    source += function(voxel, 'void CtrVoxel_NoteFrameWait(')
     source += function(voxel, 'void CtrVoxel_AfterSubmit(')
     source += function(voxel, 'static void JobStep(')
     source += function(video, 'bool CtrVideo_TryVoxelUpload(')
@@ -236,6 +254,16 @@ int main(void) {
     CtrVoxel_AfterSubmit(0); assert(postStarts == 2 && !sRequests[0].done);
     sViewReady = true; testTick = 1;
     CtrVoxel_AfterSubmit(1); assert(postStarts == 3);
+    /* The frame's real tail (end of AfterSubmit to the next FrameBegin) is
+     * left free when it is longer than the game and the audio counted:
+     * 16.7 - 0 elapsed - 12 tail (the cap) - 1 margin. Read once only. */
+    assert(sAfterEndTick == testTick);
+    CtrVoxel_NoteFrameWait(sAfterEndTick + 20); assert(sTailMs == 20.0f && sAfterEndTick == 0);
+    sViewReady = true; sJob.active = true;
+    CtrVoxel_AfterSubmit(1); assert(sStats.afterBudgetMs > 3.6f && sStats.afterBudgetMs < 3.8f);
+    CtrVoxel_NoteFrameWait(testTick + 5); assert(sTailMs == 5.0f);
+    CtrVoxel_NoteFrameWait(testTick + 5); assert(sTailMs == 0.0f);
+    sJob.active = false;
     sHolesOnly = true;
     sRequestCount = 3;
     for (unsigned i = 0; i < 3; ++i) {
@@ -279,12 +307,12 @@ int main(void) {
     sAtlases[0].primaryTileset = &pairA; sAtlases[1].primaryTileset = &pairB;
     sAtlases[2].primaryTileset = &pairOld; sAtlases[2].valid = true;
     for (unsigned a = 0; a < 3; ++a)
-        for (unsigned p = 0; p < 2; ++p) assert(AllocateAtlasPage(&sAtlases[a], p));
+        for (unsigned p = 0; p < 2; ++p) assert(AllocateAtlasPage(&sAtlases[a], p, true));
     assert(allocated == 6 && CountAllocatedAtlases() == 6);
-    assert(AllocateAtlasPage(&sAtlases[0], 2));
+    assert(AllocateAtlasPage(&sAtlases[0], 2, true));
     assert(!sAtlases[2].valid && sAtlases[2].generation == 1 && allocated == 5);
-    assert(AllocateAtlasPage(&sAtlases[0], 3));
-    assert(!AllocateAtlasPage(&sAtlases[1], 2) && allocated == 6);
+    assert(AllocateAtlasPage(&sAtlases[0], 3, true));
+    assert(!AllocateAtlasPage(&sAtlases[1], 2, true) && allocated == 6);
     assert(sAtlases[0].generation == 0 && sAtlases[1].generation == 0);
     /* Production phase transitions must cover each cell once and capture
      * terrainCount once, before the first cell of the tree pass. */
@@ -299,6 +327,17 @@ int main(void) {
         assert(sJob.col == 0 && sJob.row == 0);
         for (unsigned c = 0; c < 64; ++c) assert(cells[0][c] == 1 && cells[1][c] == 1);
     }
+    /* A chunk with no static models is done once packed; one with models is
+     * done once each is converted (or found cached), a slice a step. */
+    memset(&sJob, 0, sizeof(sJob)); sBuilder.staticCount = 0;
+    sJob.phase = JOB_PACK; JobStep(); assert(sJob.phase == JOB_DONE);
+    for (unsigned i = 0; i < 3; ++i) sJobStatics[i].pageModel = i;
+    meshes[1].slicesLeft = 2; meshes[2].slicesLeft = 1; sBuilder.staticCount = 3;
+    sJob.phase = JOB_PACK; JobStep(); assert(sJob.phase == JOB_STATICS);
+    unsigned staticSteps = 0;
+    while (sJob.phase == JOB_STATICS) { JobStep(); assert(++staticSteps <= 8); }
+    assert(staticSteps == 4 && prepares == 4 && sJob.staticIndex == 3);
+    for (unsigned i = 0; i < 3; ++i) assert(StaticMeshFind(i, false));
     /* Prefetch has only 1 ms per frame. A historical 5 ms sample must
      * become runnable without promoting the chunk to visible first. */
     sFrame = 100; NotePhaseCost(1, 10.0f);
@@ -310,7 +349,7 @@ int main(void) {
     NotePhaseCost(1, 0.2f);
     assert(PhaseCost(1) <= 1.0f); /* do not resurrect the stale outlier */
     ++sFrame; NotePhaseCost(1, 2.0f); assert(PhaseCost(1) == 2.0f);
-    puts("PASS runtime: in-frame visit charged once, warm-up cap, post-submit prefetch admission, zero budget/backoff, stale deadline, preemption, promotion, cancellation ordering, page triangle ranges, queue admission");
+    puts("PASS runtime: in-frame visit charged once, warm-up cap, post-submit prefetch admission, zero budget/backoff, stale deadline, preemption, promotion, cancellation ordering, page triangle ranges, queue admission, static model slices");
     return 0;
 }
 '''

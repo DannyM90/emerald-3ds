@@ -1,5 +1,5 @@
 Pokémon Emerald 3Ds Dual Screen changes to pret/pokeemerald 76463dac15cad36aca5e2b3f6366abf9e53f814f: room for the Portuguese type names
-Applies after 0051-portuguese-category-word-order.patch; apply with tools/bootstrap.py.
+Applies after 0059-portuguese-category-word-order.patch; apply with tools/bootstrap.py.
 
 diff --git a/include/constants/global.h b/include/constants/global.h
 --- a/include/constants/global.h
@@ -20,16 +20,16 @@ diff --git a/include/constants/global.h b/include/constants/global.h
 diff --git a/src/battle_message.c b/src/battle_message.c
 --- a/src/battle_message.c
 +++ b/src/battle_message.c
-@@ -1341,7 +1341,7 @@
+@@ -1345,7 +1345,7 @@ static const u8 sText_ApostropheS[] = _("'s");
  
  // For displaying names of invalid moves.
  // This is large enough that the text for TYPE_ELECTRIC will exceed TEXT_BUFF_ARRAY_COUNT.
--#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH)
-+#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || CTR_LANG_PT_BR)
+-#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN)
++#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || CTR_LANG_PT_BR)
  static const u8 sATypeMove_Table[NUMBER_OF_MON_TYPES][22] =
  #else
  static const u8 sATypeMove_Table[NUMBER_OF_MON_TYPES][17] =
-@@ -2176,7 +2176,14 @@
+@@ -2180,7 +2180,14 @@ void BufferStringBattle(u16 stringID)
          ChooseMoveUsedParticle(gBattleTextBuff1); // buff1 doesn't appear in the string, leftover from japanese move names
  
          if (gBattleMsgDataPtr->currentMove >= MOVES_COUNT)
@@ -48,7 +48,7 @@ diff --git a/src/battle_message.c b/src/battle_message.c
 diff --git a/src/pokedex.c b/src/pokedex.c
 --- a/src/pokedex.c
 +++ b/src/pokedex.c
-@@ -4974,6 +4974,19 @@
+@@ -4974,6 +4974,19 @@ static void PrintSearchText(const u8 *str, u32 x, u32 y)
      AddTextPrinterParameterized4(0, FONT_NORMAL, x, y, 0, 0, color, TEXT_SKIP_DRAW, str);
  }
  
@@ -68,7 +68,7 @@ diff --git a/src/pokedex.c b/src/pokedex.c
  static void ClearSearchMenuRect(u32 x, u32 y, u32 width, u32 height)
  {
      FillWindowPixelRect(0, PIXEL_FILL(0), x, y, width, height);
-@@ -5602,10 +5615,10 @@
+@@ -5602,10 +5615,10 @@ static void PrintSelectedSearchParameters(u8 taskId)
      PrintSearchText(sDexSearchColorOptions[searchParamId].title, 0x2D, 0x21);
  
      searchParamId = gTasks[taskId].tCursorPos_TypeLeft + gTasks[taskId].tScrollOffset_TypeLeft;

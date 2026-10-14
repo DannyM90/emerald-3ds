@@ -44,7 +44,7 @@ de erro saem pelo console do libctru, que é ASCII: vão sem acentos.
 ## ã, õ, Ã e Õ
 
 As fontes do jogo não têm essas letras. O patch
-`patches/pokeemerald/0049-portuguese-tilde-letters.patch` dá a elas os
+`patches/pokeemerald/0057-portuguese-tilde-letters.patch` dá a elas os
 códigos livres 0x2F a 0x32 do charmap (`'Ã'`, `'Õ'`, `'ã'`, `'õ'`, e
 `CHAR_A_TILDE`, `CHAR_O_TILDE`, `CHAR_a_TILDE`, `CHAR_o_TILDE`) e as larguras
 de A/O/a/o nas cinco fontes latinas. Os desenhos não estão no repositório:
@@ -57,7 +57,7 @@ ganha um til no seu próprio estilo, e o texto do jogo pode usar
 ## A ordem das palavras nas batalhas
 
 O inglês põe "Wild" e "Foe" antes do nome do POKéMON e "sharply" antes de
-"rose". O patch `patches/pokeemerald/0050-portuguese-battle-word-order.patch`
+"rose". O patch `patches/pokeemerald/0058-portuguese-battle-word-order.patch`
 acrescenta, sem mudar nada em inglês:
 
 - `sText_WildPkmnSuffix` e `sText_FoePkmnSuffix`, vazios em inglês, que vêm
@@ -66,12 +66,12 @@ acrescenta, sem mudar nada em inglês:
 - `sText_StatSharplyRose` e `sText_StatHarshlyFell`, a mudança forte de um
   atributo numa frase só: "subiu muito!", "caiu muito!".
 
-Do mesmo jeito, `patches/pokeemerald/0051-portuguese-category-word-order.patch`
+Do mesmo jeito, `patches/pokeemerald/0059-portuguese-category-word-order.patch`
 monta a categoria com um prefixo e um sufixo (`sText_CategoryPrefix`,
 vazio em inglês, e `sText_CategorySuffix`, " POKéMON"): em português,
 POKéMON SEMENTE em vez de SEMENTE POKéMON.
 
-E `patches/pokeemerald/0052-portuguese-type-names.patch` dá 9 bytes aos
+E `patches/pokeemerald/0060-portuguese-type-names.patch` dá 9 bytes aos
 nomes dos tipos (`TYPE_NAME_LENGTH`, para TERRESTRE), alarga a tabela de
 "um golpe de FOGO" como o patch 0034 faz para o espanhol e põe na fonte
 estreita um tipo largo demais para as caixas da busca da POKéDEX. Na
@@ -112,7 +112,7 @@ Antes de mudar a árvore, a ferramenta confere tudo e não aplica nada se algo
 falhar:
 
 - o hash: se o texto inglês mudou, a tradução precisa ser revista;
-- cada caractere existe no charmap (com ã, õ, Ã e Õ do patch 0049);
+- cada caractere existe no charmap (com ã, õ, Ã e Õ do patch 0057);
 - os mesmos placeholders do inglês (`{PLAYER}`, `{STR_VAR_1}`...);
 - o tamanho dos nomes de tamanho fixo (itens: 13 bytes; golpes e habilidades: 12; categorias: 11; tipos: 9);
 - a largura de cada linha na fonte normal: até 208 px nos textos dos `.inc`

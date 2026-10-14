@@ -1,5 +1,5 @@
 Pokémon Emerald 3Ds Dual Screen changes to pret/pokeemerald 76463dac15cad36aca5e2b3f6366abf9e53f814f: FRUTA before the BERRY's name in Portuguese
-Applies after 0055-portuguese-pokedex-metric-units.patch; apply with tools/bootstrap.py.
+Applies after 0063-portuguese-pokedex-metric-units.patch; apply with tools/bootstrap.py.
 
 diff --git a/src/item.c b/src/item.c
 --- a/src/item.c

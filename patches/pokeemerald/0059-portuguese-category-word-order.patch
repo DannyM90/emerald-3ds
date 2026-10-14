@@ -1,5 +1,5 @@
 Pokémon Emerald 3Ds Dual Screen changes to pret/pokeemerald 76463dac15cad36aca5e2b3f6366abf9e53f814f: a POKéMON's category with "POKéMON" before or after it
-Applies after 0050-portuguese-battle-word-order.patch; apply with tools/bootstrap.py.
+Applies after 0058-portuguese-battle-word-order.patch; apply with tools/bootstrap.py.
 
 diff --git a/src/international_string_util.c b/src/international_string_util.c
 --- a/src/international_string_util.c

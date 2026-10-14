@@ -55,9 +55,14 @@ ROM_TOLERANCE = 256
 
 FORBIDDEN_SUFFIXES = {
     ".gba", ".agb", ".nds", ".3ds", ".cci", ".cia", ".cxi", ".sav", ".srm", ".sgm",
-    ".ml1", ".ml2", ".ml3", ".log", ".pyc", ".pyo", ".pak", ".elf", ".map",
+    ".ml1", ".ml2", ".ml3", ".log", ".pyc", ".pyo", ".pak", ".elf", ".map", ".nsbtx",
 }
-FORBIDDEN_DIRS = {"__pycache__", ".claude", ".agents", "validation", "romfs_generated"}
+FORBIDDEN_DIRS = {"__pycache__", ".claude", ".agents", "validation", "romfs_generated",
+                  "private_assets", "hgss_followers"}
+# HeartGold/SoulSilver's follower sprites, as fetched (BTX0) or converted
+# (FMN1, builder/emerald3ds_builder/followers.py): the builder downloads them
+# on the player's computer; no repository or release carries them.
+FORBIDDEN_MAGIC = (b"BTX0", b"FMN1")
 FORBIDDEN_NAMES = [re.compile(r"^session-.*\.md$", re.I), re.compile(r"^baserom.*", re.I)]
 # RomFS may only carry these hand-written files; anything else there is output.
 ROMFS_ALLOWED = {".gitignore", "boot.txt"}
@@ -82,7 +87,9 @@ SECRETS = [
 GBA_LOGO_PREFIX = bytes.fromhex("24FFAE51699AA2213D84820A84E409AD")
 PAK_MAGIC = b"EM3DPAK\0"
 KNOWN_ROM_SHA1 = {"f3ae088181bf583e55daf962a92bb46f4f1d07b7",
-                  "fe1558a3dcb0360ab558969e09b690888b846dd9"}
+                  "fe1558a3dcb0360ab558969e09b690888b846dd9",
+                  "ca666651374d89ca439007bed54d839eb7bd14d0",
+                  "1692db322400c3141c5de2db38469913ceb1f4d4"}
 
 
 @dataclass
@@ -205,6 +212,8 @@ def audit(entries, allow: Allow, denylist, rom_index: RomIndex | None,
             findings.append(Finding(name, "forbidden-dir"))
         if any(rx.match(path.name) for rx in FORBIDDEN_NAMES):
             findings.append(Finding(name, "forbidden-name"))
+        if read()[:4] in FORBIDDEN_MAGIC:
+            findings.append(Finding(name, "follower-sprite"))
         if "romfs" in parts[:-1] and path.name not in ROMFS_ALLOWED:
             findings.append(Finding(name, "generated-romfs"))
         if "third_party" in parts[:-1]:

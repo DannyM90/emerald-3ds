@@ -117,6 +117,19 @@ void CtrVideo_MarkFogOam(unsigned first, unsigned end);
  * wrap round the screen (rain, snow, sand swirls, bubbles). Cleared with the
  * fog's (CtrVideo_ClearFogOam). */
 void CtrVideo_MarkWeatherOam(unsigned first, unsigned end, bool lattice);
+/*
+ * The OBJ palettes past the GBA's sixteen (include/palette.h, PLTT_EXT_*):
+ * the faded colours of all CTR_EXT_PALETTES, handed over when the game copies
+ * its palette to PLTT, and which are in use, a bit each (none: nothing here
+ * is looked at). OAM entries [first, end) of a sprite drawn with one are
+ * marked with it, as BuildOamBuffer writes them (src/sprite.c): attr2's four
+ * bits of palette cannot name it. The voxel field reads them for its cards.
+ */
+#define CTR_EXT_PALETTES 16
+void CtrVideo_LatchExtPalettes(const uint16_t *colors, unsigned inUse);
+const uint16_t *CtrVideo_ExtPalette(unsigned index);
+void CtrVideo_ClearExtPaletteOam(void);
+void CtrVideo_MarkExtPaletteOam(unsigned first, unsigned end, unsigned index);
 void CtrVideo_NotifyTilesetAnimWrite(const void *dest, unsigned bytes);
 /*
  * A write the game made through its BIOS copies (3ds_prof_wrap.c): VRAM,
@@ -201,9 +214,21 @@ enum
      * and of the people in it (shop.c): the top screen keeps the world.
      */
     CTR_CENTRED_SHOP,
+    /*
+     * A trade, over the whole bottom screen while the top keeps the room it
+     * started from (the Trade Center, the Union Room, the person met):
+     * the menu of both parties on its blue stripes, then the trade itself.
+     */
+    CTR_CENTRED_TRADE_MENU,
+    CTR_CENTRED_TRADE,
+    /* The Berry Blender: its bowl, an affine layer, kept to the picture. */
+    CTR_CENTRED_BLENDER,
+    CTR_CENTRED_POKEDEX_CAUGHT,
     CTR_CENTRED_SCREENS
 };
 void CtrVideo_SetCentred(unsigned screen);
+/* The HOME button was pressed while it is not allowed: a sign for a moment. */
+void CtrVideo_ShowNoHome(void);
 /*
  * The window edges an HBlank DMA writes line by line (the PokéNav's glow
  * behind its chosen option, its condition graph): values holds WIN0H for each

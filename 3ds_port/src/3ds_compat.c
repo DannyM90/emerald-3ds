@@ -257,7 +257,7 @@ static bool GlyphRowInked(const u8 *glyph, int y)
 }
 
 /*
- * The fonts have no ã, õ, Ã or Õ (0x2F-0x32, patch 0049). Each is drawn from
+ * The fonts have no ã, õ, Ã or Õ (0x2F-0x32, patch 0057). Each is drawn from
  * the player's own font when it loads: the letter, with the tilde of ñ (or Ñ)
  * over it. The tilde is the rows that ñ inks and n leaves blank, centred on
  * the letter's width.

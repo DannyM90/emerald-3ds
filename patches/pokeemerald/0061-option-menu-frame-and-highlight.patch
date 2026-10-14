@@ -1,5 +1,5 @@
 Pokémon Emerald 3Ds Dual Screen changes to pret/pokeemerald 76463dac15cad36aca5e2b3f6366abf9e53f814f: the OPTION menu's frame and highlight on the taller, wider screen
-Applies after 0052-portuguese-type-names.patch; apply with tools/bootstrap.py.
+Applies after 0060-portuguese-type-names.patch; apply with tools/bootstrap.py.
 
 diff --git a/src/option_menu.c b/src/option_menu.c
 --- a/src/option_menu.c
