@@ -10,8 +10,9 @@ New and improved:
   (`Emerald3DS-ja.3dsx` for Quick Update). The texts, graphics, fonts,
   credits and the maps that differ come from your ROM; text is drawn in the
   game's Japanese glyphs, the naming screen has the Japanese keyboard and
-  5-character names, the touch screen has Japanese labels and the Pokédex
-  shows metres and kilograms. Not yet tested on a console; see
+  5-character names, battles draw names, levels and HP as the Japanese game
+  does, the touch screen has Japanese labels and the Pokédex shows metres
+  and kilograms. Not yet tested on a console; see
   docs/JAPANESE.md for what is still in English.
 - Locale manifests can be regenerated: `tools/locale_research/` holds the
   matcher that finds the English game's objects in another language's ROM
@@ -22,6 +23,9 @@ Fixed:
 
 - `tools/port_common/gen_asset_table.py` runs on Python 3.11 again, as the
   development guide says (a backslash in an f-string needs 3.12).
+- Japanese recipe gate: asm data units see `PORT_BRIDGE` so the silent bard
+  samples apply; the asset table no longer stages Latin fonts that a Japanese
+  build replaced with empty stubs.
 
 ## 0.3.1 — 2026-10-10
 

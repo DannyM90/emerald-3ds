@@ -218,16 +218,20 @@ build/root/src/field_camera.o: $(ROOT)/src/field_camera.c Makefile full.mk
 	@mkdir -p $(dir $@)
 	"$(CC)" $(FULLFLAGS) $(FULLCFLAGS) -c $< -o $@
 
+# Asm data units go through cpp with PORT_BRIDGE, like the C units (FULLFLAGS).
+# sound_data.s includes direct_sound_data.inc: Japanese patch 0046 drops the
+# English bard phonemes only when PORT_BRIDGE is set. With no sample overlay,
+# sound_data.o uses the generic data/%.o rule below.
 build/root/data/maps.o: build/maps.s build/map_layouts.inc $(ROOT)/data/layouts/layouts_table.inc \
 		$(ROOT)/data/maps/headers.inc $(ROOT)/data/maps/groups.inc $(ROOT)/data/maps/connections.inc
 	@mkdir -p $(dir $@)
-	cd $(ROOT) && "$(PREPROC)" 3ds_port/build/maps.s charmap.txt | "$(CPPTOOL)" -Iinclude -I. - \
+	cd $(ROOT) && "$(PREPROC)" 3ds_port/build/maps.s charmap.txt | "$(CPPTOOL)" -Iinclude -I. $(BRIDGE_FLAGS) - \
 		| "$(PREPROC)" -ie 3ds_port/build/maps.s charmap.txt | $(ASM_PSEUDO_OP_CONV) - \
 		| "$(AS)" $(ASFLAGS) -o $(CURDIR)/$@
 
 build/root/data/%.o: $(ROOT)/data/%.s Makefile full.mk
 	@mkdir -p $(dir $@)
-	cd $(ROOT) && "$(PREPROC)" data/$*.s charmap.txt | "$(CPPTOOL)" -Iinclude -I. - \
+	cd $(ROOT) && "$(PREPROC)" data/$*.s charmap.txt | "$(CPPTOOL)" -Iinclude -I. $(BRIDGE_FLAGS) - \
 		| "$(PREPROC)" -ie data/$*.s charmap.txt | $(ASM_PSEUDO_OP_CONV) - \
 		| "$(AS)" $(ASFLAGS) -o $(CURDIR)/$@
 
@@ -240,7 +244,7 @@ else
 SAMPLE_OVERLAY_SED := $(foreach f,$(SAMPLE_OVERLAY),-e 's\#"sound/direct_sound_samples/\(cries/\)\{0,1\}$(notdir $(f))"\#"$(f)"\#')
 build/root/data/sound_data.o: $(ROOT)/data/sound_data.s $(ROOT_SOUND_BIN_SRCS) $(SAMPLE_OVERLAY) Makefile full.mk
 	@mkdir -p $(dir $@)
-	cd $(ROOT) && "$(PREPROC)" data/sound_data.s charmap.txt | "$(CPPTOOL)" -Iinclude -I. - 		| "$(PREPROC)" -ie data/sound_data.s charmap.txt | $(ASM_PSEUDO_OP_CONV) - 		| sed $(SAMPLE_OVERLAY_SED) | "$(AS)" $(ASFLAGS) -o $(CURDIR)/$@
+	cd $(ROOT) && "$(PREPROC)" data/sound_data.s charmap.txt | "$(CPPTOOL)" -Iinclude -I. $(BRIDGE_FLAGS) - 		| "$(PREPROC)" -ie data/sound_data.s charmap.txt | $(ASM_PSEUDO_OP_CONV) - 		| sed $(SAMPLE_OVERLAY_SED) | "$(AS)" $(ASFLAGS) -o $(CURDIR)/$@
 endif
 
 build/root/sound/songs/%.o: $(ROOT)/sound/songs/%.s

@@ -17,7 +17,20 @@ diff --git a/src/text.c b/src/text.c
  
      GenerateFontHalfRowLookupTable(printerTemplate->fgColor, printerTemplate->bgColor, printerTemplate->shadowColor);
      if (speed != TEXT_SKIP_DRAW && speed != 0)
-@@ -1390,7 +1395,11 @@
+@@ -1145,7 +1150,12 @@
+                 textPrinter->japanese = TRUE;
+                 return RENDER_REPEAT;
+             case EXT_CTRL_CODE_ENG:
++#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
++                // no English glyph set: names keep the Japanese one
++                textPrinter->japanese = TRUE;
++#else
+                 textPrinter->japanese = FALSE;
++#endif
+                 return RENDER_REPEAT;
+             }
+             break;
+@@ -1390,7 +1400,11 @@
      int glyphWidth;
      s32 width;
  
@@ -29,3 +42,15 @@ diff --git a/src/text.c b/src/text.c
      minGlyphWidth = 0;
  
      func = GetFontWidthFunc(fontId);
+@@ -1501,7 +1515,11 @@
+                 isJapanese = 1;
+                 break;
+             case EXT_CTRL_CODE_ENG:
++#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_JAPANESE
++                isJapanese = 1;
++#else
+                 isJapanese = 0;
++#endif
+                 break;
+             case EXT_CTRL_CODE_RESET_FONT:
+             case EXT_CTRL_CODE_PAUSE_UNTIL_PRESS:

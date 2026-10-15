@@ -223,6 +223,19 @@ def select_graphics(m, P, en, jp, elf=None):
             picked.append([path, b, n])
             used[b] += 1
             b += n
+    # map layouts (asm labels, no sizes): BPEJ's own where its blocks differ,
+    # e.g. a Trick House puzzle; the voxel world is built from them
+    if built is not None:
+        label = re.compile(r'^(\w+)::\s*\n\s*\.incbin "([^"]+)"', re.M)
+        layouts = open(locale_sources.TREE + 'data/layouts/layouts.inc', encoding='utf-8').read()
+        for name, path in label.findall(layouts):
+            if name not in syms or syms[name][0] not in P['placed'] or not (built / path).exists():
+                continue
+            o, size = syms[name][0], (built / path).stat().st_size
+            b = P['placed'][o]
+            if en[o:o + size] != jp[b:b + size]:
+                picked.append([path, b, size])
+                used[b] += 1
     picked = [g for g in picked if used[g[1]] == 1]
     extra = {g[0] for g in EXTRA_GRAPHICS + [list(f) for f in FONTS]}
     picked = [g for g in picked if g[0] not in extra]
@@ -358,9 +371,15 @@ def array_edits(jp, mp):
     return out
 
 
-def jp_string_size(jp, j, limit=4096):
-    e = jp.find(b'\xff', j, j + limit)
-    return None if e < 0 else e + 1 - j
+def jp_string_size(jp, j, end, limit=4096):
+    """Bytes of the BPEJ string at j, up to its terminator or end (the next
+    placed object): some templates fill their field with spaces (0x00 in
+    Japanese) and have no terminator, the code writes one after its digits."""
+    end = min(end, j + limit)
+    e = jp.find(b'\xff', j, end)
+    if e >= 0:
+        return e + 1 - j
+    return end - j if end < j + limit else None
 
 
 def main():
@@ -381,6 +400,7 @@ def main():
     m = match_rom.run(elf, en, jp)
     P = match_rom.placements(m)
     mp = Mapper(m, P)
+    jp_starts = sorted(set(P['placed'].values()))
     cm = load_charmap(locale_sources.TREE + 'charmap.txt')
     man, rows = edits_with_en(elf, en)
     texts, own = {}, {}
@@ -436,7 +456,15 @@ def main():
             stats['mapped-cfixed'] += 1
             continue
         if kind in ('c', 'asm'):
-            size = jp_string_size(jp, j)
+            size = jp_string_size(jp, j, jp_starts[bisect.bisect_right(jp_starts, j)])
+            if jp[j + size - 1] != 0xFF:
+                # only where the English string has no terminator either
+                # (__() in the source); otherwise the placement is wrong
+                obj = mp.containing(enaddr)
+                if obj is None or obj[0] != enaddr or 0xFF in en[enaddr:enaddr + obj[1]]:
+                    stats['no-terminator'] += 1
+                    continue
+                stats['unterminated-' + kind] += 1
             if size is None:
                 stats['no-terminator'] += 1
                 continue
