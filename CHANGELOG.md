@@ -26,6 +26,11 @@ Fixed:
 - Japanese recipe gate: asm data units see `PORT_BRIDGE` so the silent bard
   samples apply; the asset table no longer stages Latin fonts that a Japanese
   build replaced with empty stubs.
+- Japanese field was black on console: the asset table's "skip stubs larger
+  than 4 bytes" rule also dropped every tileset palette (grouped INCBINs are
+  0x200-byte stubs). Only inactive `.latfont` paths are skipped now.
+- Japanese touch trainer card: money, Pokédex and time labels match the
+  Japanese game (おこづかい / ポケモンずかん / プレイじかん).
 
 ## 0.3.1 — 2026-10-10
 

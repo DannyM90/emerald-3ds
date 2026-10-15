@@ -4127,18 +4127,22 @@ static void DrawTrainerCard(const ViewState *s)
     StringCopy(StringCopy(text, gText_TrainerCardIDNo), Number(s->id, 5, STR_CONV_MODE_LEADING_ZEROS));
     DrawStr(&sNormal, text, bx + 120 + (96 - StrWidth(&sNormal, text)) / 2, by + 9, TXT_DARK, TXT_LIGHT);
 
-    DrawStr(&sNormal, gText_TrainerCardMoney, bx + 16, by + 57, TXT_DARK, TXT_LIGHT);
+    /* Japanese Emerald's card: おこづかい / ポケモンずかん / プレイじかん.
+     * The English literals were never mapped, so MONEY/POKéDEX/TIME stayed and
+     * é drew as ひ in the Japanese font. */
+    DrawStr(&sNormal, Ascii(CTR_TEXT("MONEY", "DINERO", "おこづかい")), bx + 16, by + 57, TXT_DARK, TXT_LIGHT);
     text[0] = CHAR_CURRENCY;
     StringCopy(text + 1, Number(s->money, 6, STR_CONV_MODE_LEFT_ALIGN));
     DrawStrRight(&sNormal, text, bx + 128, by + 57, TXT_DARK, TXT_LIGHT);
 
     if (s->hasDex)
     {
-        DrawStr(&sNormal, gText_TrainerCardPokedex, bx + 16, by + 73, TXT_DARK, TXT_LIGHT);
+        DrawStr(&sNormal, Ascii(CTR_TEXT("POK*DEX", "POK*DEX", "ポケモンずかん")), bx + 16, by + 73, TXT_DARK,
+                TXT_LIGHT);
         DrawStrRight(&sNormal, Number(s->dex, 3, STR_CONV_MODE_LEFT_ALIGN), bx + 128, by + 73, TXT_DARK, TXT_LIGHT);
     }
 
-    DrawStr(&sNormal, gText_TrainerCardTime, bx + 16, by + 89, TXT_DARK, TXT_LIGHT);
+    DrawStr(&sNormal, Ascii(CTR_TEXT("TIME", "TIEMPO", "プレイじかん")), bx + 16, by + 89, TXT_DARK, TXT_LIGHT);
     {
         int colon = StrWidth(&sNormal, gText_Colon2), x = bx + 128 - (colon + 30);
         DrawStr(&sNormal, Number(s->hours, 3, STR_CONV_MODE_RIGHT_ALIGN), x, by + 89, TXT_DARK, TXT_LIGHT);

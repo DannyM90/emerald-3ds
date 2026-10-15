@@ -235,10 +235,11 @@ def main() -> None:
     # Symbols that a source file's own INCBIN already accounts for.
     claimed = {(f"build/root/{src_rel.with_suffix('.o').as_posix()}", sym)
                for src_rel, sym, _, _ in incbins if src_rel.suffix == ".c"}
-    # INCBIN_U8/U16/U32 stubs are 1, 2 or 4 bytes. A larger .rodata size means
-    # the compiled TU kept an embedded array (e.g. Japanese builds replace the
-    # Latin font INCIBNs with empty stubs behind PORT_BRIDGE) — do not stage
-    # the inactive #else file, which is not in that language's ROM.
+    # INCBIN_U8/U16/U32 stubs are usually 1, 2 or 4 bytes, but grouped palette
+    # INCBINs keep a typed .rodata size (e.g. u16[][16] → 0x200) that is still
+    # a stub and MUST be staged. Japanese builds replace Latin .latfont INCIBNs
+    # with empty arrays behind PORT_BRIDGE; the parser still sees the #else
+    # path — skip only those inactive .latfont files (not every size > 4).
     INC_BIN_STUB_MAX = 4
 
     for index, (src_rel, sym, rel_paths, is_static) in enumerate(incbins, start=1):
@@ -259,7 +260,7 @@ def main() -> None:
                 continue
 
         stub_size = sym_sizes.get((obj_rel, sym), 0)
-        if stub_size > INC_BIN_STUB_MAX:
+        if stub_size > INC_BIN_STUB_MAX and any(p.endswith(".latfont") for p in rel_paths):
             continue
 
         asset_info = copy_or_concat_asset(obj_rel, sym, rel_paths)
