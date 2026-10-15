@@ -10,6 +10,7 @@
 #include "3ds_daynight.h"
 #include "3ds_gpumem.h"
 #include "3ds_video.h"
+#include "3ds_dex_top.h"
 #include "3ds_data.h"
 #include "3ds_bottom.h"
 #include "ctr_battle_layout.h"
@@ -10683,6 +10684,32 @@ static void VoxelVramManage(void)
 }
 #endif
 
+/*
+ * The Pokédex on the top screen (3ds_dex_top.c) while its pages are on the
+ * bottom: its textures filled now that FrameBegin has waited for the GPU,
+ * then drawn per eye with the 2D program and no depth test, as the FPS
+ * counter is.
+ */
+static void RenderDexTop(bool stereo, float slider)
+{
+    C2D_Prepare();
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+    BlendForget();
+    CtrDexTop_Upload();
+    Blend(5, false, false);
+    SceneOn(sTop);
+    C2D_ViewReset();
+    CtrDexTop_DrawEye(stereo ? 1.0f : 0.0f, slider);
+    if (stereo)
+    {
+        SceneOn(sTopRight);
+        C2D_ViewReset();
+        CtrDexTop_DrawEye(-1.0f, slider);
+    }
+    C2D_Flush();
+    BlendForget();
+}
+
 void CtrVideo_Present(void)
 {
     /* The frame's entry tick: its preparation, before FrameBegin. */
@@ -11044,6 +11071,11 @@ void CtrVideo_Present(void)
     if (bottom) stereo = planes = battleStereo = false;
     /* A magnified stage is one flat picture (RenderEye). */
     if (sStageZoomed) stereo = planes = false;
+    /* With the Pokédex on the bottom screen the top shows the device, which
+     * takes any slider position (RenderDexTop). */
+    bool dexTop = bottom && CtrDexTop_Active();
+    if (dexTop) stereo = sTopRight && slider > 0.02f;
+    else CtrDexTop_Idle();
     if (stereo != sStereo) { gfxSet3D(stereo); sStereo = stereo; }
     /* The voxel world reports the slider in tenths, the 2D path its pixels. */
     sStats.stereo = !stereo ? 0 : voxelStereo ? (uint32_t)ceilf(slider * 10.0f)
@@ -11105,9 +11137,11 @@ void CtrVideo_Present(void)
 
     if (bottom)
     {
-        /* The top screen is not drawn: it keeps the frame it showed last. */
+        /* The top screen is not drawn: it keeps the frame it showed last -
+         * unless the Pokédex is open down there. */
         sPlanes = 0;
         RenderEye(sBottom, clear, 0.0f);
+        if (dexTop) RenderDexTop(stereo, slider);
     }
     else if (sTransition && !blank)
     {
@@ -11170,7 +11204,7 @@ void CtrVideo_Present(void)
 #if CTR_SHOW_FPS
     if (CtrSettings_ShowFps())
     {
-        if (!bottom) DrawFps(sTop);
+        if (!bottom || dexTop) DrawFps(sTop);
         if (stereo) DrawFps(sTopRight);
     }
 #endif
