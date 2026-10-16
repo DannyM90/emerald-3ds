@@ -34,6 +34,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "builder"))
 from emerald3ds_builder import pak  # noqa: E402
+from emerald3ds_builder.rom import ROM_PROFILES  # noqa: E402
 
 ENGINE_PATTERNS = [
     "boot.txt",
@@ -50,7 +51,24 @@ ENGINE_PATTERNS = [
     "voxel/trees.rgba5551",
     "bottom/battle.bin",
 ]
-SUPPORTED_ROM_SHA1 = bytes.fromhex("f3ae088181bf583e55daf962a92bb46f4f1d07b7")
+SUPPORTED_ROM_SHA1 = bytes.fromhex(ROM_PROFILES["BPEE"])
+
+
+def default_rom_sha1(romfs: Path) -> bytes:
+    """Stamp the SHA of the tree's locale ROM (BPEE / BPES / BPEJ).
+
+    ``make pak`` does not take a ROM path; without this, a Japanese or Spanish
+    tree would stamp the English SHA and the client would reject the pack.
+    """
+    for parent in (romfs, *romfs.resolve().parents):
+        marker = parent / ".emerald3ds-locale"
+        if not marker.is_file():
+            continue
+        code = marker.read_text(encoding="ascii").strip().split()[0]
+        if code in ROM_PROFILES:
+            return bytes.fromhex(ROM_PROFILES[code])
+        break
+    return SUPPORTED_ROM_SHA1
 
 
 def is_engine(rel: str) -> bool:
@@ -108,7 +126,7 @@ def cmd_engine(args) -> None:
 
 def cmd_pak(args) -> None:
     abi, _ = compute_abi(args.romfs)
-    sha1 = pak.sha1_of(args.rom) if args.rom else SUPPORTED_ROM_SHA1
+    sha1 = pak.sha1_of(args.rom) if args.rom else default_rom_sha1(args.romfs)
     files = ((rel, path.read_bytes()) for rel, path in data_files(args.romfs))
     info = pak.write_pak(args.out, files, abi, sha1)
     with pak.PakReader(args.out) as reader:
