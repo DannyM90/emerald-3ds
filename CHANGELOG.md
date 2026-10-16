@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- The camera can stop at the edge of a map: on the edges chosen map by map
+  (for now Routes 103 to 107 and Rustboro City), in 2D and in voxel, the
+  picture no longer shows the border tiled past the edge that the wider screen
+  used to bring into view; only the player walks on. Where another map joins
+  part of such an edge, the camera follows the player in front of it. Every
+  other map keeps the camera on the player as before.
+
 ## 0.4.0 — 2026-10-16
 
 - The project is now called Emerald 3DS, by Zallax: new name on the HOME
