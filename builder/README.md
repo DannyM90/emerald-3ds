@@ -34,6 +34,18 @@ python -m emerald3ds_builder detect
 Privacy: the ROM is read into memory and never copied, uploaded or modified;
 temporary files are removed even when a step fails.
 
+Saves: before an install replaces any game file, an existing
+`emerald3ds.sav` and whichever of `emerald3ds.clock` / `emerald3ds.clock.bak`
+exist are copied into a new `3ds/emerald3ds/backup/<YYYYMMDD-HHMMSS>[-N]/`
+folder (counted in the free-space check). The copy is staged in a `.partial`
+folder and renamed only once complete. If it fails, nothing is replaced and
+cleanup is attempted; any leftovers remain marked `.partial` and must not be
+used as a complete backup. The save itself is never
+modified, and older backups are never deleted (remove them yourself when no
+longer needed). With no save, no backup is made. If `3ds/dspfirm.cdc` is
+missing on the card, both front ends show a warning (the game may have no
+sound) but the install still succeeds.
+
 ## Web builder
 
 The website runs this same package in the browser (Pyodide, in a Web Worker)

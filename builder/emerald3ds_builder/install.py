@@ -2,17 +2,31 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import stat
 import string
 import sys
+import time
 import uuid
 from pathlib import Path
 
 from .errors import BuilderError
 
 APP_DIR = Path("3ds") / "emerald3ds"
+
+# The player's save and its real-time-clock companions, in the app folder.
+SAVE_NAME = "emerald3ds.sav"
+SAVE_FILES = (SAVE_NAME, "emerald3ds.clock", "emerald3ds.clock.bak")
+BACKUP_DIR = "backup"   # <app folder>/backup/<timestamp>/
+
+# The 3DS sound firmware dump that homebrew needs for audio.
+DSP_FIRM = Path("3ds") / "dspfirm.cdc"
+DSP_WARNING = ("The 3DS sound firmware dump (dspfirm.cdc) was not found at:\n%s\n\n"
+               "The game was installed. If this is your 3DS SD card, the game may have no "
+               "sound until the firmware is dumped on the console (for example with the "
+               "DSP1 homebrew).")
 
 
 def find_sd_cards() -> list[Path]:
@@ -68,7 +82,132 @@ def _remove(paths) -> None:
             pass
 
 
-def install(sd_root: Path, files: dict[str, Path], progress=None) -> Path:
+def _backup_stamp() -> str:
+    """Local time, to the second; uniqueness comes from _make_backup_dir."""
+    return time.strftime("%Y%m%d-%H%M%S")
+
+
+def _existing_saves(dest: Path) -> list[tuple[str, Path, os.stat_result]]:
+    """The save files to back up: none unless the save itself exists, then the
+    save plus whichever clock companions exist. Only reads metadata."""
+    found = []
+    for name in SAVE_FILES:
+        path = dest / name
+        try:
+            st = path.stat()
+        except (FileNotFoundError, NotADirectoryError):
+            if name == SAVE_NAME:
+                return []   # do not inspect companions without a save
+            continue
+        except OSError as exc:
+            raise BuilderError("The existing save file could not be read:\n%s\n(%s)" % (path, exc),
+                               "Nothing was changed on the destination.", code="install_failed") from exc
+        if not stat.S_ISREG(st.st_mode):
+            raise BuilderError("The existing save file is not a regular file:\n%s" % path,
+                               "Nothing was changed on the destination.", code="install_failed")
+        found.append((name, path, st))
+    return found
+
+
+def _make_backup_dir(dest: Path) -> tuple[Path, bool]:
+    """Reserve <dest>/backup/<stamp>[-N].partial/ exclusively.
+
+    The partial directory reserves its final name among concurrent backups.
+    Skip names whose final backup already exists, including empty folders.
+    Returns the staging directory and whether backup/ was created here."""
+    parent = dest / BACKUP_DIR
+    created_parent = False
+    try:
+        parent.mkdir()
+        created_parent = True
+    except FileExistsError:
+        pass
+    stamp = _backup_stamp()
+    for n in range(1, 1000):
+        final = parent / (stamp if n == 1 else "%s-%d" % (stamp, n))
+        folder = final.with_name(final.name + ".partial")
+        try:
+            folder.mkdir()
+        except FileExistsError:
+            continue
+        except BaseException:
+            if created_parent:
+                _rmdir(parent)
+            raise
+        if os.path.lexists(final):
+            _rmdir(folder)
+            continue
+        return folder, created_parent
+    if created_parent:
+        _rmdir(parent)
+    raise FileExistsError("could not create a new backup folder in %s" % parent)
+
+
+def _rmdir(path: Path) -> None:
+    try:
+        path.rmdir()   # only ever succeeds on an empty folder
+    except OSError:
+        pass
+
+
+def _backup_saves(dest: Path, saves, advance) -> Path:
+    """Copy (and sync) every file in `saves` into a new backup folder.
+
+    The originals are only opened for reading. Either every file is copied in
+    full before the staging folder is atomically renamed to its final name,
+    or cleanup is attempted and the error raised. If cleanup fails, leftovers
+    remain visibly marked .partial; other backups are never touched."""
+    folder, created_parent = _make_backup_dir(dest)
+    written: list[Path] = []
+    try:
+        for name, src, st in saves:
+            target = folder / name
+            fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o666)
+            written.append(target)
+            copied = 0
+            with os.fdopen(fd, "wb") as fout, src.open("rb") as fin:
+                while True:
+                    chunk = fin.read(1 << 20)
+                    if not chunk:
+                        break
+                    fout.write(chunk)
+                    copied += len(chunk)
+                    advance(len(chunk))
+                fout.flush()
+                os.fsync(fout.fileno())
+            if copied != st.st_size:
+                raise OSError(errno.EIO, "%s changed size while it was being backed up" % name)
+            try:
+                os.utime(target, ns=(st.st_atime_ns, st.st_mtime_ns))
+            except OSError:
+                pass   # keeping the original time is a courtesy only
+        final = folder.with_name(folder.name.removesuffix(".partial"))
+        folder.rename(final)
+    except BaseException:
+        _remove(written)
+        _rmdir(folder)
+        if created_parent:
+            _rmdir(dest / BACKUP_DIR)
+        raise
+    return final
+
+
+def _warn_missing_dsp(sd_root: Path, warn) -> None:
+    if warn is None:
+        return
+    firm = sd_root / DSP_FIRM
+    try:
+        present = firm.is_file()
+    except OSError:
+        present = False
+    if not present:
+        try:
+            warn(DSP_WARNING % firm)
+        except Exception:
+            pass   # the install already succeeded; a broken display must not undo that
+
+
+def install(sd_root: Path, files: dict[str, Path], progress=None, warn=None) -> Path:
     """Copy `files` ({name: source}) into <sd_root>/3ds/emerald3ds/.
 
     Every file is first copied (and synced) under a new, unique temporary name.
@@ -76,7 +215,15 @@ def install(sd_root: Path, files: dict[str, Path], progress=None) -> Path:
     copy leaves the files already installed untouched and removes its own
     temporary files. The renames themselves are not one transaction: if one of
     them fails, the install can be left part old, part new, and the error says
-    so. Behaviour when a card is pulled out or loses power is not verified."""
+    so. Behaviour when a card is pulled out or loses power is not verified.
+
+    If a save (emerald3ds.sav) is already there, it and any clock companions
+    (emerald3ds.clock, emerald3ds.clock.bak) are first copied, in full, into a
+    new folder backup/<timestamp>/ next to them; if that backup fails, nothing
+    is replaced. The originals are never written, older backups never removed.
+
+    `warn(message)`, if given, receives non-fatal warnings after a successful
+    install (currently: <sd_root>/3ds/dspfirm.cdc is missing)."""
     sd_root = Path(sd_root)
     if not sd_root.is_dir():
         raise BuilderError("The destination folder does not exist:\n%s" % sd_root)
@@ -94,6 +241,8 @@ def install(sd_root: Path, files: dict[str, Path], progress=None) -> Path:
             raise BuilderError("A file to install is not a regular file:\n%s" % src,
                                "Nothing was changed on the destination.", code="install_failed")
         need += st.st_size
+    saves = _existing_saves(dest)
+    need += sum(st.st_size for _, _, st in saves)   # the backup is written to the same card
     try:
         free = shutil.disk_usage(sd_root).free
     except OSError:
@@ -109,6 +258,13 @@ def install(sd_root: Path, files: dict[str, Path], progress=None) -> Path:
 
     staged: list[tuple[Path, Path]] = []
     done = 0
+
+    def advance(count: int) -> None:
+        nonlocal done
+        done += count
+        if progress:
+            progress(done / max(need, 1))
+
     name = None
     try:
         for name, src in files.items():
@@ -120,9 +276,7 @@ def install(sd_root: Path, files: dict[str, Path], progress=None) -> Path:
                     if not chunk:
                         break
                     fout.write(chunk)
-                    done += len(chunk)
-                    if progress:
-                        progress(done / max(need, 1))
+                    advance(len(chunk))
                 fout.flush()
                 os.fsync(fout.fileno())
     except OSError as exc:
@@ -132,6 +286,18 @@ def install(sd_root: Path, files: dict[str, Path], progress=None) -> Path:
     except BaseException:
         _remove(tmp for tmp, _ in staged)
         raise
+
+    # Back up the save set, complete, before any game file is replaced.
+    if saves:
+        try:
+            _backup_saves(dest, saves, advance)
+        except OSError as exc:
+            _remove(tmp for tmp, _ in staged)
+            raise BuilderError("Backing up the save in %s failed, so the game was not updated:\n%s"
+                               % (dest, exc), _RETRY_HINT, code="install_failed") from exc
+        except BaseException:
+            _remove(tmp for tmp, _ in staged)
+            raise
 
     committed = 0
     try:
@@ -150,4 +316,5 @@ def install(sd_root: Path, files: dict[str, Path], progress=None) -> Path:
     except BaseException:
         _remove(tmp for tmp, _ in staged[committed:])
         raise
+    _warn_missing_dsp(sd_root, warn)
     return dest
