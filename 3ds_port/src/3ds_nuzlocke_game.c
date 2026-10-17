@@ -23,6 +23,7 @@
 #include "constants/flags.h"
 #include "constants/region_map_sections.h"
 #include "constants/songs.h"
+#include "constants/species.h"
 
 static CtrNuzSession sSession;
 static CtrNuzStatus sChoice = CTR_NUZ_CAUGHT;
@@ -31,6 +32,7 @@ static u8 sSlot;
 enum { ARM_NONE, ARM_FALLEN, ARM_FAINTED };
 static u8 sArm;
 static u32 sArmPersonality, sArmOtId;
+static bool sArmShedinja;
 
 const char *const gCtrNuzlockeOpenText[1] = {CTR_TEXT("TAP TO OPEN", "TOCA PARA ABRIR", "OUVRIR", "APRI")};
 const char *const gCtrNuzlockeBackText[1] = {CTR_TEXT("BACK", "VOLVER", "RETOUR", "INDIETRO")};
@@ -193,14 +195,16 @@ static unsigned FaintedUnmarked(bool mark)
     {
         struct Pokemon *mon = &gPlayerParty[i];
         u32 personality, otId;
+        bool shedinja;
 
         if (GetMonData(mon, MON_DATA_SPECIES) == 0 || IsEgg(mon) || GetMonData(mon, MON_DATA_HP) != 0)
             continue;
         personality = GetMonData(mon, MON_DATA_PERSONALITY);
         otId = GetMonData(mon, MON_DATA_OT_ID);
-        if (CtrNuz_IsFallen(&sSession.state, personality, otId))
+        shedinja = GetMonData(mon, MON_DATA_SPECIES) == SPECIES_SHEDINJA;
+        if (CtrNuz_IsFallen(&sSession.state, personality, otId, shedinja))
             continue;
-        if (mark && !CtrNuz_SetFallen(&sSession.state, personality, otId, true))
+        if (mark && !CtrNuz_SetFallen(&sSession.state, personality, otId, shedinja, true))
             break;
         found++;
     }
@@ -341,6 +345,7 @@ void CtrNuzlockeUi_Fallen(void)
 {
     struct Pokemon *mon = Enabled() ? SlotMon() : NULL;
     u32 personality, otId;
+    bool shedinja;
     bool fallen;
 
     if (mon == NULL || IsEgg(mon))
@@ -351,17 +356,19 @@ void CtrNuzlockeUi_Fallen(void)
     }
     personality = GetMonData(mon, MON_DATA_PERSONALITY);
     otId = GetMonData(mon, MON_DATA_OT_ID);
-    if (sArm != ARM_FALLEN || sArmPersonality != personality || sArmOtId != otId)
+    shedinja = GetMonData(mon, MON_DATA_SPECIES) == SPECIES_SHEDINJA;
+    if (sArm != ARM_FALLEN || sArmPersonality != personality || sArmOtId != otId || sArmShedinja != shedinja)
     {
         sArm = ARM_FALLEN;
         sArmPersonality = personality;
         sArmOtId = otId;
+        sArmShedinja = shedinja;
         PlaySE(SE_SELECT);
         return;
     }
     sArm = ARM_NONE;
-    fallen = CtrNuz_IsFallen(&sSession.state, personality, otId);
-    if (!CtrNuz_SetFallen(&sSession.state, personality, otId, !fallen))
+    fallen = CtrNuz_IsFallen(&sSession.state, personality, otId, shedinja);
+    if (!CtrNuz_SetFallen(&sSession.state, personality, otId, shedinja, !fallen))
     {
         PlaySE(SE_FAILURE);
         return;
@@ -375,6 +382,7 @@ const uint8_t *CtrNuzlockeUi_FallenText(void)
     static u8 text[TEXT_SIZE];
     struct Pokemon *mon = Enabled() ? SlotMon() : NULL;
     u32 personality, otId;
+    bool shedinja;
 
     if (mon == NULL)
         return SetText(text, "--");
@@ -382,9 +390,10 @@ const uint8_t *CtrNuzlockeUi_FallenText(void)
         return SetText(text, sEggText[0]);
     personality = GetMonData(mon, MON_DATA_PERSONALITY);
     otId = GetMonData(mon, MON_DATA_OT_ID);
-    if (sArm == ARM_FALLEN && sArmPersonality == personality && sArmOtId == otId)
+    shedinja = GetMonData(mon, MON_DATA_SPECIES) == SPECIES_SHEDINJA;
+    if (sArm == ARM_FALLEN && sArmPersonality == personality && sArmOtId == otId && sArmShedinja == shedinja)
         return SetText(text, sConfirmText[0]);
-    return SetText(text, CtrNuz_IsFallen(&sSession.state, personality, otId) ? sFallenText[0] : sAliveText[0]);
+    return SetText(text, CtrNuz_IsFallen(&sSession.state, personality, otId, shedinja) ? sFallenText[0] : sAliveText[0]);
 }
 
 void CtrNuzlockeUi_MarkFainted(void)

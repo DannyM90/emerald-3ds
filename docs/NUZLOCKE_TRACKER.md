@@ -20,13 +20,23 @@ and never changes Pokémon or the game's save format.
   with zero HP that have not already been marked. It does not inspect the PC
   or automatically mark Pokémon after a battle.
 - Fallen marks use personality and original-trainer ID, so changing party order
-  or depositing a Pokémon does not lose its mark. There are at most 128 marks.
+  or depositing or evolving a Pokémon does not lose its mark. Shedinja has a
+  separate identity flag because the game copies Ninjask's personality and
+  trainer ID into it. Marking or clearing one sibling does not affect the other.
+  There are at most 128 marks.
   A full list rejects new marks; a bulk mark can add only as many as fit.
   To clear a stored mark, select that Pokémon in the party.
 - **NEXT LEVEL CAP** is a reference based on the number of badges: gym caps
   are 15, 19, 24, 29, 31, 33, 42 and 46; with eight badges it shows the
   Champion's level 58. It imposes no level restriction.
 - **CAUGHT/MISS/FALLEN** shows the three totals in that order.
+
+Sidecars now use format version 2. Version 1 records still load and upgrade on
+next successful save, preserving encounter records and fallen marks on the
+original Pokémon's lineage. A legacy mark cannot tell Ninjask from its copied
+Shedinja: it remains on Nincada/Ninjask, and players who intended Shedinja should
+clear or reapply that mark manually. Older builds cannot read version 2 records;
+keep a backup before reverting builds.
 
 OFF retains recorded progress and the current choice/party selection, but
 blocks encounter and fallen edits. Most live tracker values show `--`; SET TO,

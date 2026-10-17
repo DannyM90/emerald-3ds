@@ -5,12 +5,12 @@
 #include <string.h>
 #include "3ds_nuzlocke_core.h"
 
-static const char sMagic[8] = {'E', 'M', '3', 'D', 'N', 'U', 'Z', '1'};
+static const char sMagic[8] = {'E', 'M', '3', 'D', 'N', 'U', 'Z', '2'};
 static const uint8_t sGymCaps[8] = {15, 19, 24, 29, 31, 33, 42, 46};
 #define CHAMPION_CAP 58u
 #define AREAS_AT CTR_NUZ_HEADER_BYTES
 #define FALLEN_AT (AREAS_AT + CTR_NUZ_AREA_COUNT)
-#define CRC_AT (FALLEN_AT + CTR_NUZ_FALLEN_MAX * 8u)
+#define CRC_AT (FALLEN_AT + CTR_NUZ_FALLEN_MAX * 9u)
 
 uint32_t CtrNuz_Crc32(uint32_t crc, const void *data, size_t size)
 {
@@ -71,22 +71,22 @@ bool CtrNuz_SetArea(CtrNuzState *state, unsigned area, CtrNuzStatus status)
     return true;
 }
 
-static int FindFallen(const CtrNuzState *state, uint32_t personality, uint32_t otId)
+static int FindFallen(const CtrNuzState *state, uint32_t personality, uint32_t otId, bool shedinja)
 {
     for (unsigned index = 0; index < state->fallenCount && index < CTR_NUZ_FALLEN_MAX; ++index)
-        if (state->fallen[index].personality == personality && state->fallen[index].otId == otId)
+        if (state->fallen[index].personality == personality && state->fallen[index].otId == otId && state->fallen[index].shedinja == shedinja)
             return (int)index;
     return -1;
 }
 
-bool CtrNuz_IsFallen(const CtrNuzState *state, uint32_t personality, uint32_t otId)
+bool CtrNuz_IsFallen(const CtrNuzState *state, uint32_t personality, uint32_t otId, bool shedinja)
 {
-    return FindFallen(state, personality, otId) >= 0;
+    return FindFallen(state, personality, otId, shedinja) >= 0;
 }
 
-bool CtrNuz_SetFallen(CtrNuzState *state, uint32_t personality, uint32_t otId, bool fallen)
+bool CtrNuz_SetFallen(CtrNuzState *state, uint32_t personality, uint32_t otId, bool shedinja, bool fallen)
 {
-    int index = FindFallen(state, personality, otId);
+    int index = FindFallen(state, personality, otId, shedinja);
 
     if (fallen)
     {
@@ -94,6 +94,7 @@ bool CtrNuz_SetFallen(CtrNuzState *state, uint32_t personality, uint32_t otId, b
             return false;
         state->fallen[state->fallenCount].personality = personality;
         state->fallen[state->fallenCount].otId = otId;
+        state->fallen[state->fallenCount].shedinja = shedinja;
         state->fallenCount++;
         return true;
     }
@@ -143,8 +144,9 @@ void CtrNuz_Encode(const CtrNuzState *state, uint32_t saveCrc, uint32_t saveSize
     memcpy(record + AREAS_AT, state->area, CTR_NUZ_AREA_COUNT);
     for (unsigned index = 0; index < state->fallenCount && index < CTR_NUZ_FALLEN_MAX; ++index)
     {
-        Put(record + FALLEN_AT + index * 8u, state->fallen[index].personality, 4);
-        Put(record + FALLEN_AT + index * 8u + 4u, state->fallen[index].otId, 4);
+        Put(record + FALLEN_AT + index * 9u, state->fallen[index].personality, 4);
+        Put(record + FALLEN_AT + index * 9u + 4u, state->fallen[index].otId, 4);
+        record[FALLEN_AT + index * 9u + 8u] = state->fallen[index].shedinja;
     }
     Put(record + CRC_AT, CtrNuz_Crc32(0, record, CRC_AT), 4);
 }
@@ -152,11 +154,26 @@ void CtrNuz_Encode(const CtrNuzState *state, uint32_t saveCrc, uint32_t saveSize
 bool CtrNuz_Decode(const uint8_t record[CTR_NUZ_RECORD_BYTES], CtrNuzState *state,
                    uint32_t *saveCrc, uint32_t *saveSize)
 {
-    CtrNuzState decoded;
-    unsigned count;
+    return CtrNuz_DecodeSized(record, CTR_NUZ_RECORD_BYTES, state, saveCrc, saveSize);
+}
 
-    if (memcmp(record, sMagic, sizeof(sMagic)) != 0
-     || Get(record + CRC_AT, 4) != CtrNuz_Crc32(0, record, CRC_AT))
+bool CtrNuz_DecodeSized(const uint8_t *record, size_t bytes, CtrNuzState *state,
+                        uint32_t *saveCrc, uint32_t *saveSize)
+{
+    CtrNuzState decoded;
+    unsigned count, stride;
+    size_t crcAt;
+
+    if (bytes == CTR_NUZ_RECORD_V1_BYTES)
+        stride = 8;
+    else if (bytes == CTR_NUZ_RECORD_BYTES)
+        stride = 9;
+    else
+        return false;
+    crcAt = bytes - 4;
+    if (memcmp(record, sMagic, sizeof(sMagic) - 1) != 0
+     || record[7] != (stride == 8 ? '1' : '2')
+     || Get(record + crcAt, 4) != CtrNuz_Crc32(0, record, crcAt))
         return false;
     for (unsigned index = 18; index < CTR_NUZ_HEADER_BYTES; ++index)
         if (record[index] != 0)
@@ -173,19 +190,24 @@ bool CtrNuz_Decode(const uint8_t record[CTR_NUZ_RECORD_BYTES], CtrNuzState *stat
     }
     for (unsigned index = 0; index < CTR_NUZ_FALLEN_MAX; ++index)
     {
-        uint32_t personality = Get(record + FALLEN_AT + index * 8u, 4);
-        uint32_t otId = Get(record + FALLEN_AT + index * 8u + 4u, 4);
+        uint32_t personality = Get(record + FALLEN_AT + index * stride, 4);
+        uint32_t otId = Get(record + FALLEN_AT + index * stride + 4u, 4);
+        uint8_t shedinja = stride == 9 ? record[FALLEN_AT + index * stride + 8u] : 0;
+
+        if (shedinja > 1)
+            return false;
 
         if (index >= count)
         {
-            if (personality != 0 || otId != 0)
+            if (personality != 0 || otId != 0 || shedinja != 0)
                 return false;
             continue;
         }
-        if (CtrNuz_IsFallen(&decoded, personality, otId))
+        if (CtrNuz_IsFallen(&decoded, personality, otId, shedinja))
             return false;
         decoded.fallen[index].personality = personality;
         decoded.fallen[index].otId = otId;
+        decoded.fallen[index].shedinja = shedinja;
         decoded.fallenCount = (uint16_t)(index + 1);
     }
     *state = decoded;

@@ -87,7 +87,7 @@ static bool SameState(const CtrNuzState *a, const CtrNuzState *b)
     if (memcmp(a->area, b->area, sizeof(a->area)) != 0 || a->fallenCount != b->fallenCount)
         return false;
     for (unsigned i = 0; i < a->fallenCount; i++)
-        if (a->fallen[i].personality != b->fallen[i].personality || a->fallen[i].otId != b->fallen[i].otId)
+        if (a->fallen[i].personality != b->fallen[i].personality || a->fallen[i].otId != b->fallen[i].otId || a->fallen[i].shedinja != b->fallen[i].shedinja)
             return false;
     return true;
 }
@@ -113,7 +113,7 @@ static void TestCore(void)
     static CtrNuzState state, decoded;
     static uint8_t record[CTR_NUZ_RECORD_BYTES], probe[CTR_NUZ_RECORD_BYTES];
     /* A synthetic party: identities, not slots. */
-    CtrNuzMon party[3] = {{0x11111111u, 0xAAAA0001u}, {0x22222222u, 0xAAAA0001u}, {0x33333333u, 0xBBBB0002u}};
+    CtrNuzMon party[3] = {{0x11111111u, 0xAAAA0001u, false}, {0x22222222u, 0xAAAA0001u, false}, {0x33333333u, 0xBBBB0002u, false}};
     CtrNuzMon swap;
     unsigned caught, missed, fallen, leader;
     uint32_t crc, size;
@@ -135,24 +135,24 @@ static void TestCore(void)
     assert(CtrNuz_Area(&state, 16) == CTR_NUZ_CAUGHT && CtrNuz_Area(&state, 17) == CTR_NUZ_MISSED);
 
     /* Marked by identity: reordering and depositing do not lose it. */
-    assert(CtrNuz_SetFallen(&state, party[1].personality, party[1].otId, true));
-    assert(!CtrNuz_SetFallen(&state, party[1].personality, party[1].otId, true));
+    assert(CtrNuz_SetFallen(&state, party[1].personality, party[1].otId, false, true));
+    assert(!CtrNuz_SetFallen(&state, party[1].personality, party[1].otId, false, true));
     swap = party[0];
     party[0] = party[1];
     party[1] = swap;
-    assert(CtrNuz_IsFallen(&state, party[0].personality, party[0].otId));
-    assert(!CtrNuz_IsFallen(&state, party[1].personality, party[1].otId));
+    assert(CtrNuz_IsFallen(&state, party[0].personality, party[0].otId, false));
+    assert(!CtrNuz_IsFallen(&state, party[1].personality, party[1].otId, false));
     party[0] = party[2];   /* deposited: gone from the party, still fallen */
-    assert(CtrNuz_IsFallen(&state, 0x22222222u, 0xAAAA0001u));
+    assert(CtrNuz_IsFallen(&state, 0x22222222u, 0xAAAA0001u, false));
     /* Same personality, another trainer: another Pokemon. */
-    assert(!CtrNuz_IsFallen(&state, 0x22222222u, 0xAAAA0002u));
-    assert(CtrNuz_SetFallen(&state, party[2].personality, party[2].otId, true));
+    assert(!CtrNuz_IsFallen(&state, 0x22222222u, 0xAAAA0002u, false));
+    assert(CtrNuz_SetFallen(&state, party[2].personality, party[2].otId, false, true));
     CtrNuz_Counts(&state, &caught, &missed, &fallen);
     assert(caught == 1 && missed == 1 && fallen == 2);
 
     /* Clearing keeps the list packed. */
-    assert(CtrNuz_SetFallen(&state, 0x22222222u, 0xAAAA0001u, false));
-    assert(!CtrNuz_SetFallen(&state, 0x22222222u, 0xAAAA0001u, false));
+    assert(CtrNuz_SetFallen(&state, 0x22222222u, 0xAAAA0001u, false, false));
+    assert(!CtrNuz_SetFallen(&state, 0x22222222u, 0xAAAA0001u, false, false));
     assert(state.fallenCount == 1 && state.fallen[0].personality == 0x33333333u);
     assert(state.fallen[1].personality == 0 && state.fallen[1].otId == 0);
 
@@ -191,13 +191,13 @@ static void TestCore(void)
     FixCrc(probe);
     assert(!DecodeOk(probe));
     memcpy(probe, record, sizeof(probe));
-    probe[CTR_NUZ_HEADER_BYTES + CTR_NUZ_AREA_COUNT + 8] = 7;   /* past the count */
+    probe[CTR_NUZ_HEADER_BYTES + CTR_NUZ_AREA_COUNT + 9] = 7;   /* past the count */
     FixCrc(probe);
     assert(!DecodeOk(probe));
     /* The same Pokemon twice. */
     memcpy(probe, record, sizeof(probe));
     probe[16] = 2;
-    memcpy(probe + CTR_NUZ_HEADER_BYTES + CTR_NUZ_AREA_COUNT + 8, probe + CTR_NUZ_HEADER_BYTES + CTR_NUZ_AREA_COUNT, 8);
+    memcpy(probe + CTR_NUZ_HEADER_BYTES + CTR_NUZ_AREA_COUNT + 9, probe + CTR_NUZ_HEADER_BYTES + CTR_NUZ_AREA_COUNT, 9);
     FixCrc(probe);
     assert(!DecodeOk(probe));
     /* A failed decode leaves the state alone. */
@@ -208,10 +208,71 @@ static void TestCore(void)
     /* The list's capacity. */
     CtrNuz_Reset(&state);
     for (unsigned i = 0; i < CTR_NUZ_FALLEN_MAX; i++)
-        assert(CtrNuz_SetFallen(&state, i + 1, 7, true));
-    assert(!CtrNuz_SetFallen(&state, 9999, 7, true));
+        assert(CtrNuz_SetFallen(&state, i + 1, 7, false, true));
+    assert(!CtrNuz_SetFallen(&state, 9999, 7, false, true));
     CtrNuz_Encode(&state, 1, 2, record);
     assert(CtrNuz_Decode(record, &decoded, &crc, &size) && SameState(&state, &decoded));
+}
+
+/* A v1 fixture in the original layout, including its original CRC. */
+static void MakeLegacy(const uint8_t *current, uint8_t *legacy)
+{
+    unsigned start = CTR_NUZ_HEADER_BYTES + CTR_NUZ_AREA_COUNT;
+    uint32_t crc;
+
+    memcpy(legacy, current, start);
+    legacy[7] = '1';
+    for (unsigned i = 0; i < CTR_NUZ_FALLEN_MAX; ++i)
+        memcpy(legacy + start + i * 8u, current + start + i * 9u, 8);
+    crc = CtrNuz_Crc32(0, legacy, CTR_NUZ_RECORD_V1_BYTES - 4);
+    for (unsigned i = 0; i < 4; ++i)
+        legacy[CTR_NUZ_RECORD_V1_BYTES - 4 + i] = (uint8_t)(crc >> (i * 8u));
+}
+
+static void TestShedinja(void)
+{
+    CtrNuzState state, decoded;
+    uint8_t record[CTR_NUZ_RECORD_BYTES], legacy[CTR_NUZ_RECORD_V1_BYTES];
+    uint32_t crc, size;
+    unsigned flagsAt = CTR_NUZ_HEADER_BYTES + CTR_NUZ_AREA_COUNT + 8;
+
+    CtrNuz_Reset(&state);
+    /* Nincada's main lineage keeps its mark when it evolves to Ninjask. The
+     * copied Shedinja has the same personality/OT but is a separate Pokemon. */
+    assert(CtrNuz_SetFallen(&state, 123, 456, false, true));
+    assert(CtrNuz_IsFallen(&state, 123, 456, false));
+    assert(!CtrNuz_IsFallen(&state, 123, 456, true));
+    assert(CtrNuz_SetFallen(&state, 123, 456, true, true));
+    assert(state.fallenCount == 2);
+    CtrNuz_Encode(&state, 10, 20, record);
+    assert(CtrNuz_Decode(record, &decoded, &crc, &size));
+    assert(SameState(&state, &decoded));
+    /* Clearing either sibling must leave the other marked. */
+    assert(CtrNuz_SetFallen(&decoded, 123, 456, true, false));
+    assert(CtrNuz_IsFallen(&decoded, 123, 456, false));
+    assert(!CtrNuz_IsFallen(&decoded, 123, 456, true));
+    assert(CtrNuz_SetFallen(&state, 123, 456, false, false));
+    assert(CtrNuz_IsFallen(&state, 123, 456, true));
+    CtrNuz_Encode(&state, 10, 20, record);
+    record[flagsAt] = 2;
+    FixCrc(record);
+    assert(!DecodeOk(record));
+    CtrNuz_Encode(&state, 10, 20, record);
+    record[flagsAt + 9] = 1; /* nonzero unused slot */
+    FixCrc(record);
+    assert(!DecodeOk(record));
+
+    CtrNuz_Reset(&state);
+    CtrNuz_SetArea(&state, 16, CTR_NUZ_MISSED);
+    assert(CtrNuz_SetFallen(&state, 123, 456, false, true));
+    CtrNuz_Encode(&state, 10, 20, record);
+    MakeLegacy(record, legacy);
+    assert(CtrNuz_DecodeSized(legacy, sizeof(legacy), &decoded, &crc, &size));
+    assert(SameState(&state, &decoded) && crc == 10 && size == 20);
+    assert(!CtrNuz_IsFallen(&decoded, 123, 456, true));
+    assert(!CtrNuz_DecodeSized(legacy, sizeof(legacy) - 1, &decoded, &crc, &size));
+    legacy[7] = '2'; /* correct sizes are also tied to the format version */
+    assert(!CtrNuz_DecodeSized(legacy, sizeof(legacy), &decoded, &crc, &size));
 }
 
 static void TestSession(void)
@@ -276,7 +337,7 @@ static void TestStore(void)
     /* Written, read back for this save only. */
     CtrNuz_Reset(&first);
     CtrNuz_SetArea(&first, 16, CTR_NUZ_CAUGHT);
-    CtrNuz_SetFallen(&first, 0xDEADBEEFu, 0x0001E240u, true);
+    CtrNuz_SetFallen(&first, 0xDEADBEEFu, 0x0001E240u, false, true);
     assert(CtrNuzStore_Save(&first, saveA, sizeof(saveA)));
     assert(CtrNuzStore_Load(saveA, sizeof(saveA), &loaded) == CTR_NUZ_LINK_MATCHED);
     assert(SameState(&first, &loaded));
@@ -285,6 +346,22 @@ static void TestStore(void)
     /* The same bytes, a different length: another save. */
     assert(CtrNuzStore_Load(saveA, sizeof(saveA) - 1, &loaded) == CTR_NUZ_LINK_OTHER);
     assert(memcmp(saveA, unchanged, sizeof(saveA)) == 0);
+
+    /* A matching v1 sidecar upgrades on save without losing areas/main-line
+     * marks, while its original bytes remain available in the backup. */
+    {
+        uint8_t old[CTR_NUZ_RECORD_V1_BYTES];
+        CtrNuz_Encode(&first, CtrNuz_Crc32(0, saveA, sizeof(saveA)), sizeof(saveA), bytes);
+        MakeLegacy(bytes, old);
+        WriteFile(RECORD, old, sizeof(old));
+        assert(CtrNuzStore_Load(saveA, sizeof(saveA), &loaded) == CTR_NUZ_LINK_MATCHED);
+        assert(SameState(&first, &loaded));
+        assert(CtrNuzStore_Save(&loaded, saveA, sizeof(saveA)));
+        assert(ReadFile(RECORD, bytes, sizeof(bytes)) == CTR_NUZ_RECORD_BYTES && bytes[7] == '2');
+        assert(ReadFile(RECORD ".bak", bytes, sizeof(bytes)) == sizeof(old));
+        assert(memcmp(bytes, old, sizeof(old)) == 0);
+        RemoveFile(RECORD ".bak");
+    }
 
     /* A failed write keeps the record. */
     assert(ReadFile(RECORD, kept, sizeof(kept)) == sizeof(kept));
@@ -346,6 +423,7 @@ int main(void)
 
     TestCore();
     TestSession();
+    TestShedinja();
 #ifdef _WIN32
     puts("SKIP nuzlocke store: sdmc:/ paths need a POSIX host");
     puts("PASS nuzlocke core");
@@ -360,7 +438,7 @@ int main(void)
     assert(rmdir("sdmc:/3ds") == 0);
     assert(rmdir("sdmc:") == 0);
     assert(chdir("/tmp") == 0 && rmdir(folder) == 0);
-    puts("PASS nuzlocke: areas, fallen by identity across reorder/deposit, level caps, record checks, "
+    puts("PASS nuzlocke: areas, fallen by identity across reorder/deposit, independent Shedinja, legacy migration, level caps, record checks, "
          "write rules, save binding, other/damaged not applied, backup and temp recovery, failed write, no save mutation");
     return 0;
 }

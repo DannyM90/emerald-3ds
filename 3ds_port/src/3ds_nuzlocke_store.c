@@ -20,14 +20,15 @@ static int ReadRecord(const char *name, CtrNuzState *state, uint32_t *saveCrc, u
     uint8_t bytes[CTR_NUZ_RECORD_BYTES];
     FILE *file = CtrFs_OpenData(name, "rb");
     bool valid;
+    size_t got;
 
     if (file == NULL)
         return -1;
-    valid = fread(bytes, 1, sizeof(bytes), file) == sizeof(bytes)
-         && fgetc(file) == EOF && !ferror(file);
+    got = fread(bytes, 1, sizeof(bytes), file);
+    valid = fgetc(file) == EOF && !ferror(file);
     if (fclose(file) != 0)
         valid = false;
-    if (!valid || !CtrNuz_Decode(bytes, state, saveCrc, saveSize))
+    if (!valid || !CtrNuz_DecodeSized(bytes, got, state, saveCrc, saveSize))
         return -2;
     return 0;
 }

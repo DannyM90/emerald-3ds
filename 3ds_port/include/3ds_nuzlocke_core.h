@@ -18,10 +18,11 @@
 /* Areas are the game's region map sections (below 256). */
 #define CTR_NUZ_AREA_COUNT 256u
 #define CTR_NUZ_FALLEN_MAX 128u
-/* "EM3DNUZ1", save CRC, save size, fallen count, 6 reserved bytes, the areas,
- * the fallen Pokemon (personality, OT id), the record's CRC. */
+/* "EM3DNUZ2", save CRC, save size, fallen count, 6 reserved bytes, areas,
+ * fallen Pokemon (personality, OT id, Shedinja flag), record CRC. */
 #define CTR_NUZ_HEADER_BYTES 24u
-#define CTR_NUZ_RECORD_BYTES (CTR_NUZ_HEADER_BYTES + CTR_NUZ_AREA_COUNT + CTR_NUZ_FALLEN_MAX * 8u + 4u)
+#define CTR_NUZ_RECORD_V1_BYTES (CTR_NUZ_HEADER_BYTES + CTR_NUZ_AREA_COUNT + CTR_NUZ_FALLEN_MAX * 8u + 4u)
+#define CTR_NUZ_RECORD_BYTES (CTR_NUZ_HEADER_BYTES + CTR_NUZ_AREA_COUNT + CTR_NUZ_FALLEN_MAX * 9u + 4u)
 
 typedef enum
 {
@@ -32,11 +33,13 @@ typedef enum
 } CtrNuzStatus;
 
 /* A Pokemon by who it is, not where it is: party order, the PC and trades
- * keep both numbers. */
+ * keep both numbers. Shedinja is copied from Ninjask, so it needs its own
+ * identity bit; other species changes must not lose a fallen mark. */
 typedef struct
 {
     uint32_t personality;
     uint32_t otId;
+    bool shedinja;
 } CtrNuzMon;
 
 typedef struct
@@ -62,9 +65,9 @@ void CtrNuz_Reset(CtrNuzState *state);
 bool CtrNuz_IsEmpty(const CtrNuzState *state);
 CtrNuzStatus CtrNuz_Area(const CtrNuzState *state, unsigned area);
 bool CtrNuz_SetArea(CtrNuzState *state, unsigned area, CtrNuzStatus status);
-bool CtrNuz_IsFallen(const CtrNuzState *state, uint32_t personality, uint32_t otId);
+bool CtrNuz_IsFallen(const CtrNuzState *state, uint32_t personality, uint32_t otId, bool shedinja);
 /* False when the list is full (marking) or nothing changed. */
-bool CtrNuz_SetFallen(CtrNuzState *state, uint32_t personality, uint32_t otId, bool fallen);
+bool CtrNuz_SetFallen(CtrNuzState *state, uint32_t personality, uint32_t otId, bool shedinja, bool fallen);
 void CtrNuz_Counts(const CtrNuzState *state, unsigned *caught, unsigned *missed, unsigned *fallen);
 /* The level of the next gym leader's strongest Pokemon for this many badges
  * (15, 19, 24, 29, 31, 33, 42, 46), then the Champion's (58); *leader is the
@@ -77,6 +80,11 @@ void CtrNuz_Encode(const CtrNuzState *state, uint32_t saveCrc, uint32_t saveSize
  * bytes, statuses, count, unused entries, no repeated Pokemon). */
 bool CtrNuz_Decode(const uint8_t record[CTR_NUZ_RECORD_BYTES], CtrNuzState *state,
                    uint32_t *saveCrc, uint32_t *saveSize);
+
+/* Accept v1 records too: ambiguous legacy marks stay on the original lineage,
+ * never implicitly mark its copied Shedinja. The next save writes v2. */
+bool CtrNuz_DecodeSized(const uint8_t *record, size_t bytes, CtrNuzState *state,
+                        uint32_t *saveCrc, uint32_t *saveSize);
 
 /*
  * The tracker of the running game. A record is written after each successful
