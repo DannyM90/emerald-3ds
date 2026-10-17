@@ -1564,6 +1564,9 @@ static bool BorderAt(int x, int y)
  * (a sea lowered under the land, Rustboro's, goes on at its own level), at
  * the map's ground otherwise. Over instance 0's base, as the belt is built.
  */
+/* How far along a map's edge a belt of water looks for the map's sea. */
+#define VOXEL_BORDER_SEA_SEARCH 12
+
 static bool BorderWaterLevel(int x, int y, float *level, float *shift)
 {
     const VoxelMapInstance *ring = VoxelWorld_Instance(0);
@@ -1578,6 +1581,30 @@ static bool BorderWaterLevel(int x, int y, float *level, float *shift)
        : y >= ring->originY + ring->height ? ring->originY + ring->height - 1 : y;
     *level = 0.0f;
     *shift = 0.0f;
+    /* Where the map's edge is land, the nearest of its sea along the edge:
+     * a sea filled past an edge (VoxelWorld_BorderMetatile) lies level with
+     * the map's, not raised to the belt's base beside a stretch of shore. */
+    if (VoxelMesh_Classify(ex, ey) != VOXEL_SHAPE_WATER)
+    {
+        bool alongY = x < ring->originX || x >= ring->originX + ring->width;
+
+        for (int k = 1; k <= VOXEL_BORDER_SEA_SEARCH; ++k)
+        {
+            int ax = alongY ? ex : ex - k, ay = alongY ? ey - k : ey;
+            int bx = alongY ? ex : ex + k, by = alongY ? ey + k : ey;
+
+            if (VoxelWorld_GetInstanceAt(ax, ay) == ring && VoxelMesh_Classify(ax, ay) == VOXEL_SHAPE_WATER)
+            {
+                ex = ax, ey = ay;
+                break;
+            }
+            if (VoxelWorld_GetInstanceAt(bx, by) == ring && VoxelMesh_Classify(bx, by) == VOXEL_SHAPE_WATER)
+            {
+                ex = bx, ey = by;
+                break;
+            }
+        }
+    }
     if (VoxelMesh_Classify(ex, ey) == VOXEL_SHAPE_WATER)
     {
         *level = VoxelRelief_CellLift(ring, ex, ey);
