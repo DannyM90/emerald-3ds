@@ -1,8 +1,21 @@
 # RNG seeding on 3DS
 
-Emerald initializes its primary RNG state to zero. Its optional upstream
-`SeedRngWithRtc()` fix is guarded by `BUGFIX`; this port enables `UBFIX`, which
-is a separate flag. Normal startup therefore repeated the same initial stream.
+Vanilla Emerald initializes its primary RNG state to zero, so repeating the
+initial stream at boot is original game behavior, not a defect introduced by
+this port. The optional upstream `SeedRngWithRtc()` change is guarded by
+`BUGFIX`; this port enables the separate `UBFIX` flag.
+
+This proposal makes two distinct changes for maintainer consideration:
+
+- Normal 3DS boots and soft resets start from console timing instead of zero.
+  This deliberately changes vanilla behavior and compatibility with zero-seed
+  RNG manipulation. It is not required merely to make the port match Emerald.
+- New-game generation reseeds at the reachable portable trainer-ID path. The
+  port already generates both halves of the trainer ID from `Random()` there;
+  its GBA naming-screen timer reseed is excluded by `PORTABLE`. This hook
+  provides fresh timing when a new game begins, including after the RNG has
+  advanced since boot. The portable path already avoids reading the GBA timer;
+  the missing portable reseed is the issue addressed here.
 
 The 3DS port now seeds the existing RNG at every `AgbMain` entry, including a
 soft reset, using a mix of the console's high-resolution system tick and wall
