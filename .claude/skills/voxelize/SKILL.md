@@ -16,6 +16,8 @@ every generator you will change:
 
 - `docs/VOXEL_GUIDE.md` - setup, rules for every model, the working loop,
   pull request checklist.
+- `docs/VOXEL_STATUS.md` - the status of every map and room on this branch,
+  its known faults and who is on it. Read the row of the place first.
 - Buildings, interiors, props: `3ds_port/assets/voxel/buildings/README.md`.
 - Mountains, cliffs, terrain: `docs/VOXEL_MOUNTAINS.md` and
   `3ds_port/scripts/terrace_debug/README.md`. Its "Tried and rejected"
@@ -91,5 +93,6 @@ every generator you will change:
 - Metrics improving is not success; the view at the reported place is.
 - Never claim a check passed without running it, and quote its numbers.
 - Before a pull request: an issue claims the area, the checks of the area
-  and `make verify` pass, and the sheets and numbers go in the pull request,
+  and `make verify` pass, the rows of `docs/VOXEL_STATUS.md` the work
+  changes are updated in the same pull request, and the sheets and numbers go in the pull request,
   not in the repository (see `CONTRIBUTING.md`).
