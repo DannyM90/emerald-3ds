@@ -94,5 +94,6 @@ every generator you will change:
 - Never claim a check passed without running it, and quote its numbers.
 - Before a pull request: an issue claims the area, the checks of the area
   and `make verify` pass, the rows of `docs/VOXEL_STATUS.md` the work
-  changes are updated in the same pull request, and the sheets and numbers go in the pull request,
+  changes are updated in the same pull request (then
+  `python 3ds_port/scripts/voxel_status.py --write` refreshes its Progress block), and the sheets and numbers go in the pull request,
   not in the repository (see `CONTRIBUTING.md`).
