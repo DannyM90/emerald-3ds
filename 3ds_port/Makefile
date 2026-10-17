@@ -324,6 +324,12 @@ verify: verify-randomizer
 verify-randomizer: build/randomizer_test$(EXESUFFIX)
 	./build/randomizer_test$(EXESUFFIX)
 
+# Hash guards and edit positions must match the complete patched English tree.
+verify: verify-randomizer-locales
+.PHONY: verify-randomizer-locales
+verify-randomizer-locales:
+	$(PYTHON) tests/randomizer_locale_test.py --tree $(ROOT)
+
 build/randomizer_test$(EXESUFFIX): tests/randomizer_test.c src/3ds_randomizer_core.c include/3ds_randomizer.h
 	@mkdir -p build
 	$(HOSTCC) -std=c99 -O2 -Wall -Wextra -Werror -Iinclude tests/randomizer_test.c src/3ds_randomizer_core.c -o $@
