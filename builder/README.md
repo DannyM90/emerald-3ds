@@ -35,8 +35,12 @@ Privacy: the ROM is read into memory and never copied, uploaded or modified;
 temporary files are removed even when a step fails.
 
 Saves: before an install replaces any game file, an existing
-`emerald3ds.sav` and whichever of `emerald3ds.clock` / `emerald3ds.clock.bak`
-exist are copied into a new `3ds/emerald3ds/backup/<YYYYMMDD-HHMMSS>[-N]/`
+`emerald3ds.sav` and whichever of its optional companions exist are copied:
+`emerald3ds.clock`, `emerald3ds.clock.tmp`, `emerald3ds.clock.bak`,
+`emerald3ds.nuzlocke`, `emerald3ds.nuzlocke.tmp`, and `emerald3ds.nuzlocke.bak`.
+Temporary and backup companions are included because the game can recover
+progress from them. They are copied into a new
+`3ds/emerald3ds/backup/<YYYYMMDD-HHMMSS>[-N]/`
 folder (counted in the free-space check). The copy is staged in a `.partial`
 folder and renamed only once complete. If it fails, nothing is replaced and
 cleanup is attempted; any leftovers remain marked `.partial` and must not be

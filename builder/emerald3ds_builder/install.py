@@ -16,9 +16,10 @@ from .errors import BuilderError
 
 APP_DIR = Path("3ds") / "emerald3ds"
 
-# The player's save and its real-time-clock companions, in the app folder.
+# The player's save, real-time clock and Nuzlocke tracker, in the app folder.
 SAVE_NAME = "emerald3ds.sav"
-SAVE_FILES = (SAVE_NAME, "emerald3ds.clock", "emerald3ds.clock.bak")
+SAVE_FILES = (SAVE_NAME, "emerald3ds.clock", "emerald3ds.clock.tmp", "emerald3ds.clock.bak",
+              "emerald3ds.nuzlocke", "emerald3ds.nuzlocke.tmp", "emerald3ds.nuzlocke.bak")
 BACKUP_DIR = "backup"   # <app folder>/backup/<timestamp>/
 
 # The 3DS sound firmware dump that homebrew needs for audio.
@@ -89,7 +90,8 @@ def _backup_stamp() -> str:
 
 def _existing_saves(dest: Path) -> list[tuple[str, Path, os.stat_result]]:
     """The save files to back up: none unless the save itself exists, then the
-    save plus whichever clock companions exist. Only reads metadata."""
+    save plus whichever clock and Nuzlocke companions exist (base, .tmp and
+    .bak files, as listed in SAVE_FILES). Only reads metadata."""
     found = []
     for name in SAVE_FILES:
         path = dest / name
@@ -218,8 +220,10 @@ def install(sd_root: Path, files: dict[str, Path], progress=None, warn=None) -> 
     so. Behaviour when a card is pulled out or loses power is not verified.
 
     If a save (emerald3ds.sav) is already there, it and any clock companions
-    (emerald3ds.clock, emerald3ds.clock.bak) are first copied, in full, into a
-    new folder backup/<timestamp>/ next to them; if that backup fails, nothing
+    (emerald3ds.clock, emerald3ds.clock.tmp, emerald3ds.clock.bak) and Nuzlocke
+    tracker companions (emerald3ds.nuzlocke, emerald3ds.nuzlocke.tmp,
+    emerald3ds.nuzlocke.bak) are first copied, in full, into a new folder
+    backup/<timestamp>/ next to them; if that backup fails, nothing
     is replaced. The originals are never written, older backups never removed.
 
     `warn(message)`, if given, receives non-fatal warnings after a successful

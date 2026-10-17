@@ -103,6 +103,44 @@ class BackupContentTests(_Base):
         self.assertEqual((self.dest / PAK).read_bytes(), self.pak_src.read_bytes())
         self.assertFalse([p for p in self.dest.iterdir() if p.name.endswith(".partial")])
 
+    def test_all_optional_companions_are_backed_up_verbatim_and_originals_untouched(self):
+        self._old_install()
+        companions = {
+            "emerald3ds.clock": b"CLOCK-1",
+            "emerald3ds.clock.tmp": b"RECOVERABLE-CLOCK\x00\xff",
+            "emerald3ds.clock.bak": b"CLOCK-0",
+            "emerald3ds.nuzlocke": b"TRACKER\x00\x01",
+            "emerald3ds.nuzlocke.tmp": b"RECOVERABLE-TRACKER\xfe",
+            "emerald3ds.nuzlocke.bak": b"OLD-TRACKER\xff",
+        }
+        originals = {SAV: self.save_bytes, **companions}
+        for name, data in originals.items():
+            (self.dest / name).write_bytes(data)
+        mtimes = {name: (self.dest / name).stat().st_mtime_ns for name in originals}
+        real_open = Path.open
+
+        def open_file(path, mode="r", *args, **kwargs):
+            if Path(path).parent == self.dest and Path(path).name in originals:
+                self.assertEqual(mode, "rb")
+            return real_open(path, mode, *args, **kwargs)
+
+        with patch.object(Path, "open", open_file):
+            install(self.sd, self.files)
+        backup = self.dest / BACKUP_DIR / STAMP
+        self.assertEqual(sorted(p.name for p in backup.iterdir()), sorted(originals))
+        for name, data in originals.items():
+            self.assertEqual((backup / name).read_bytes(), data)
+            self.assertEqual((self.dest / name).read_bytes(), data)
+            self.assertEqual((self.dest / name).stat().st_mtime_ns, mtimes[name])
+
+    def test_missing_all_optional_companions_still_backs_up_the_save(self):
+        self._old_install(clock=False, clock_bak=False)
+        install(self.sd, self.files)
+        backup = self.dest / BACKUP_DIR / STAMP
+        self.assertEqual([p.name for p in backup.iterdir()], [SAV])
+        self.assertEqual((backup / SAV).read_bytes(), self.save_bytes)
+        self.assertEqual((self.dest / SAV).read_bytes(), self.save_bytes)
+
     def test_only_existing_clock_companions_are_backed_up(self):
         self._old_install(clock=False)
         install(self.sd, self.files)
