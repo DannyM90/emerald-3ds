@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The camera can stop at the edge of a map: on the edges chosen map by map
+  (for now Routes 103 to 107 and Rustboro City), in 2D and in voxel, the
+  picture no longer shows the border tiled past the edge that the wider screen
+  used to bring into view; only the player walks on. Where another map joins
+  part of such an edge, the camera follows the player in front of it. Every
+  other map keeps the camera on the player as before.
+
 - Japanese (experimental): the game in Japanese from your own Pocket Monsters
   Emerald (Japan) ROM. The web and Windows builders accept it and pick the
   language from the ROM; every release carries the Japanese variant too
