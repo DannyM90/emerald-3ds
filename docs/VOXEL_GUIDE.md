@@ -99,9 +99,7 @@ The same loop for a building, a room or a mountain:
 ## Before opening a pull request
 
 - Coordinate first: open (or comment on) an issue naming the map or area you
-  take, so two people do not voxelize the same place, and write your name in
-  its Owner column of [VOXEL_STATUS.md](VOXEL_STATUS.md). One area per
-  branch.
+  take, so two people do not voxelize the same place. One area per branch.
 - Update the rows of [VOXEL_STATUS.md](VOXEL_STATUS.md) your work changes, in
   the same pull request.
 - The checks of your area pass (see the buildings README and
