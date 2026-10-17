@@ -20,42 +20,28 @@ def function(text, signature):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--cc', default='cc')
+    parser.add_argument('--source-tree', type=Path,
+                        help='bootstrapped upstream tree with production patches applied')
     args = parser.parse_args()
     code = (ROOT / 'src/3ds_game_full.c').read_text()
     seed_fn = function(code, 'u16 Port_RngSeed(u16 fallback)')
-    # Both source layouts must contain the hook; bootstrap does not copy patches.
-    patch = ROOT.parent / 'patches/pokeemerald/0061-rng-seeding.patch'
-    if patch.exists():
-        hook = patch.read_text()
-        assert '+    SeedRng(Port_RngSeed(0));' in hook
-        assert '+    val = Port_RngSeed(val);' in hook
-        assert '+#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)' in hook
-        assert '+#elif defined(BUGFIX)' in hook
-        callsite = '''#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)
-    SeedRng(Port_RngSeed(0));
-#elif defined(BUGFIX)
-    SeedRngWithRtc();
-#endif'''
-        trainer = '''void SeedRngAndSetTrainerId(void)
-{
-    u16 val = REG_TM1CNT_L;
-#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)
-    val = Port_RngSeed(val);
-#endif
-    SeedRng(val);
-    REG_TM1CNT_H = 0;
-    sTrainerId = val;
-}'''
-    else:
-        main_src = (ROOT.parent / 'src/main.c').read_text()
-        agb = function(main_src, 'void AgbMain(void)')
-        begin = agb.index('#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)')
-        end = agb.index('#endif', begin) + len('#endif')
-        callsite = agb[begin:end]
-        trainer = function(main_src, 'void SeedRngAndSetTrainerId(void)')
-        assert 'SeedRng(Port_RngSeed(0))' in callsite
-        assert 'val = Port_RngSeed(val)' in trainer
-        assert agb.index('InitMainCallbacks();') < begin < agb.index('ClearDma3Requests();')
+    source_tree = args.source_tree or ROOT.parent
+    if not (source_tree / 'src/new_game.c').is_file():
+        parser.error('run from a bootstrapped tree, or pass --source-tree PATH '
+                     'containing the applied production patches')
+    main_src = (source_tree / 'src/main.c').read_text()
+    new_game_src = (source_tree / 'src/new_game.c').read_text()
+    agb = function(main_src, 'void AgbMain(void)')
+    begin = agb.index('#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)')
+    end = agb.index('#endif', begin) + len('#endif')
+    callsite = agb[begin:end]
+    trainer = function(new_game_src, 'static void InitPlayerTrainerId(void)')
+    new_game = function(new_game_src, 'void NewGameInitData(void)')
+    reseed_fn = function(code, 'void Port_ReseedForNewGame(void)')
+    assert 'SeedRng(Port_RngSeed(0))' in callsite
+    assert 'Port_ReseedForNewGame();' in trainer
+    assert 'InitPlayerTrainerId();' in new_game
+    assert agb.index('InitMainCallbacks();') < begin < agb.index('ClearDma3Requests();')
     # Soft reset re-enters the same AgbMain after restoring the initial game data.
     soft = function(code, 'void CtrGame_SoftReset(void)')
     init = function(code, 'void CtrGame_Init(void)')
@@ -67,20 +53,40 @@ def main():
 #include <stdbool.h>
 #include <stdio.h>
 typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint8_t u8;
 static bool scenario;
 static uint64_t ticks;
 static int64_t wall;
 static unsigned reads, calls, rtcCalls;
-static u16 lastSeed, sTrainerId, REG_TM1CNT_L, REG_TM1CNT_H;
+static u16 lastSeed;
+static u32 rng, trainerId;
+static unsigned randomCalls;
+static struct { u8 playerTrainerId[4]; } saveBlock2;
+#define gSaveBlock2Ptr (&saveBlock2)
 static bool CtrScenario_Active(void) { return scenario; }
 static uint64_t CtrPlatform_Ticks(void) { ++reads; return ticks; }
 static int64_t CtrPlatform_WallSeconds(void) { ++reads; return wall; }
-static void SeedRng(u16 seed) { ++calls; lastSeed = seed; }
+static void SeedRng(u16 seed) { ++calls; lastSeed = seed; rng = seed; }
+static u16 Random(void)
+{
+    ++randomCalls;
+    rng = rng * UINT32_C(1103515245) + UINT32_C(24691);
+    return (u16)(rng >> 16);
+}
+#ifndef PORTABLE
+static u16 GetGeneratedTrainerIdLower(void) { return 0x3456; }
+#endif
+static void SetTrainerId(u32 id, u8 *dst)
+{
+    trainerId = id;
+    for (unsigned i = 0; i < 4; ++i) dst[i] = (u8)(id >> (8 * i));
+}
 #ifdef BUGFIX
 void SeedRngWithRtc(void) { ++rtcCalls; }
 #endif
 '''
-    harness += seed_fn + '\nstatic void Boot(void)\n{\n' + callsite + '\n}\n' + trainer
+    harness += seed_fn + '\n' + reseed_fn + '\nstatic void Boot(void)\n{\n' + callsite + '\n}\n' + trainer
     harness += r'''
 int main(void)
 {
@@ -122,35 +128,75 @@ int main(void)
 #else
     assert(calls == 0 && rtcCalls == 0);
 #endif
-    REG_TM1CNT_L = 0x3456;
-    REG_TM1CNT_H = 0x80;
-    calls = 0;
-    SeedRngAndSetTrainerId();
-    assert(calls == 1 && REG_TM1CNT_H == 0 && sTrainerId == lastSeed);
-#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)
-    assert(lastSeed == initial);
+    rng = UINT32_C(0xabcdef12);
+    calls = randomCalls = reads = 0;
+    InitPlayerTrainerId();
+#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE) && defined(PORTABLE)
+    assert(calls == 1 && lastSeed == initial && reads == 2);
+    u32 liveExpected = initial;
+    for (unsigned i = 0; i < 2; ++i)
+        liveExpected = liveExpected * UINT32_C(1103515245) + UINT32_C(24691);
+    assert(rng == liveExpected); /* reseed precedes both trainer-ID draws */
 #else
-    assert(lastSeed == 0x3456);
+    assert(calls == 0 && reads == 0);
+#endif
+#ifdef PORTABLE
+    assert(randomCalls == 2);
+#else
+    assert(randomCalls == 1 && (trainerId & 0xffff) == 0x3456);
+#endif
+    assert(saveBlock2.playerTrainerId[0] == (u8)trainerId);
+    assert(saveBlock2.playerTrainerId[3] == (u8)(trainerId >> 24));
+    /* Starting another new game really samples fresh timing at the portable
+     * trainer-ID call, even if the RNG had already advanced since boot. */
+    ticks += UINT64_C(1234567);
+    u16 next = Port_RngSeed(0);
+    calls = reads = 0;
+    InitPlayerTrainerId();
+#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE) && defined(PORTABLE)
+    assert(calls == 1 && reads == 2 && lastSeed == next);
+#else
+    (void)next;
+    assert(calls == 0 && reads == 0);
 #endif
     scenario = true;
     reads = calls = rtcCalls = 0;
     Boot();
-    SeedRngAndSetTrainerId();
-    assert(lastSeed == 0x3456 && sTrainerId == 0x3456 && reads == 0);
 #if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)
-    assert(calls == 2 && rtcCalls == 0);
+    assert(calls == 1 && lastSeed == 0 && rtcCalls == 0);
+#elif defined(BUGFIX)
+    assert(calls == 0 && rtcCalls == 1);
 #else
-    assert(calls == 1);
+    assert(calls == 0 && rtcCalls == 0);
 #endif
-    puts("PASS RNG seed: boot, trainer reseed, scenario fallback, source variation, bounds");
+    /* Scenarios must continue their prior 32-bit state, not reseed from a
+     * truncated/zero fallback. Test the actual portable production function. */
+    rng = UINT32_C(0xabcdef12);
+    calls = randomCalls = reads = 0;
+    (void)Random();
+#ifdef PORTABLE
+    (void)Random();
+#endif
+    u32 expectedState = rng;
+    rng = UINT32_C(0xabcdef12);
+    randomCalls = 0;
+    InitPlayerTrainerId();
+    assert(calls == 0 && reads == 0 && rng == expectedState);
+#ifdef PORTABLE
+    assert(randomCalls == 2);
+#else
+    assert(randomCalls == 1);
+#endif
+    puts("PASS RNG seed: production boot/new-game, scenario stream, variation, bounds");
     return 0;
 }
 '''
     with tempfile.TemporaryDirectory() as tmp:
         source = Path(tmp) / 'seed.c'
         source.write_text(harness)
-        for flags in [[], ['-DBUGFIX'], ['-DPLATFORM_3DS', '-DPORT_BRIDGE'],
-                      ['-DPLATFORM_3DS', '-DPORT_BRIDGE', '-DBUGFIX']]:
+        variants = [[], ['-DBUGFIX'], ['-DPLATFORM_3DS', '-DPORT_BRIDGE'],
+                    ['-DPLATFORM_3DS', '-DPORT_BRIDGE', '-DBUGFIX']]
+        for flags in variants + [v + ['-DPORTABLE'] for v in variants]:
             binary = Path(tmp) / 'seed'
             subprocess.run([args.cc, '-std=c99', '-O2', '-Wall', '-Wextra', '-Werror',
                             *flags, str(source), '-o', str(binary)], check=True)

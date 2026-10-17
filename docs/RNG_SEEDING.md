@@ -6,9 +6,9 @@ is a separate flag. Normal startup therefore repeated the same initial stream.
 
 The 3DS port now seeds the existing RNG at every `AgbMain` entry, including a
 soft reset, using a mix of the console's high-resolution system tick and wall
-clock. New-game trainer-ID generation uses the same source: the GBA timer
-register it otherwise reads is a memory-backed register that this port does
-not advance. A startup-only fix would be overwritten by that zero reseed.
+clock. The reachable portable `InitPlayerTrainerId` path also samples the
+same source immediately before its two `Random()` calls. The GBA naming
+screen timer hook is disabled by `PORTABLE`, so it is not used for this fix.
 Only these seed inputs change. The RNG algorithm, encounter generation, shiny
 checks, secondary RNG, and existing saves/Pokémon/trainer IDs are unchanged.
 New games can naturally receive different trainer IDs.
@@ -21,15 +21,25 @@ normal play. Scripted/gameplay reseeding (including battle recordings) is not
 removed.
 
 Measured scenarios retain the historical input at both seed points: recording
-and playback use the caller's zero/timer fallback and never read live ticks or
-wall time for these hooks. Existing recorded inputs remain deterministic.
+and playback use zero at startup and skip new-game reseeding entirely, so
+the portable trainer-ID path continues its historical RNG state. These hooks
+never read live ticks or wall time during scenarios. Existing recorded inputs
+remain deterministic.
 This preserves the historical scenario behavior rather than introducing new
 scenario entropy/metadata. The separate seeded species randomizer's own seed
 and permutation are unaffected.
 
 `make -C 3ds_port verify-rng-seeding PYTHON=python3 HOSTCC=cc` tests the actual
 backend function, source variation, integer boundaries, scenario fallbacks,
-trainer-ID propagation and guarded call sites. In a bootstrapped tree it
-compiles the actual applied main.c seed blocks; in the overlay repository it
-checks the patch and exercises equivalent blocks. Full `make verify` includes
-this test. Physical-console reset behavior still requires hardware acceptance.
+trainer-ID propagation and guarded call sites. It compiles the actual applied
+`main.c` startup block and `new_game.c` trainer-ID function in eight macro
+configurations, including `PORTABLE`, and checks that scenario new games do not
+reseed or truncate the previous RNG state. From an overlay checkout, provide
+an applied source tree explicitly:
+
+```
+python3 3ds_port/tests/rng_seeding_test.py --source-tree /path/to/bootstrapped/tree
+```
+
+Full `make verify` in a bootstrapped tree includes this test. Physical-console
+reset behavior still requires hardware acceptance.

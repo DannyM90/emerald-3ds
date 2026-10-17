@@ -1,4 +1,4 @@
-Seed normal 3DS boots/resets and trainer-ID generation from console timing.
+Seed normal 3DS boots/resets and portable trainer-ID generation from console timing.
 Keep legacy seed values for deterministic scenario recording/playback.
 
 diff --git a/src/main.c b/src/main.c
@@ -25,13 +25,22 @@ diff --git a/src/main.c b/src/main.c
      SeedRngWithRtc(); // see comment at SeedRngWithRtc definition below
  #endif
      PORT_BOOT_STEP(0xA00B);
-@@ -288,6 +293,9 @@
- void SeedRngAndSetTrainerId(void)
- {
-     u16 val = REG_TM1CNT_L;
-+#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)
-+    val = Port_RngSeed(val);
+diff --git a/src/new_game.c b/src/new_game.c
+--- a/src/new_game.c
++++ b/src/new_game.c
+@@ -88,8 +88,15 @@
+     }
+ }
+
++#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE) && defined(PORTABLE)
++void Port_ReseedForNewGame(void);
 +#endif
-     SeedRng(val);
-     REG_TM1CNT_H = 0;
-     sTrainerId = val;
++
+ static void InitPlayerTrainerId(void)
+ {
++#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE) && defined(PORTABLE)
++    Port_ReseedForNewGame();
++#endif
+ #ifndef PORTABLE
+     u32 trainerId = (Random() << 16) | GetGeneratedTrainerIdLower();
+ #else // Since Emerald generates the TID FRLG-style, based on a hardware timer, it won't work on other platforms
