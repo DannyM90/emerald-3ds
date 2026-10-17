@@ -17,7 +17,7 @@ every generator you will change:
 - `docs/VOXEL_GUIDE.md` - setup, rules for every model, the working loop,
   pull request checklist.
 - `docs/VOXEL_STATUS.md` - the status of every map and room on this branch,
-  its known faults and who is on it. Read the row of the place first.
+  and its known faults. Read the row of the place first.
 - Buildings, interiors, props: `3ds_port/assets/voxel/buildings/README.md`.
 - Mountains, cliffs, terrain: `docs/VOXEL_MOUNTAINS.md` and
   `3ds_port/scripts/terrace_debug/README.md`. Its "Tried and rejected"
