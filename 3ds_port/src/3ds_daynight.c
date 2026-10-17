@@ -249,8 +249,12 @@ bool CtrDayNight_SyncToConsole(void)
     /* Suspended or not yet resampled: that time was owed at 1X, not at speed. */
     if (sResume)
         sClock.ready = false;
-    CtrDayNight_Sync(&sClock, now, local, speed);
+    if (sClock.ready)
+        CtrDayNight_Advance(&sClock, now, local, speed);
+    /* The setter updates the clock at the old rate. Clear its shifted phase
+     * afterwards, or that update would immediately undo the sync. */
     CtrSettings_SetInt("clock_speed", 0);
+    CtrDayNight_Sync(&sClock, now, local, 0);
     sLocalSeconds = local;
     sSampleMs = now;
     sSampled = true;

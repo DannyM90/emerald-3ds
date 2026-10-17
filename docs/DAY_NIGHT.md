@@ -333,6 +333,8 @@ measurement; hardware acceptance is the user's report above.
   SYNC CLOCK: last-interval credit at the old rate, kept berry bonus, unchanged
   state and settings on an unreadable RTC, midnight and backwards local time
   afterwards, unshifted snapshot/restore and no credit for suspended time.
+  The same scenarios also run with the production settings setter, including
+  its old-rate clock update before the new speed is stored.
 - `make -C 3ds_port verify-night-windows`: authored glass masks, unchanged
   source art, real VXB7/VXB8 readers, streamed slices, missing-mask fallback,
   bounds checks and opaque-only generated masks, with ASan/UBSan.

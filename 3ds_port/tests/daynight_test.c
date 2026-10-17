@@ -30,8 +30,11 @@ static unsigned sSetCalls;
 void CtrSettings_SetInt(const char *key, int value)
 {
     ++sSetCalls;
-    if (strcmp(key, "clock_speed") == 0)
+    if (strcmp(key, "clock_speed") == 0 && sSpeed != value)
+    {
+        CtrDayNight_Update();
         sSpeed = value;
+    }
 }
 
 static void Near(float actual, float expected)
