@@ -92,9 +92,10 @@ void CtrEmu_EndVBlank(void);
 static u32 sFrames;
 static bool sStarted;
 /* The field's fade in held behind the voxel world's black (HoldFieldFade),
- * and for how many frames of that black. Port state: a soft reset clears it. */
+ * and for how many presented frames of that black. A soft reset clears it. */
 static bool sFadeHeld;
 static u32 sFadeHeldFrames;
+static u32 sFadeLastVideoFrame;
 
 /*
  * The CGB channels are generated in software beside the sample mixer, and they
@@ -190,6 +191,7 @@ void CtrGame_SoftReset(void)
     /* The fade starts again with the game: nothing of the last one is held. */
     sFadeHeld = false;
     sFadeHeldFrames = 0;
+    sFadeLastVideoFrame = CtrVideo_GetStats()->frames;
     CtrEmu_Reset();
     StartCgbChannels();
     CtrAudio_UnlockSound();
@@ -1187,8 +1189,10 @@ static void MeasureAid(void)
  * Nothing the hold stops can keep it on: the black ends with the warm-up
  * (ctr_voxel.c, VOXEL_WARMUP_FRAMES, 180, set again only by another cut),
  * which builds the world whatever the fade does; FIELD_FADE_HOLD_MAX lets go
- * here whatever the video does, and is not started again before that black
- * is over. A fade out, a fast or hardware fade and a weather fade (rain:
+ * after that many presented frames, and is not started again before that
+ * black is over. Hidden logical frames do not advance the warm-up or this
+ * bound: fast-forward and real-time catch-up keep the fade held between
+ * pictures. A fade out, a fast or hardware fade and a weather fade (rain:
  * field_weather.c, which does not use gPaletteFade) are not held.
  */
 #define FIELD_FADE_HOLD_MAX 240u
@@ -1206,6 +1210,8 @@ bool8 Port_HoldPaletteFade(void)
 static void HoldFieldFade(void)
 {
     const CtrVideoStats *video = CtrVideo_GetStats();
+    bool presented = video->frames != sFadeLastVideoFrame;
+    sFadeLastVideoFrame = video->frames;
     bool blank = video->mode == CTR_MODE_FIELD_VOXEL && video->route == CTR_ROUTE_BLANK
               && CtrGame_IsOverworld();
     bool hold = FieldFadeHold(blank, gPaletteFade.active && gPaletteFade.yDec, sFadeHeldFrames);
@@ -1216,11 +1222,12 @@ static void HoldFieldFade(void)
             CtrLog_Write(CTR_LOG_VIDEO, "field fade in held for the voxel world (frame %lu)",
                          (unsigned long)sFrames);
         sFadeHeld = true;
-        ++sFadeHeldFrames;
+        if (presented)
+            ++sFadeHeldFrames;
         return;
     }
     if (sFadeHeld)
-        CtrLog_Write(CTR_LOG_VIDEO, "field fade in let go after %lu frames%s", (unsigned long)sFadeHeldFrames,
+        CtrLog_Write(CTR_LOG_VIDEO, "field fade in let go after %lu presented frames%s", (unsigned long)sFadeHeldFrames,
                      sFadeHeldFrames >= FIELD_FADE_HOLD_MAX ? " (the bound)" : "");
     sFadeHeld = false;
     /* Counted per black: the bound is not started again until it is over. */

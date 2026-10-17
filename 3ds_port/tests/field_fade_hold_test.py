@@ -11,7 +11,8 @@ what it waits for (the fade over). Checked: under PORT_BRIDGE
 bufferTransferDisabled does not hold a fade (why the hold is a delay gate);
 the door waits for the first picture, which comes in black and fades in;
 without the hold the door was done behind the black (the report); a black
-that never ends lets go at the bound; a fade begun while held still blends
+that never ends lets go at the presented-frame bound; hidden frames at
+2x/4x/16x pacing retain the hold; a fade begun while held still blends
 its first step; the 2D field, a fade out and leaving the field are left
 alone."""
 import argparse
@@ -117,6 +118,7 @@ static bool CtrGame_IsOverworld(void) { return sOverworld; }
 static u32 sFrames;
 static bool sFadeHeld;
 static u32 sFadeHeldFrames;
+static u32 sFadeLastVideoFrame;
 ''' + function(game, 'static bool FieldFadeHold(bool blankField, bool fadingIn, u32 heldFrames)') + function(game, 'bool8 Port_HoldPaletteFade(void)') \
         + function(game, 'static void HoldFieldFade(void)') + r'''
 static int sFails, sCases;
@@ -140,6 +142,7 @@ static void Arrive(void)
     sPlttBufferTransferPending = 0;
     sFadeHeld = false;
     sFadeHeldFrames = 0;
+    sFadeLastVideoFrame = sVideo.frames;
     sOverworld = true;
 }
 
@@ -165,6 +168,7 @@ static int Warp(int black, int frames, bool hold, unsigned mode, bool transferOf
         sVideo.mode = (uint8_t)mode;
         sVideo.route = blank ? CTR_ROUTE_BLANK : CTR_ROUTE_VOXEL;
         if (!blank && *shownAtPicture < 0) *shownAtPicture = sPltt[1];
+        ++sVideo.frames;
         if (hold) HoldFieldFade();
         ++sFrames;
         /* The game's frame: the field's VBlank, then CB2_Overworld. */
@@ -176,9 +180,66 @@ static int Warp(int black, int frames, bool hold, unsigned mode, bool transferOf
     return door;
 }
 
+/* EndFrame presents only selected logical frames (FrameShown). The
+ * voxel warm-up advances only in CtrVoxel_Update during those presents. */
+static void PacedWarp(unsigned logicalPerPicture)
+{
+    unsigned pictures = 0;
+    bool openedInBlack = false;
+    int firstPicture = -1;
+
+    Arrive();
+    BeginNormalPaletteFade(PALETTES_ALL, 0, 16, 0, 0);
+    for (unsigned logical = 0; logical < 220 * logicalPerPicture; ++logical)
+    {
+        if (logical % logicalPerPicture == 0)
+        {
+            ++pictures;
+            sVideo.mode = CTR_MODE_FIELD_VOXEL;
+            sVideo.route = pictures <= 180 ? CTR_ROUTE_BLANK : CTR_ROUTE_VOXEL;
+            if (pictures == 181) firstPicture = sPltt[1];
+            ++sVideo.frames;
+        }
+        HoldFieldFade();
+        TransferPlttBuffer();
+        UpdatePaletteFade();
+        if (pictures <= 180 && !gPaletteFade.active) openedInBlack = true;
+    }
+    Expect(!openedInBlack, "paced door waits for voxel warm-up", openedInBlack, 0);
+    Expect(firstPicture == 0, "paced first picture remains black", firstPicture, 0);
+    Expect(!gPaletteFade.active, "paced fade completes after warm-up", gPaletteFade.active, 0);
+
+    /* A genuinely stuck renderer still releases after 240 presented frames,
+     * even with arbitrarily many hidden logical frames between presents. */
+    Arrive();
+    sVideo.route = CTR_ROUTE_BLANK;
+    BeginNormalPaletteFade(PALETTES_ALL, 0, 16, 0, 0);
+    for (unsigned picture = 0; picture < FIELD_FADE_HOLD_MAX; ++picture)
+    {
+        ++sVideo.frames;
+        HoldFieldFade();
+        for (unsigned hidden = 0; hidden < logicalPerPicture + 10; ++hidden)
+        {
+            /* Below the bound hidden frames must retain the hold. */
+            HoldFieldFade();
+            if (picture + 1 < FIELD_FADE_HOLD_MAX && !Port_HoldPaletteFade())
+                openedInBlack = true;
+            TransferPlttBuffer();
+            UpdatePaletteFade();
+        }
+    }
+    Expect(!openedInBlack, "hidden frames do not exhaust hold budget", openedInBlack, 0);
+    HoldFieldFade();
+    Expect(!Port_HoldPaletteFade(), "stuck renderer reaches presented-frame bound", Port_HoldPaletteFade(), 0);
+}
+
 int main(void)
 {
     int shown, door;
+
+    PacedWarp(2); /* real-time catch-up / 2x */
+    PacedWarp(4); /* 4x fast-forward */
+    PacedWarp(16); /* long hidden-frame runs */
 
     /* Under PORT_BRIDGE the transfer switch holds the colours, not the
      * fade: the door is done in the black regardless. */
