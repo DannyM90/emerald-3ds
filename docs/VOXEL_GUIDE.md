@@ -18,6 +18,9 @@ needs.
 The generators' docstrings are the detailed reference; read the one of the
 file you change.
 
+What is done, what has faults and who is working on what, map by map and
+room by room: [VOXEL_STATUS.md](VOXEL_STATUS.md).
+
 ## Setup
 
 1. Get a tree and build it once ([DEVELOPMENT.md](DEVELOPMENT.md)):
@@ -96,7 +99,11 @@ The same loop for a building, a room or a mountain:
 ## Before opening a pull request
 
 - Coordinate first: open (or comment on) an issue naming the map or area you
-  take, so two people do not voxelize the same place. One area per branch.
+  take, so two people do not voxelize the same place, and write your name in
+  its Owner column of [VOXEL_STATUS.md](VOXEL_STATUS.md). One area per
+  branch.
+- Update the rows of [VOXEL_STATUS.md](VOXEL_STATUS.md) your work changes, in
+  the same pull request.
 - The checks of your area pass (see the buildings README and
   VOXEL_MOUNTAINS.md), and `make verify` passes.
 - In the pull request (not in the repository): the before/after sheets, the
