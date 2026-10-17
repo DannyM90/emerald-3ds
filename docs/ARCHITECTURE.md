@@ -117,7 +117,8 @@ capped by the GX queue (32 entries), building textures stream from a worker
 thread, and a fixed sun with baked shade and cast sprite shadows grades the
 scene (`VOXEL_LIGHTING`). Buildings, trees, signposts and drawn terrain relief
 are modelled on the host from each map's own art (`3ds_port/scripts/gen_voxel_*.py`)
-and read at runtime from `voxel/*.bin`.
+and read at runtime from `voxel/*.bin`. How to work on them:
+[VOXEL_GUIDE.md](VOXEL_GUIDE.md).
 
 With the 3D slider up the world is drawn once per eye, each from a camera
 moved half an interocular distance sideways with the asymmetric frustum of a
