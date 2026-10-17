@@ -1,0 +1,37 @@
+Seed normal 3DS boots/resets and trainer-ID generation from console timing.
+Keep legacy seed values for deterministic scenario recording/playback.
+
+diff --git a/src/main.c b/src/main.c
+--- a/src/main.c
++++ b/src/main.c
+@@ -30,6 +30,9 @@
+ #ifdef PORT_BRIDGE
+ #include "port_platform.h"
+ #include "port_log.h"
++#ifdef PLATFORM_3DS
++u16 Port_RngSeed(u16 fallback);
++#endif
+ #endif
+
+ static void VBlankIntr(void);
+@@ -140,7 +143,9 @@
+     PORT_BOOT_STEP(0xA009);
+     InitMapMusic();
+     PORT_BOOT_STEP(0xA00A);
+-#ifdef BUGFIX
++#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)
++    SeedRng(Port_RngSeed(0));
++#elif defined(BUGFIX)
+     SeedRngWithRtc(); // see comment at SeedRngWithRtc definition below
+ #endif
+     PORT_BOOT_STEP(0xA00B);
+@@ -288,6 +293,9 @@
+ void SeedRngAndSetTrainerId(void)
+ {
+     u16 val = REG_TM1CNT_L;
++#if defined(PLATFORM_3DS) && defined(PORT_BRIDGE)
++    val = Port_RngSeed(val);
++#endif
+     SeedRng(val);
+     REG_TM1CNT_H = 0;
+     sTrainerId = val;
