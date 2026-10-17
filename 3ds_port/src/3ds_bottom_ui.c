@@ -4144,11 +4144,18 @@ static void DrawTrainerCard(const ViewState *s)
 
     DrawStr(&sNormal, Ascii(CTR_TEXT("TIME", "TIEMPO", "プレイじかん")), bx + 16, by + 89, TXT_DARK, TXT_LIGHT);
     {
-        int colon = StrWidth(&sNormal, gText_Colon2), x = bx + 128 - (colon + 30);
-        DrawStr(&sNormal, Number(s->hours, 3, STR_CONV_MODE_RIGHT_ALIGN), x, by + 89, TXT_DARK, TXT_LIGHT);
-        DrawStr(&sNormal, gText_Colon2, x + 18, by + 89, TXT_DARK, TXT_LIGHT);
-        DrawStr(&sNormal, Number(s->minutes, 2, STR_CONV_MODE_LEADING_ZEROS), x + 18 + colon, by + 89, TXT_DARK,
-                TXT_LIGHT);
+        /* Latin digits are ~6px (magic 18+12); Japanese digits are fixed 8px, so
+         * measure widths or the colon sits inside the hours. */
+        const u8 *hoursStr = Number(s->hours, 3, STR_CONV_MODE_RIGHT_ALIGN);
+        const u8 *minsStr = Number(s->minutes, 2, STR_CONV_MODE_LEADING_ZEROS);
+        int hw = StrWidth(&sNormal, hoursStr);
+        int mw = StrWidth(&sNormal, minsStr);
+        int colon = StrWidth(&sNormal, gText_Colon2);
+        int x = bx + 128 - (hw + colon + mw);
+
+        DrawStr(&sNormal, hoursStr, x, by + 89, TXT_DARK, TXT_LIGHT);
+        DrawStr(&sNormal, gText_Colon2, x + hw, by + 89, TXT_DARK, TXT_LIGHT);
+        DrawStr(&sNormal, minsStr, x + hw + colon, by + 89, TXT_DARK, TXT_LIGHT);
     }
 
     if (sRes.badgeTiles)
