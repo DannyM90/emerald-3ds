@@ -319,6 +319,15 @@ build/video_decode_test.exe: tests/video_decode_test.c src/3ds_video_decode.c in
 	@mkdir -p build
 	$(HOSTCC) -std=c99 -O2 -Wall -Wextra -Werror -Iinclude tests/video_decode_test.c src/3ds_video_decode.c -o $@
 
+verify: verify-randomizer
+.PHONY: verify-randomizer
+verify-randomizer: build/randomizer_test$(EXESUFFIX)
+	./build/randomizer_test$(EXESUFFIX)
+
+build/randomizer_test$(EXESUFFIX): tests/randomizer_test.c src/3ds_randomizer_core.c include/3ds_randomizer.h
+	@mkdir -p build
+	$(HOSTCC) -std=c99 -O2 -Wall -Wextra -Werror -Iinclude tests/randomizer_test.c src/3ds_randomizer_core.c -o $@
+
 verify: verify-pak
 .PHONY: verify-pak
 verify-pak: build/pak_test.exe tests/make_test_pak.py
