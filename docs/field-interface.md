@@ -37,7 +37,7 @@ seen-name masking, mapped-species masking, page/input transitions, hit targets,
 Repel read-only snapshots, clock dismissal and partial/full redraw equivalence.
 The clock harness checks save binding, corruption, backups, serial/status
 transitions and new-game reset. The new-game hook lives in
-`patches/pokeemerald/0060-field-clock-notice.patch` and must be applied by the
+`patches/pokeemerald/0078-field-clock-notice.patch` and must be applied by the
 normal bootstrap when preparing a full game tree.
 
 These host tests do not establish text readability on a physical screen or

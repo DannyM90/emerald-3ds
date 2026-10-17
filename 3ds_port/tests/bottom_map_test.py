@@ -36,7 +36,7 @@ def main():
     table = (ROOT / 'src/3ds_field_qol_extras.inc').read_text(encoding='utf-8')
     # Entries after the sentinel corrupt count-based settings lookup.
     assert extras.index('#include "3ds_field_qol_extras.inc"') < extras.index('    {0},')
-    hook_patch = ROOT.parent / 'patches/pokeemerald/0060-field-clock-notice.patch'
+    hook_patch = ROOT.parent / 'patches/pokeemerald/0078-field-clock-notice.patch'
     if hook_patch.is_file():
         hook = hook_patch.read_text(encoding='utf-8')
         assert '+#include "3ds_clock_store.h"' in hook
