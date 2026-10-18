@@ -24,6 +24,9 @@ under = "its box is drawn in the floor's own oranges, inside its outline: it is 
 [allow.dept_store_1f_planter_n]
 under = "its box is drawn in the floor's own oranges, inside its outline: it is the planter, not the floor under it"
 
+[allow.dept_store_3f_counter]
+backdrop = "the two computers' shadows on its top are drawn in the green the floor shades with: its top, not the room round it"
+
 [allow.pc2f_counter]
 copied = "its side is its front's bands - the top's lip, the dark line under it, the lilac band, the panel - which run round its ends as along its front: the counter's make, not a drawer's edge"
 

@@ -3609,6 +3609,64 @@ def dept_store_2f():
     ]
 
 
+# 3F: the glass counter as a U, 1F's in plan, its glass bar's top a row
+# below the arms' (its back at z 55); both computers are 1F's (reused).
+
+
+def dept_store_3f():
+    return [
+        piece("counter", [(96, 24, 112, 63), (176, 24, 192, 63), (112, 45, 176, 63)], 10,
+              leave=DEPT_GREEN_FLOOR,
+              plan=[(96, 34), (112, 34), (112, 55), (176, 55), (176, 34), (192, 34), (192, 64),
+                    (96, 64)]),
+        piece("wall", [(0, 0, 288, 32)], 32, fill=16, foot=32, side=DEPT_WALL_SIDE),
+        piece("side_w", [], 32, side=DEPT_WALL_SIDE, walls=[((0, 128), (0, 32))]),
+        piece("side_e", [], 32, side=DEPT_WALL_SIDE, walls=[((288, 32), (288, 128))]),
+    ]
+
+
+# 4F: the glass counter as 2F's, a cell narrower; three pairs of low display
+# shelves, two-tiered, each as long as the two cells its collision blocks,
+# as the Mart's are (5F stands them again).
+
+DEPT_4F_SHELVES = (16, 32, 208, 224, 240, 256)
+
+
+def dept_store_4f():
+    return [piece("shelf_%d" % x, [(x, 80, x + 16, 111)], 17, back=80, leave=DEPT_GREEN_FLOOR)
+            for x in DEPT_4F_SHELVES] + [
+        piece("counter", [(96, 76, 112, 127), (160, 76, 176, 127), (112, 77, 160, 95)], 10,
+              leave=DEPT_GREEN_FLOOR,
+              plan=[(96, 86), (112, 86), (112, 87), (160, 87), (160, 86), (176, 86), (176, 128),
+                    (160, 128), (160, 96), (112, 96), (112, 128), (96, 128)]),
+        piece("wall", [(0, 0, 288, 32)], 32, fill=16, foot=32, side=DEPT_WALL_SIDE),
+        piece("side_w", [], 32, side=DEPT_WALL_SIDE, walls=[((0, 128), (0, 32))]),
+        piece("side_e", [], 32, side=DEPT_WALL_SIDE, walls=[((288, 32), (288, 128))]),
+    ]
+
+
+# 5F: the glass counter as 3F's U, a cell wider; by the east wall a glass
+# counter as 2F's, one arm and its bar running into the wall. Its low shelves
+# are 4F's, its tall one the Mart's, its computers 1F's (all reused).
+
+DEPT_5F_FLOOR = ("ffffcd", "dedea4", "ffc5ac", "cdffcd", "acdeb4", "e6a483", "bdbd83")
+
+
+def dept_store_5f():
+    return [
+        piece("counter_e", [(224, 76, 240, 127), (240, 77, 288, 95)], 10, leave=DEPT_5F_FLOOR,
+              plan=[(224, 86), (240, 86), (240, 87), (288, 87), (288, 96), (240, 96), (240, 128),
+                    (224, 128)]),
+        piece("counter", [(80, 24, 96, 63), (176, 24, 192, 63), (96, 45, 176, 63)], 10,
+              leave=DEPT_5F_FLOOR,
+              plan=[(80, 34), (96, 34), (96, 55), (176, 55), (176, 34), (192, 34), (192, 64),
+                    (80, 64)]),
+        piece("wall", [(0, 0, 288, 32)], 32, fill=16, foot=32, side=DEPT_WALL_SIDE),
+        piece("side_w", [], 32, side=DEPT_WALL_SIDE, walls=[((0, 128), (0, 32))]),
+        piece("side_e", [], 32, side=DEPT_WALL_SIDE, walls=[((288, 32), (288, 128))]),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5234,6 +5292,21 @@ SPECS = [
         "name": "dept_store_2f",
         "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_2F", "ground": [0x201],
                      "pieces": own_shell(dept_store_2f())},
+    },
+    {
+        "name": "dept_store_3f",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_3F", "ground": [0x201],
+                     "pieces": own_shell(dept_store_3f())},
+    },
+    {
+        "name": "dept_store_4f",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_4F", "ground": [0x201],
+                     "pieces": own_shell(dept_store_4f())},
+    },
+    {
+        "name": "dept_store_5f",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_5F", "ground": [0x2f2],
+                     "pieces": own_shell(dept_store_5f())},
     },
 ] + [
     {
