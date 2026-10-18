@@ -3448,6 +3448,111 @@ def rustboro_gym():
     ]
 
 
+# ── The contest stage ─────────────────────────────────────────────────────
+#
+# The stage a contest is held on (LAYOUT_CONTEST_HALL and its five coloured
+# twins; Lilycove's contest hall draws three of them again): one floor, every
+# cell of it walked on at the same elevation, so nothing on it stands up but
+# what blocks the way - the low cushions round the green, the trophy's case
+# and the back wall. The stairs down its front and the emblem in the middle
+# are walked on, and stay drawn on the floor.
+
+STAGE_FLOOR = ("94acb4", "738383", "838b83", "bddec5")   # the dotted floor, its channel, the green
+
+# the cushions round the green, each with its dark outline: the back row,
+# the two sides, the front row either side of the stairs
+STAGE_CUSHIONS = (
+    [(x, 48, x + 14, 55) for x in range(49, 178, 16)]
+    # (a side one's shape stops at its front's last row - a shape takes its
+    # bottom row, and the row under its front is the channel's grey between
+    # its side lines)
+    + [(x, y, x + 5, y + 13) for y in range(57, 122, 16) for x in (49, 185)]
+    + [(x, 136, x + 14, 143) for x in (49, 65, 81, 145, 161, 177)])
+
+
+def contest_stage():
+    cushions = sorted(STAGE_CUSHIONS, key=lambda r: (-r[3], r[0]))
+    return [piece("cushion_%d" % i, [r], 4, leave=STAGE_FLOOR) for i, r in enumerate(cushions)] + [
+        # the trophy in its glass case, by the green's north-east corner
+        piece("case", [(144, 73, 160, 88)], 8, leave=STAGE_FLOOR),
+        piece("wall", [(0, 0, 240, 16)], 16, fill=16, foot=16, side=(0, 0, 16, 16)),
+    ]
+
+
+# ── Lilycove's contest lobby ──────────────────────────────────────────────
+#
+# The reception's counter, a U whose arms run back to the wall, the terminal
+# beside it, the four Berry Blenders, and the back wall with its two
+# doorways into the hall. The sofas down the side walls stand on cells the
+# player walks on, and stay drawn on the floor.
+
+LOBBY_FLOOR = ("f6b49c", "d5ac7b", "cd9c7b", "b48b5a", "c55231")   # the checker, the wall's shade and foot
+LOBBY_WALL_SIDE = (16, 3, 32, 32)       # a stretch of curtain with nothing on it
+LOBBY_CURTAIN = ("cd295a", "de6a52")    # the curtain, seen past the counter's rounded back corners
+
+
+def contest_lobby():
+    blenders = [piece("blender_%d_%d" % (bx, by), [(bx, by, bx + 16, by + 15)], 8, leave=LOBBY_FLOOR)
+                for (bx, by) in ((368, 144), (432, 144), (368, 80), (432, 80))]
+    return blenders + [
+        # the counter, a U in plan: a bar across the front as deep as its
+        # drawn top (z 54 to 63), an arm back towards the wall at each end
+        # (from z 35, its back corners nicked as the Center's are, where the
+        # drawing leaves the wall), the
+        # receptionists' floor between them; 10 px tall, its
+        # front the green lip and the white panels. The bow on the east arm's
+        # front corner is its own paint; the row under its front, its shadow
+        piece("counter", [(176, 25, 192, 62), (288, 25, 304, 62), (176, 44, 304, 62)], 10,
+              leave=LOBBY_FLOOR + LOBBY_CURTAIN,
+              plan=[(176, 36.2), (177.2, 35), (190.8, 35), (192, 36.2), (192, 54), (288, 54),
+                    (288, 36.2), (289.2, 35), (302.8, 35), (304, 36.2), (304, 63), (176, 63)]),
+        piece("terminal", [(304, 8, 320, 39)], 24, back=32),
+        # the back wall, its two doorways painted on its face as Lavaridge's
+        # Center's door to the spring is
+        piece("wall", [(0, 3, 496, 32)], 29, fill=16, foot=32, side=LOBBY_WALL_SIDE),
+        piece("side_w", [], 29, side=LOBBY_WALL_SIDE, walls=[((0, 192), (0, 32))]),
+        piece("side_e", [], 29, side=LOBBY_WALL_SIDE, walls=[((496, 32), (496, 192))]),
+    ]
+
+
+# ── Lilycove's contest hall ───────────────────────────────────────────────
+#
+# The hall the three stages stand in (their pieces are the contest stage's,
+# found again). Its back wall steps forward in three tiers either side - the
+# judges' portraits in the middle, a plaque on each wing -, each 60 px from
+# the cap drawn over it to its foot; side walls close each step and the
+# hall. The potted palms are cards; the chairs stand on walked cells and
+# stay drawn on the floor.
+
+HALL_FLOOR = ("f6b49c", "d5ac7b")
+HALL_WALL_SIDE = (176, 4, 192, 64)      # a stretch of the middle's curtain with nothing on it
+HALL_PALMS = ((8, 9), (42, 9), (2, 11), (5, 11), (45, 11), (48, 11),
+              (3, 32), (7, 32), (11, 32), (39, 32), (43, 32), (47, 32))   # their pots' cells
+
+
+def lilycove_contest_room():
+    side = HALL_WALL_SIDE
+    palms = sorted(HALL_PALMS, key=lambda c: (-c[1], c[0]))
+    return [piece("palm_%d_%d" % (cx, cy), [(cx * 16, cy * 16 - 16, cx * 16 + 16, cy * 16 + 14)],
+                  31, leave=HALL_FLOOR, card=True) for (cx, cy) in palms] + [
+        piece("wall_ow", [(0, 68, 80, 128)], 60, fill=16, foot=128, side=side),
+        piece("wall_oe", [(736, 68, 816, 128)], 60, fill=16, foot=128, side=side),
+        piece("wall_ww", [(80, 36, 160, 96)], 60, fill=16, foot=96, side=side),
+        piece("wall_we", [(656, 36, 736, 96)], 60, fill=16, foot=96, side=side),
+        # the middle in two halves, as the Center's back wall: one 496 px
+        # long left no room beside it on the hall's texture page
+        piece("wall_e", [(408, 4, 656, 64)], 60, fill=16, foot=64, side=side),
+        piece("wall", [(160, 4, 408, 64)], 60, fill=16, foot=64, side=side),
+        # the steps' sides, then the hall's
+        piece("side_step_ow", [], 60, side=side, walls=[((80, 128), (80, 96))]),
+        piece("side_step_ww", [], 60, side=side, walls=[((160, 96), (160, 64))]),
+        piece("side_step_we", [], 60, side=side, walls=[((656, 64), (656, 96))]),
+        piece("side_step_oe", [], 60, side=side, walls=[((736, 96), (736, 128))]),
+        piece("side_w", [], 60, side=side, walls=[((0, 528), (0, 128))]),
+        piece("side_e", [], 60, side=side, walls=[((816, 128), (816, 528))]),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5043,4 +5148,34 @@ SPECS = [
                                0x216, 0x22C],
                      "pieces": own_shell(petalburg_gym())},
     },
+    {
+        # the contest stage: its pieces stand on every stage drawn again,
+        # in the five coloured halls and three times in Lilycove's
+        "name": "contest_stage",
+        "interior": {"layout": "LAYOUT_CONTEST_HALL", "ground": [0x271, 0x225],
+                     "pieces": own_shell(contest_stage())},
+    },
+    {
+        # Lilycove's contest lobby: the reception, the Berry Blenders
+        "name": "contest_lobby",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_CONTEST_LOBBY", "ground": [0x260],
+                     "pieces": own_shell(contest_lobby())},
+    },
+    {
+        # Lilycove's contest hall: its walls and palms (its stages stand the
+        # contest stage's pieces)
+        "name": "lilycove_contest_room",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_CONTEST_HALL", "ground": [0x260],
+                     "pieces": own_shell(lilycove_contest_room())},
+    },
+] + [
+    {
+        # the coloured stages: the same room, its stairs and emblem in the
+        # contest's colour (walked on, drawn flat). The cushions and the case
+        # stand as reused; the back wall, the room's own, is laid again
+        "name": "contest_stage_" + kind,
+        "interior": {"layout": "LAYOUT_CONTEST_HALL_" + kind.upper(), "ground": [0x271, 0x225],
+                     "pieces": own_shell(contest_stage()[-1:])},
+    }
+    for kind in ("beauty", "cool", "cute", "smart", "tough")
 ]
