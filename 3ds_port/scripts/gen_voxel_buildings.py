@@ -807,9 +807,12 @@ def place_reused(layout, ground):
             # every cell of it drawn as in its own room: the floor under it is
             # its own room's, and it stands on that wherever this room paints
             # it too (the contest stage's cushions on the stages' green, in a
-            # hall whose floor is a checker)
+            # hall whose floor is a checker); where it does not, on this room's
+            # floor with each of its cells' own paint laid over it, as in a room
+            # nobody modelled (the Department Store's 4F shelves on 5F, their
+            # tiles drawn on 4F's floor)
             own = p["spec"]["ground"][0]
-            on = own if ground is not None and own in painted else ground
+            on = None if ground is None or own not in painted else own
             p["spec"].setdefault("reused_at", []).append((layout.id, x, y, on))
         else:
             # found by its own pixels on another floor: it stands there bare,
