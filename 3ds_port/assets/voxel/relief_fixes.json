@@ -1,6 +1,670 @@
 {
  "furniture": {},
  "layouts": {
+  "LAYOUT_LAVARIDGE_TOWN": {
+   "belt": 32,
+   "terraces": {
+    "0,0": {
+     "level": 2,
+     "piece": "F"
+    },
+    "0,1": {
+     "level": 2,
+     "piece": "vSE"
+    },
+    "0,17": {
+     "level": 2,
+     "piece": "F"
+    },
+    "0,18": {
+     "level": 2,
+     "piece": "F"
+    },
+    "0,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "1,0": {
+     "level": 2,
+     "piece": "F"
+    },
+    "1,1": {
+     "level": 2,
+     "piece": "S"
+    },
+    "1,17": {
+     "level": 2,
+     "piece": "F"
+    },
+    "1,18": {
+     "level": 2,
+     "piece": "F"
+    },
+    "1,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "10,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "10,3": {
+     "level": 1
+    },
+    "11,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "11,3": {
+     "level": 1
+    },
+    "12,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "13,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "13,2": {
+     "piece": "F"
+    },
+    "13,3": {
+     "level": 1
+    },
+    "14,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "14,2": {
+     "level": 1,
+     "piece": "F"
+    },
+    "14,3": {
+     "level": 1,
+     "piece": "S"
+    },
+    "15,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "15,2": {
+     "level": 1,
+     "piece": "F"
+    },
+    "15,3": {
+     "level": 1,
+     "piece": "S"
+    },
+    "16,19": {
+     "level": 2
+    },
+    "16,2": {
+     "level": 1,
+     "piece": "F"
+    },
+    "16,3": {
+     "level": 1,
+     "piece": "S"
+    },
+    "17,19": {
+     "level": 2
+    },
+    "17,2": {
+     "level": 1,
+     "piece": "F"
+    },
+    "17,3": {
+     "level": 1,
+     "piece": "S"
+    },
+    "18,19": {
+     "level": 2
+    },
+    "18,2": {
+     "piece": "F"
+    },
+    "18,3": {
+     "level": 1
+    },
+    "19,1": {
+     "level": 2
+    },
+    "19,19": {
+     "level": 2
+    },
+    "19,3": {
+     "level": 1
+    },
+    "2,0": {
+     "level": 2,
+     "piece": "F"
+    },
+    "2,1": {
+     "level": 2,
+     "piece": "S"
+    },
+    "2,17": {
+     "level": 2,
+     "piece": "F"
+    },
+    "2,18": {
+     "level": 2,
+     "piece": "F"
+    },
+    "2,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "2,2": {
+     "level": 1
+    },
+    "3,0": {
+     "level": 2,
+     "piece": "F"
+    },
+    "3,1": {
+     "level": 2,
+     "piece": "S"
+    },
+    "3,18": {
+     "level": 1,
+     "piece": "F"
+    },
+    "3,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "3,2": {
+     "level": 1
+    },
+    "4,1": {
+     "level": 2,
+     "piece": "cSE"
+    },
+    "4,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "4,2": {
+     "level": 1
+    },
+    "5,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "6,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "7,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "8,19": {
+     "level": 2,
+     "piece": "F"
+    },
+    "9,19": {
+     "level": 2,
+     "piece": "F"
+    }
+   }
+  },
+  "LAYOUT_ROUTE112": {
+   "terraces": {
+    "10,33": {
+     "level": 6,
+     "piece": "S"
+    },
+    "10,34": {
+     "level": 5,
+     "piece": "F"
+    },
+    "10,35": {
+     "level": 5,
+     "piece": "S"
+    },
+    "10,36": {
+     "level": 4
+    },
+    "10,40": {
+     "level": 3
+    },
+    "11,32": {
+     "level": 6,
+     "piece": "vSE"
+    },
+    "11,33": {
+     "level": 6,
+     "piece": "cSE"
+    },
+    "11,34": {
+     "level": 5,
+     "piece": "F"
+    },
+    "11,35": {
+     "level": 5,
+     "piece": "S"
+    },
+    "11,36": {
+     "level": 4
+    },
+    "11,40": {
+     "level": 3
+    },
+    "12,32": {
+     "level": 6,
+     "piece": "S"
+    },
+    "12,33": {
+     "level": 5,
+     "piece": "F"
+    },
+    "12,34": {
+     "level": 5,
+     "piece": "F"
+    },
+    "12,35": {
+     "level": 5,
+     "piece": "S"
+    },
+    "12,36": {
+     "level": 4
+    },
+    "13,30": {
+     "level": 7,
+     "piece": "vSE"
+    },
+    "13,31": {
+     "level": 7,
+     "piece": "cSE"
+    },
+    "13,32": {
+     "level": 6,
+     "piece": "S"
+    },
+    "13,33": {
+     "level": 5,
+     "piece": "F"
+    },
+    "13,34": {
+     "level": 5,
+     "piece": "vSE"
+    },
+    "13,35": {
+     "level": 5,
+     "piece": "cSE"
+    },
+    "13,36": {
+     "level": 4
+    },
+    "14,28": {
+     "level": 7
+    },
+    "14,29": {
+     "level": 7
+    },
+    "14,30": {
+     "level": 7,
+     "piece": "vSE"
+    },
+    "14,31": {
+     "level": 6,
+     "piece": "vSE"
+    },
+    "14,32": {
+     "level": 6,
+     "piece": "cSE"
+    },
+    "14,33": {
+     "level": 5,
+     "piece": "vSE"
+    },
+    "14,34": {
+     "level": 5,
+     "piece": "cSE"
+    },
+    "14,35": {
+     "level": 4,
+     "piece": "vSE"
+    },
+    "14,36": {
+     "level": 4,
+     "piece": "cSE"
+    },
+    "14,43": {
+     "level": 0
+    },
+    "15,25": {
+     "level": 7,
+     "piece": "vSE"
+    },
+    "15,26": {
+     "level": 7,
+     "piece": "E"
+    },
+    "15,27": {
+     "level": 7
+    },
+    "15,28": {
+     "level": 6,
+     "piece": "F"
+    },
+    "15,29": {
+     "level": 6,
+     "piece": "vSE"
+    },
+    "15,30": {
+     "level": 6,
+     "piece": "E"
+    },
+    "15,31": {
+     "level": 6,
+     "piece": "cSE"
+    },
+    "15,32": {
+     "level": 5
+    },
+    "15,33": {
+     "level": 5,
+     "piece": "S"
+    },
+    "15,34": {
+     "level": 4
+    },
+    "15,35": {
+     "level": 4,
+     "piece": "S"
+    },
+    "16,25": {
+     "level": 7,
+     "piece": "cSE"
+    },
+    "16,26": {
+     "level": 6,
+     "piece": "F"
+    },
+    "16,27": {
+     "level": 6,
+     "piece": "vSE"
+    },
+    "16,28": {
+     "level": 6,
+     "piece": "E"
+    },
+    "16,29": {
+     "level": 6,
+     "piece": "cSE"
+    },
+    "16,30": {
+     "level": 5
+    },
+    "16,31": {
+     "level": 5
+    },
+    "16,32": {
+     "level": 5
+    },
+    "16,33": {
+     "level": 5,
+     "piece": "S"
+    },
+    "16,34": {
+     "level": 4,
+     "piece": "vSE"
+    },
+    "16,35": {
+     "level": 4,
+     "piece": "cSE"
+    },
+    "17,20": {
+     "level": 6,
+     "piece": "vSE"
+    },
+    "17,21": {
+     "level": 6,
+     "piece": "E"
+    },
+    "17,22": {
+     "level": 6,
+     "piece": "E"
+    },
+    "17,23": {
+     "level": 6,
+     "piece": "E"
+    },
+    "17,24": {
+     "level": 6,
+     "piece": "E"
+    },
+    "17,25": {
+     "level": 6,
+     "piece": "E"
+    },
+    "17,26": {
+     "level": 6,
+     "piece": "E"
+    },
+    "17,27": {
+     "level": 6,
+     "piece": "cSE"
+    },
+    "17,28": {
+     "level": 5
+    },
+    "17,29": {
+     "level": 5
+    },
+    "17,30": {
+     "level": 5
+    },
+    "17,31": {
+     "level": 5
+    },
+    "17,32": {
+     "level": 5
+    },
+    "17,33": {
+     "level": 5,
+     "piece": "S"
+    },
+    "17,34": {
+     "level": 4
+    },
+    "18,21": {
+     "level": 5,
+     "piece": "F"
+    },
+    "18,22": {
+     "level": 5,
+     "piece": "F"
+    },
+    "18,23": {
+     "level": 5,
+     "piece": "F"
+    },
+    "18,24": {
+     "level": 5,
+     "piece": "F"
+    },
+    "18,25": {
+     "level": 5,
+     "piece": "F"
+    },
+    "18,26": {
+     "level": 5,
+     "piece": "F"
+    },
+    "18,27": {
+     "level": 5,
+     "piece": "F"
+    },
+    "18,28": {
+     "level": 5,
+     "piece": "vSE"
+    },
+    "18,29": {
+     "level": 5,
+     "piece": "E"
+    },
+    "18,30": {
+     "level": 5,
+     "piece": "E"
+    },
+    "18,31": {
+     "level": 5,
+     "piece": "E"
+    },
+    "18,32": {
+     "level": 5,
+     "piece": "E"
+    },
+    "18,33": {
+     "level": 5
+    },
+    "18,34": {
+     "level": 4
+    },
+    "19,21": {
+     "level": 5,
+     "piece": "E"
+    },
+    "19,22": {
+     "level": 5,
+     "piece": "E"
+    },
+    "19,23": {
+     "level": 5,
+     "piece": "E"
+    },
+    "19,24": {
+     "level": 5,
+     "piece": "E"
+    },
+    "19,25": {
+     "level": 5,
+     "piece": "E"
+    },
+    "19,26": {
+     "level": 5,
+     "piece": "E"
+    },
+    "19,27": {
+     "level": 5,
+     "piece": "E"
+    },
+    "19,28": {
+     "level": 5
+    },
+    "19,29": {
+     "level": 4
+    },
+    "19,33": {
+     "level": 4
+    },
+    "19,34": {
+     "level": 4
+    },
+    "20,27": {
+     "level": 4,
+     "piece": "E"
+    },
+    "20,28": {
+     "level": 4,
+     "piece": "E"
+    },
+    "20,29": {
+     "level": 4,
+     "piece": "E"
+    },
+    "3,33": {
+     "level": 6,
+     "piece": "S"
+    },
+    "4,33": {
+     "level": 6,
+     "piece": "S"
+    },
+    "4,35": {
+     "level": 5,
+     "piece": "S"
+    },
+    "5,33": {
+     "level": 6,
+     "piece": "S"
+    },
+    "5,35": {
+     "level": 5
+    },
+    "6,33": {
+     "level": 6,
+     "piece": "S"
+    },
+    "6,35": {
+     "level": 5
+    },
+    "6,36": {
+     "level": 4
+    },
+    "6,37": {
+     "level": 4,
+     "piece": "S"
+    },
+    "7,33": {
+     "level": 6,
+     "piece": "S"
+    },
+    "7,35": {
+     "level": 5
+    },
+    "7,36": {
+     "level": 4
+    },
+    "7,37": {
+     "level": 4
+    },
+    "8,33": {
+     "level": 6,
+     "piece": "S"
+    },
+    "8,34": {
+     "level": 6
+    },
+    "8,35": {
+     "level": 5,
+     "piece": "cSW"
+    },
+    "8,36": {
+     "level": 4,
+     "piece": "S"
+    },
+    "8,37": {
+     "level": 4
+    },
+    "8,40": {
+     "level": 3
+    },
+    "9,33": {
+     "level": 6,
+     "piece": "S"
+    },
+    "9,34": {
+     "level": 5,
+     "piece": "F"
+    },
+    "9,35": {
+     "level": 5,
+     "piece": "S"
+    },
+    "9,36": {
+     "level": 4
+    },
+    "9,40": {
+     "level": 3
+    }
+   }
+  },
   "LAYOUT_RUSTURF_TUNNEL": {
    "belt": 48,
    "cells": {

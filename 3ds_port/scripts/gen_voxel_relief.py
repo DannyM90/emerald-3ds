@@ -418,7 +418,7 @@ ALIAS_LAYOUTS = {"LAYOUT_JAGGED_PASS", "LAYOUT_MT_CHIMNEY", "LAYOUT_LAVARIDGE_TO
 # solve, Route 115's mountain moved Route 114 48 px, Fortree 64 px and left a
 # step at the seam with Rustboro), and the terraces stand on it. Route 114's
 # south is the same beige mountain as Route 115's (voxel_terraces.JOIN).
-ALIAS_TERRACES = {"LAYOUT_ROUTE115", "LAYOUT_ROUTE114"}
+ALIAS_TERRACES = {"LAYOUT_ROUTE115", "LAYOUT_ROUTE114", "LAYOUT_ROUTE112"}
 ALIAS_REFERENCE = "LAYOUT_ROUTE116"     # a layout over the General tileset
 _ALIAS = {}
 _TERRACE_ART = {}
@@ -3315,7 +3315,7 @@ def _plain_background(art, m, mask, ground):
     return near >= 0.9 * len(bg)
 
 
-def _behind(art, layout, x, y, rock, mask=None, half=False):
+def _behind(art, layout, x, y, rock, mask=None, half=False, content=None, ignore=()):
     """The ground a cut tile is drawn over, as a metatile: what lies north of
     it, or beside it. It runs on under the rock south of the tile - never
     drawn, the rock covers it at 45 degrees - where, seen from above, the
@@ -3323,16 +3323,31 @@ def _behind(art, layout, x, y, rock, mask=None, half=False):
 
     What it is, the tile says itself: the commonest colour of its own
     background (the pixels the cut clears) is the ground it was drawn over,
-    where the tile north of it can be the shore of another ground."""
+    where the tile north of it can be the shore of another ground.
+    `content`: the cells the plainest tile is not looked for in (`rock` by
+    default; voxel_terraces leaves the plain tops in, a head's ground on the
+    next terrace). `ignore`: colours of the background that are no ground
+    (the grey outline round the rock); where too little is left to tell, the
+    ground is the commonest of the ground drawn round the cell."""
+    if content is None:
+        content = rock
     if mask is not None:
         img = art.cell_image(art.metatile(x, y)).convert("RGB").load()
-        bg = [img[i, j] for j in range(16) for i in range(16) if (mask[j] >> i) & 1]
+        bg = [img[i, j] for j in range(16) for i in range(16)
+              if (mask[j] >> i) & 1 and img[i, j] not in ignore]
+        if ignore and len(bg) < 8:
+            bg = []
+            for ny in (y - 1, y, y + 1):
+                for nx in (x - 1, x, x + 1):
+                    if (nx, ny) != (x, y) and 0 <= nx < layout.w and 0 <= ny < layout.h:
+                        bg += [p for p in art.cell_image(art.metatile(nx, ny)).convert("RGB").getdata()
+                               if p not in ROCK_ALL and p not in ignore]
         if len(bg) >= 8:
             kind = commonest(bg)
             for (dx, dy, side) in ((0, -1, "S"), (-1, 0, "E"), (1, 0, "W"), (0, 0, None)):
                 nx, ny = x + dx, y + dy
                 if 0 <= nx < layout.w and 0 <= ny < layout.h and (nx, ny) not in rock or (dx, dy) == (0, 0):
-                    m = plain_ground(art, layout, rock, nx, ny, side, kind, half)
+                    m = plain_ground(art, layout, content, nx, ny, side, kind, half)
                     if m is not None:
                         return m
     for (dx, dy, side) in ((0, -1, "S"), (-1, 0, "E"), (1, 0, "W")):
@@ -4092,7 +4107,9 @@ def export(layout_ids, path):
     heights are in units of HEIGHT_UNIT pixels (a mountain stands taller than
     a byte of pixels). A point's depth is its height, so it is not written;
     bit 15 of the width (set by sea_ramps) says it has none, the heights
-    lifting the map straight up as its base does."""
+    lifting the map straight up as its base does. Bit 14 of the width (WIDE,
+    voxel_relief_fixes.pack: hand marks past 16 levels) says its cells hold
+    25 s16 heights in pixels instead of bytes."""
     layouts = json.load(open(os.path.join(vb.ROOT, "data", "layouts", "layouts.json"),
                              encoding="utf-8"))["layouts"]
     index = {e["id"]: i + 1 for i, e in enumerate(layouts)}

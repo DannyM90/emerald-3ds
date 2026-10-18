@@ -3029,6 +3029,9 @@ static void JobStart(const ChunkSite *site, VoxelAtlasSlot *atlas, uint32_t hash
     /* The whole map stands at its base (voxel_relief.h), the belt round the
      * world at the base of the map it rings. */
     sBuilder.base = VoxelRelief_Base(inst);
+    /* its eased rows, its own (the belt keeps its place) */
+    if (!site->border)
+        VoxelBuilder_SetStretch(&sBuilder, inst);
 #if CTR_VOXEL_LIGHTING
     sBuilder.lighting = !inst->indoor;
     /* The belt keeps the fixed cost of the old one: corner shading only. */
@@ -3496,6 +3499,8 @@ static VoxelChunk *DraftChunk(const ChunkSite *site, VoxelAtlasSlot *atlas, Voxe
     VoxelBuilder_SetAtlas(&b, &atlas->map);
     VoxelBuilder_SetOrigin(&b, site->baseX, site->baseY);
     b.base = VoxelRelief_Base(inst);
+    if (!site->border)
+        VoxelBuilder_SetStretch(&b, inst);
     b.lighting = false;
     staging = sStaging + sStagingUsed;
     for (int a = 0; a < 3; ++a)

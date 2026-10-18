@@ -692,6 +692,13 @@ verify-voxel-interior-lint:
 	"$(PYTHON)" -B tests/voxel_interior_parts_test.py
 	"$(PYTHON)" -B tests/voxel_building_crop_test.py
 
+# The hand marks over the terraces (voxel_terraces.py "7. hand marks", the
+# editor's mountain page): the piece a level gives, the runs, the ledges.
+.PHONY: verify-voxel-terrace-marks
+verify: verify-voxel-terrace-marks
+verify-voxel-terrace-marks:
+	"$(PYTHON)" -B tests/voxel_terrace_marks_test.py
+
 .PHONY: verify-pokedex-capture verify-voxel-dewford
 verify: verify-pokedex-capture verify-voxel-dewford
 verify-pokedex-capture:
