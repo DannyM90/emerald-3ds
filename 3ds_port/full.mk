@@ -69,15 +69,22 @@ FULL_DATA_OBJS += build/root/3ds_song_blob.o
 BACKEND_SRCS := src/3ds_assets.c src/3ds_map_loader.c src/3ds_compat.c
 BACKEND_SRCS += src/3ds_game_full.c src/3ds_game_bridge.c src/3ds_script_loader.c
 BACKEND_SRCS += src/3ds_bottom_ui.c
+# The Pokédex on the top screen: which Pokémon, its picture and terrain.
+BACKEND_SRCS += src/3ds_dex_top_game.c
 # The battle's info boxes at the screen's resolution (3ds_battle_hud.h).
 BACKEND_SRCS += src/3ds_battle_hud.c
 build/bridge/3ds_bottom_ui.o: FULLCFLAGS += -DCTR_APP_VERSION='"$(APP_VERSION)"'
 # The ENHANCEMENTS and CHEATS pages of OPTIONS (include/3ds_extras.h).
 BACKEND_SRCS += src/3ds_extras.c
+# The optional Nuzlocke tracker's game side: save hooks and its OPTIONS cells
+# (include/3ds_nuzlocke.h, include/3ds_nuzlocke_ui.h).
+BACKEND_SRCS += src/3ds_nuzlocke_game.c
 # Local wireless play: the emulated Wireless Adapter the game's link code
 # talks to (its radio is src/3ds_local.c).
 BACKEND_SRCS += src/3ds_rfu_adapter.c
 BACKEND_SRCS += src/3ds_encounter_tables.c
+# The seeded species randomizer, off by default (include/3ds_randomizer.h).
+BACKEND_SRCS += src/3ds_randomizer.c src/3ds_randomizer_core.c
 # The frame profiler times the engine's own routines through linker wrappers.
 BACKEND_SRCS += src/3ds_prof_wrap.c
 PROF_WRAPPED := RunTasks AnimateSprites BuildOamBuffer ProcessDma3Requests \
@@ -118,7 +125,7 @@ VOXEL_GAME_SRCS := src/voxel/voxel_world.c src/voxel/voxel_camera.c \
 	src/voxel/voxel_regions.c src/voxel/voxel_tree.c src/voxel/voxel_sign.c \
 	src/voxel/voxel_building.c src/voxel/voxel_relief.c \
 	src/voxel/voxel_arena.c src/voxel/voxel_grade.c src/voxel/voxel_battle.c \
-	src/voxel/voxel_sprite_slots.c
+	src/voxel/voxel_sprite_slots.c src/voxel/voxel_swoop.c
 ifeq ($(VOXEL_LIGHTING),1)
 VOXEL_GAME_SRCS += src/voxel/voxel_lighting.c
 endif

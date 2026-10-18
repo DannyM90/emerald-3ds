@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Pokédex on the top screen: while the Pokédex is open on the bottom
+  screen, the top shows the device itself - the red shell, lens and lights,
+  a screen window - with the Pokémon of the info page, or under the list's
+  cursor, at 2x over the battle terrain of the place it is met (tall grass,
+  cave, water, pond, mountain; by type for one never met wild). With the 3D
+  slider up the Pokémon stands in front of the screen and the terrain
+  behind it. Its patch is 0058-pokedex-top-screen.
+
 - The camera can stop at the edge of a map: on the edges chosen map by map
   (for now Routes 103 to 107 and Rustboro City), in 2D and in voxel, the
   picture no longer shows the border tiled past the edge that the wider screen

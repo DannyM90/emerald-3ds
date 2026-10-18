@@ -662,6 +662,9 @@ static float SpriteScale(const struct Sprite *sprite)
     return a > 0 ? 256.0f / a : 1.0f;
 }
 
+/* How far the cards lie down this update (VoxelCamera.lay), 0 upright. */
+static float sLay;
+
 static void EmitBillboard(VoxelBuilder *builder, const VoxelSpriteSlot *slot, unsigned index,
                           float cx, float cz, float offX, float offZ, float rise, float deck,
                           float rightX, float rightZ, float stretch, float shade, float scale)
@@ -694,12 +697,22 @@ static void EmitBillboard(VoxelBuilder *builder, const VoxelSpriteSlot *slot, un
     lift += push;
     float ax = px - rightX * halfW, az = pz - rightZ * halfW;
     float bx = px + rightX * halfW, bz = pz + rightZ * halfW;
+    /* Tilting back (sLay) to face the swoop's end camera, square on: the
+     * top of the card swings north by the camera's pitch off vertical. */
+    float angle = sLay * (90.0f - VOXEL_SWOOP_PITCH) * (3.14159265358979323846f / 180.0f);
+    /* That camera stretches its picture by 1/sin(pitch) to square the
+     * ground and squashes the world's height to VOXEL_SWOOP_HEIGHT
+     * (ctr_voxel.c): a card facing it comes out cos(pitch) x (height + 1)
+     * of its size, so it is made the inverse of that, the 2D sprite, 1:1. */
+    float pitchRad = VOXEL_SWOOP_PITCH * (3.14159265358979323846f / 180.0f);
+    float squat = 1.0f + sLay * (1.0f / (cosf(pitchRad) * (VOXEL_SWOOP_HEIGHT + 1.0f)) - 1.0f);
+    float topY = height * squat * cosf(angle), topZ = -height * squat * sinf(angle);
 
     VoxelBuilder_Quad(builder,
-        &(VoxelVertex){ax, lift,          az, u0, v1, shade},
-        &(VoxelVertex){bx, lift,          bz, u1, v1, shade},
-        &(VoxelVertex){bx, lift + height, bz, u1, v0, shade},
-        &(VoxelVertex){ax, lift + height, az, u0, v0, shade});
+        &(VoxelVertex){ax, lift,        az,        u0, v1, shade},
+        &(VoxelVertex){bx, lift,        bz,        u1, v1, shade},
+        &(VoxelVertex){bx, lift + topY, bz + topZ, u1, v0, shade},
+        &(VoxelVertex){ax, lift + topY, az + topZ, u0, v0, shade});
 }
 
 /*
@@ -1215,7 +1228,13 @@ unsigned VoxelEntities_Emit(VoxelBuilder *builder, uint16_t *atlas, const VoxelC
      * own, so they take the same size. */
     float yawRad = camera->yaw * (3.14159265358979323846f / 180.0f);
     float narrow = sqrtf(cosf(camera->pitch * (3.14159265358979323846f / 180.0f)));
-    float stretch = 1.0f / narrow;
+    float stretch;
+
+    /* A card tilted to face the swoop's camera is seen square on: nothing
+     * to make up (upright at a top-down pose it was a hair wide, seven tall). */
+    sLay = camera->lay;
+    narrow = 1.0f + (narrow - 1.0f) * (1.0f - sLay);
+    stretch = 1.0f / narrow;
     float rightX = cosf(yawRad) * narrow, rightZ = -sinf(yawRad) * narrow;
     /* Towards the camera, along the ground. */
     float towardX = sinf(yawRad), towardZ = cosf(yawRad);

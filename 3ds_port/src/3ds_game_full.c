@@ -64,6 +64,11 @@
 #include "script_pokemon_util.h"
 #endif
 #include "librfu.h"
+#ifdef CTR_TEST_SWOOP
+#include "field_screen_effect.h"
+#include "script.h"
+#include "constants/maps.h"
+#endif
 #include "port_platform.h"
 #include "port_log.h"
 #include "port_prof.h"
@@ -74,6 +79,7 @@
 #include "3ds_assets.h"
 #include "3ds_audio.h"
 #include "3ds_bottom.h"
+#include "3ds_dex_top.h"
 #include "3ds_sprite_ids.h"
 
 #include <stdio.h>
@@ -701,6 +707,33 @@ bool CtrGame_FieldPoison(void)
     return FldEffPoison_IsActive() != 0;
 }
 
+/* Called at AgbMain entry (cold boot and soft reset), and by the portable
+ * new-game hook. The emulated GBA timer is not a running timer.
+ * Scenarios retain their historical seed path so existing recordings replay.
+ * This is a gameplay seed, not a cryptographic random number or a shiny boost.
+ * A zero result and collisions are valid in the original 16-bit seed space. */
+u16 Port_RngSeed(u16 fallback)
+{
+    uint64_t seed;
+
+    if (CtrScenario_Active())
+        return fallback;
+    seed = CtrPlatform_Ticks() ^ ((uint64_t)CtrPlatform_WallSeconds() + UINT64_C(0x9e3779b97f4a7c15));
+    /* SplitMix64's finalizer folds high tick/time bits into the low seed bits. */
+    seed = (seed ^ (seed >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+    seed = (seed ^ (seed >> 27)) * UINT64_C(0x94d049bb133111eb);
+    seed ^= seed >> 31;
+    return (u16)(seed ^ (seed >> 16) ^ (seed >> 32) ^ (seed >> 48));
+}
+
+/* PORTABLE generates both trainer-ID halves from Random(). Reseed immediately
+ * before that reachable path, but leave the existing scenario stream untouched. */
+void Port_ReseedForNewGame(void)
+{
+    if (!CtrScenario_Active())
+        SeedRng(Port_RngSeed(0));
+}
+
 /* AgbMain never returns, so a reset request restarts the process state here. */
 void CtrGame_Frame(void)
 {
@@ -1267,6 +1300,48 @@ void CtrGame_WaitFrame(void)
     CtrPlatform_Diagnostic(sFrames, 0, 0);
     if (CtrScenario_Active())
         ScenarioCheckpoints();
+#ifdef CTR_TEST_SWOOP
+    /* Azahar aid (-DCTR_TEST_SWOOP=frame): the swoop between the voxel world
+     * and the 2D field, every way it starts - the 3D option off, then on
+     * again, then a warp into a house and one back out. */
+    {
+        static unsigned step;
+        static u32 at;
+
+        if (step < 11 && sFrames >= CTR_TEST_SWOOP && gMain.callback2 == CB2_Overworld
+            && !ArePlayerFieldControlsLocked() && sFrames - at >= 150)
+        {
+            at = sFrames;
+            switch (step++)
+            {
+            case 0: /* out of doors first, wherever the save stands */
+                SetWarpDestination(MAP_GROUP(MAP_LITTLEROOT_TOWN), MAP_NUM(MAP_LITTLEROOT_TOWN), WARP_ID_NONE, 5, 9);
+                DoWarp();
+                break;
+            /* The option toggled as the player does it: OPTIONS on the bottom
+             * screen, then its VOXEL 3D row tapped, off and on; in the middle
+             * of Littleroot at 90%, at its west edge at 100%, in Oldale. */
+            case 1: CtrBottom_TestSwoop(0); break;
+            case 2: case 5: case 8: CtrBottom_TestSwoop(1); break;
+            case 3: case 6: case 9: CtrBottom_TestSwoop(1); break;
+            case 4:
+                CtrSettings_ApplyLine("voxel_zoom=100");
+                SetWarpDestination(MAP_GROUP(MAP_LITTLEROOT_TOWN), MAP_NUM(MAP_LITTLEROOT_TOWN), WARP_ID_NONE, 1, 9);
+                DoWarp();
+                break;
+            case 7:
+                SetWarpDestination(MAP_GROUP(MAP_OLDALE_TOWN), MAP_NUM(MAP_OLDALE_TOWN), WARP_ID_NONE, 8, 10);
+                DoWarp();
+                break;
+            case 10:
+                SetWarpDestination(MAP_GROUP(MAP_LITTLEROOT_TOWN_BRENDANS_HOUSE_1F),
+                                   MAP_NUM(MAP_LITTLEROOT_TOWN_BRENDANS_HOUSE_1F), WARP_ID_NONE, 4, 8);
+                DoWarp();
+                break;
+            }
+        }
+    }
+#endif
 #ifdef CTR_TEST_BATTLE
     /* Azahar measurement aid (-DCTR_TEST_BATTLE=frame): a wild battle from
      * wherever the save stands, once the field is up at that frame. */
@@ -1292,6 +1367,7 @@ void CtrGame_WaitFrame(void)
         uint64_t start = CtrPlatform_Ticks();
 
         CtrBottom_Frame();
+        CtrDexTopGame_Frame();
         CtrPlatform_NoteBottom(CtrPlatform_TickMs(CtrPlatform_Ticks() - start));
     }
 

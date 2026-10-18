@@ -3682,6 +3682,145 @@ def dept_store_elevator():
     ]
 
 
+# The rooftop: a railing all round its edge, the floor seen between its bars
+# (`through`); the vending machines against its back, the elevator's
+# housing with its door, two planters, two benches and two chairs. The
+# roof's ledge outside the railing, and the store's front below it, stay
+# drawn on the floor.
+
+ROOF_FLOOR = ("b4b4a4", "d5ded5", "b4de8b", "9cd57b", "8b8b8b")
+ROOF_LEDGE = ("cdeef6", "dee6ee", "bdcde6", "83838b", "62627b", "ffffff", "9cb4de")
+ROOF_BARS = (48, 8, 64, 19)             # a stretch of the back railing: its top rail and bars
+
+
+def dept_store_rooftop():
+    rail = ROOF_FLOOR + ROOF_LEDGE
+    return [
+        piece("rail_s", [(16, 104, 272, 119)], 11, through=True, leave=rail),
+        piece("bench_w", [(80, 83, 112, 95)], 6, leave=ROOF_FLOOR),
+        piece("bench_e", [(144, 83, 176, 95)], 6, leave=ROOF_FLOOR),
+        piece("chair_s", [(256, 84, 272, 95)], 8, leave=ROOF_FLOOR),
+        piece("chair_n", [(256, 68, 272, 79)], 8, leave=ROOF_FLOOR),
+        piece("planter_s", [(16, 73, 48, 95)], 11, leave=ROOF_FLOOR),
+        piece("planter_n", [(16, 41, 48, 63)], 11, leave=ROOF_FLOOR),
+        # the railings down the sides are drawn as their top line: their long
+        # sides carry the back railing's bars (ROOF_BARS), as Rustboro's
+        # railings' flanks carry the row's
+        piece("rail_e", [(270, 40, 280, 119)], 10, through=True, leave=rail, side=ROOF_BARS),
+        piece("rail_w", [(8, 8, 17, 119)], 10, through=True, leave=rail, side=ROOF_BARS),
+        # the housing: its roof drawn from row 17 over its 35-px front, so it
+        # stands back to z 52 only - the back railing is drawn over it, seen
+        # behind it; laid back to its cells' z 16 it covered the railing and
+        # carried its bars on its roof
+        piece("housing", [(192, 17, 240, 63)], 35, back=52, leave=ROOF_FLOOR),
+        piece("vending", [(144, 0, 176, 31)], 24, leave=ROOF_FLOOR + ROOF_LEDGE),
+        # round the housing's corner: the back railing turns south, then east
+        piece("rail_ne_e", [(244, 40, 276, 51)], 10, through=True, leave=rail),
+        piece("rail_ne_s", [(240, 11, 248, 39)], 10, through=True, leave=rail, side=ROOF_BARS),
+        piece("rail_n", [(16, 8, 244, 19)], 10, through=True, leave=rail),
+    ]
+
+
+
+# Lilycove's museum, 1F: the back wall hung with paintings, a wall down from
+# it, and a partition across the west half with its own end down the room;
+# the reception counter a ring round the clerk's floor, the case with its
+# stone tablet and two statues. Counter, case and statues are drawn in the
+# floor's own creams, so no colour is left: their outline is their shape.
+
+MUSEUM_1F_FLOOR = ("e6e68b", "ffffcd", "cdb462", "decd73", "7b6229")
+# a stretch of the partition's face with no painting on it, skirting and all
+MUSEUM_WALL_SIDE = (64, 80, 80, 112)
+# the counter's back corners, rounded over 6 px: its outline row by row
+MUSEUM_RING_NW = [(16, 170), (17, 170), (17, 168), (18, 168), (18, 167), (19, 167), (19, 166),
+                  (20, 166), (20, 165), (22, 165), (22, 164)]
+MUSEUM_RING_NE = [(106, 164), (106, 165), (108, 165), (108, 166), (109, 166), (109, 167),
+                  (110, 167), (110, 168), (111, 168), (111, 170), (112, 170)]
+
+
+def museum_1f():
+    return [
+        # a ball on a low pedestal, as the gyms' statues
+        piece("statue_r_ball", [("ellipse", 296, 181.5, 6, 5.5)], 8, base=4, round="ball"),
+        piece("statue_r", [(288, 176, 304, 192)], 4, leave=MUSEUM_1F_FLOOR, fill="column"),
+        # a figure turned round its axis on a pedestal
+        piece("statue_h", [(240, 176, 256, 195)], 19, base=6, round="lathe",
+              leave=MUSEUM_1F_FLOOR),
+        piece("statue_h_base", [(240, 195, 256, 208)], 6),
+        # the stone tablet, a slab lying on the case
+        piece("tablet", [(256, 113, 304, 136)], 7, base=6, leave=("ffffcd",)),
+        piece("case", [(240, 110, 320, 160)], 6),
+        # the ring: two halves, each a C in plan, the clerk's floor between
+        piece("counter_w", [(16, 158, 64, 176), (16, 176, 32, 224), (32, 206, 64, 224)], 6,
+              plan=MUSEUM_RING_NW + [(64, 164), (64, 176), (32, 176), (32, 212), (64, 212),
+                                     (64, 224), (16, 224)]),
+        piece("counter_e", [(64, 158, 112, 176), (96, 176, 112, 224), (64, 206, 96, 224)], 6,
+              plan=[(64, 164)] + MUSEUM_RING_NE + [(112, 224), (64, 224), (64, 212), (96, 212),
+                                                   (96, 176), (64, 176)]),
+        piece("partition_s", [(144, 72, 160, 144)], 32, fill=16, foot=144, side=MUSEUM_WALL_SIDE,
+              walls=[((144, 112), (144, 144)), ((160, 144), (160, 104))]),
+        piece("partition", [(0, 72, 144, 112)], 32, fill=16, foot=112, side=MUSEUM_WALL_SIDE),
+        piece("wall_c", [(208, 0, 224, 80)], 32, fill=16, foot=80, side=MUSEUM_WALL_SIDE,
+              walls=[((208, 32), (208, 80)), ((224, 80), (224, 32))]),
+        piece("wall", [(0, 0, 208, 32), (224, 0, 336, 32)], 32, fill=16, foot=32,
+              side=MUSEUM_WALL_SIDE),
+        piece("side_w", [], 32, side=MUSEUM_WALL_SIDE, walls=[((0, 224), (0, 32))]),
+        piece("side_e", [], 32, side=MUSEUM_WALL_SIDE, walls=[((336, 32), (336, 224))]),
+    ]
+
+
+
+# 2F: the back wall with the stairs up painted on it, its two ends a cell
+# forward, and a statue each side of the stairs - the west one 1F's, found
+# again (reuse_pieces); the east one faces the other way. The five stands
+# stay drawn: the game hangs the contest paintings in their frames
+# (setmetatile, LilycoveCity_LilycoveMuseum_2F/scripts.inc), and a model
+# would keep the empty frames of the drawing.
+
+MUSEUM_2F_FLOOR = ("e6e6e6", "9c9c9c", "d5d5d5", "c5c5c5", "b4b4b4", "7b7b7b")
+MUSEUM_2F_WALL_SIDE = (96, 0, 112, 32)
+
+
+def museum_2f():
+    return [
+        piece("statue_e", [(240, 16, 256, 35)], 19, base=6, round="lathe", leave=MUSEUM_2F_FLOOR),
+        piece("statue_e_base", [(240, 35, 256, 48)], 6),
+        piece("wall_w", [(0, 0, 64, 48)], 32, fill=16, foot=48, side=MUSEUM_2F_WALL_SIDE,
+              walls=[((64, 48), (64, 32))]),
+        piece("wall_e", [(288, 0, 352, 48)], 32, fill=16, foot=48, side=MUSEUM_2F_WALL_SIDE,
+              walls=[((288, 32), (288, 48))]),
+        piece("wall", [(64, 0, 288, 32)], 32, fill=16, foot=32, side=MUSEUM_2F_WALL_SIDE),
+        piece("side_w", [], 32, side=MUSEUM_2F_WALL_SIDE, walls=[((0, 208), (0, 48))]),
+        piece("side_e", [], 32, side=MUSEUM_2F_WALL_SIDE, walls=[((352, 48), (352, 208))]),
+    ]
+
+
+
+# Lilycove's Pokemon Trainer Fan Club: the houses' furniture stands in it as
+# it is (reuse_pieces) - the bookcase, the chests, the television, the tables
+# and chairs, the cupboard, the teapot; what is its own is its shell: the
+# back wall and the two low partitions across its middle. The sofas lie on
+# cells the player walks on and stay drawn: the west one hides the foot of
+# the partition behind it.
+
+FAN_CLUB_WALL_SIDE = (48, 0, 64, 32)
+
+
+def trainer_fan_club():
+    return [
+        # the west table: House1's (found east of it, with its teapot), bare
+        piece("table_w", [(66, 144, 94, 177)], 11, leave=GENERIC_RUG, solid=True, fill=1,
+              foot=177),
+        piece("partition_w", [(0, 107, 47, 137)], 26, fill=16, foot=144, side=FAN_CLUB_WALL_SIDE,
+              walls=[((47, 144), (47, 118))]),
+        piece("partition_e", [(145, 107, 192, 144)], 26, fill=16, foot=144,
+              side=FAN_CLUB_WALL_SIDE, walls=[((145, 118), (145, 144))]),
+        piece("wall", [(0, 0, 192, 32)], 32, fill=16, foot=32, side=FAN_CLUB_WALL_SIDE),
+        piece("side_w", [], 32, side=FAN_CLUB_WALL_SIDE, walls=[((0, 224), (0, 32))]),
+        piece("side_e", [], 32, side=FAN_CLUB_WALL_SIDE, walls=[((192, 32), (192, 224))]),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5327,6 +5466,28 @@ SPECS = [
         "name": "dept_store_elevator",
         "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_ELEVATOR", "ground": [0x265],
                      "pieces": own_shell(dept_store_elevator())},
+    },
+    {
+        "name": "dept_store_rooftop",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_ROOFTOP", "ground": [0x24a],
+                     "pieces": dept_store_rooftop()},
+    },
+    {
+        # Lilycove's museum, 1F
+        "name": "museum_1f",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_LILYCOVE_MUSEUM_1F", "ground": [0x202],
+                     "pieces": own_shell(museum_1f())},
+    },
+    {
+        "name": "museum_2f",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_LILYCOVE_MUSEUM_2F", "ground": [0x268],
+                     "pieces": own_shell(museum_2f())},
+    },
+    {
+        # Lilycove's Pokemon Trainer Fan Club
+        "name": "trainer_fan_club",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_POKEMON_TRAINER_FAN_CLUB", "ground": [0x223],
+                     "pieces": own_shell(trainer_fan_club())},
     },
 ] + [
     {
