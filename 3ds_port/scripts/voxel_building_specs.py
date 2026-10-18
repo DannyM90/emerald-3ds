@@ -3682,6 +3682,45 @@ def dept_store_elevator():
     ]
 
 
+# The rooftop: a railing all round its edge, the floor seen between its bars
+# (`through`); the vending machines against its back, the elevator's
+# housing with its door, two planters, two benches and two chairs. The
+# roof's ledge outside the railing, and the store's front below it, stay
+# drawn on the floor.
+
+ROOF_FLOOR = ("b4b4a4", "d5ded5", "b4de8b", "9cd57b", "8b8b8b")
+ROOF_LEDGE = ("cdeef6", "dee6ee", "bdcde6", "83838b", "62627b", "ffffff", "9cb4de")
+ROOF_BARS = (48, 8, 64, 19)             # a stretch of the back railing: its top rail and bars
+
+
+def dept_store_rooftop():
+    rail = ROOF_FLOOR + ROOF_LEDGE
+    return [
+        piece("rail_s", [(16, 104, 272, 119)], 11, through=True, leave=rail),
+        piece("bench_w", [(80, 83, 112, 95)], 6, leave=ROOF_FLOOR),
+        piece("bench_e", [(144, 83, 176, 95)], 6, leave=ROOF_FLOOR),
+        piece("chair_s", [(256, 84, 272, 95)], 8, leave=ROOF_FLOOR),
+        piece("chair_n", [(256, 68, 272, 79)], 8, leave=ROOF_FLOOR),
+        piece("planter_s", [(16, 73, 48, 95)], 11, leave=ROOF_FLOOR),
+        piece("planter_n", [(16, 41, 48, 63)], 11, leave=ROOF_FLOOR),
+        # the railings down the sides are drawn as their top line: their long
+        # sides carry the back railing's bars (ROOF_BARS), as Rustboro's
+        # railings' flanks carry the row's
+        piece("rail_e", [(270, 40, 280, 119)], 10, through=True, leave=rail, side=ROOF_BARS),
+        piece("rail_w", [(8, 8, 17, 119)], 10, through=True, leave=rail, side=ROOF_BARS),
+        # the housing: its roof drawn from row 17 over its 35-px front, so it
+        # stands back to z 52 only - the back railing is drawn over it, seen
+        # behind it; laid back to its cells' z 16 it covered the railing and
+        # carried its bars on its roof
+        piece("housing", [(192, 17, 240, 63)], 35, back=52, leave=ROOF_FLOOR),
+        piece("vending", [(144, 0, 176, 31)], 24, leave=ROOF_FLOOR + ROOF_LEDGE),
+        # round the housing's corner: the back railing turns south, then east
+        piece("rail_ne_e", [(244, 40, 276, 51)], 10, through=True, leave=rail),
+        piece("rail_ne_s", [(240, 11, 248, 39)], 10, through=True, leave=rail, side=ROOF_BARS),
+        piece("rail_n", [(16, 8, 244, 19)], 10, through=True, leave=rail),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5327,6 +5366,11 @@ SPECS = [
         "name": "dept_store_elevator",
         "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_ELEVATOR", "ground": [0x265],
                      "pieces": own_shell(dept_store_elevator())},
+    },
+    {
+        "name": "dept_store_rooftop",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_ROOFTOP", "ground": [0x24a],
+                     "pieces": dept_store_rooftop()},
     },
 ] + [
     {
