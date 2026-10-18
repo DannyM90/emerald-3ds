@@ -71,3 +71,18 @@ card_bg = "its pot is drawn in the floor's greys, inside its outline: the pot, n
 
 [allow.flower_shop_room_table_e_white]
 card_bg = "its pot is drawn in the floor's greys, inside its outline: the pot, not the floor behind the plant"
+
+[allow.museum_1f_counter_w]
+under = "the counter is drawn in the floor's own creams: its front's foot is the counter's, inside its outline"
+
+[allow.museum_1f_counter_e]
+under = "the counter is drawn in the floor's own creams: its front's foot is the counter's, inside its outline"
+
+[allow.museum_1f_case]
+under = "the case is drawn in the floor's own creams: its front's foot is the case's, inside its outline"
+
+[allow.museum_1f_statue_h]
+bleed = "the figure and its pedestal are one stone, drawn in the same greens: the figure's own, not the pedestal's top"
+
+[allow.museum_2f_statue_e]
+bleed = "the figure and its pedestal are one stone, drawn in the same greens: the figure's own, not the pedestal's top"
