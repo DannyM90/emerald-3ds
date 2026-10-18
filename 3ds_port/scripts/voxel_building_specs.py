@@ -3448,6 +3448,37 @@ def rustboro_gym():
     ]
 
 
+# ── The contest stage ─────────────────────────────────────────────────────
+#
+# The stage a contest is held on (LAYOUT_CONTEST_HALL and its five coloured
+# twins; Lilycove's contest hall draws three of them again): one floor, every
+# cell of it walked on at the same elevation, so nothing on it stands up but
+# what blocks the way - the low cushions round the green, the trophy's case
+# and the back wall. The stairs down its front and the emblem in the middle
+# are walked on, and stay drawn on the floor.
+
+STAGE_FLOOR = ("94acb4", "738383", "838b83", "bddec5")   # the dotted floor, its channel, the green
+
+# the cushions round the green, each with its dark outline: the back row,
+# the two sides, the front row either side of the stairs
+STAGE_CUSHIONS = (
+    [(x, 48, x + 14, 55) for x in range(49, 178, 16)]
+    # (a side one's shape stops at its front's last row - a shape takes its
+    # bottom row, and the row under its front is the channel's grey between
+    # its side lines)
+    + [(x, y, x + 5, y + 13) for y in range(57, 122, 16) for x in (49, 185)]
+    + [(x, 136, x + 14, 143) for x in (49, 65, 81, 145, 161, 177)])
+
+
+def contest_stage():
+    cushions = sorted(STAGE_CUSHIONS, key=lambda r: (-r[3], r[0]))
+    return [piece("cushion_%d" % i, [r], 4, leave=STAGE_FLOOR) for i, r in enumerate(cushions)] + [
+        # the trophy in its glass case, by the green's north-east corner
+        piece("case", [(144, 73, 160, 88)], 8, leave=STAGE_FLOOR),
+        piece("wall", [(0, 0, 240, 16)], 16, fill=16, foot=16, side=(0, 0, 16, 16)),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5043,4 +5074,21 @@ SPECS = [
                                0x216, 0x22C],
                      "pieces": own_shell(petalburg_gym())},
     },
+    {
+        # the contest stage: its pieces stand on every stage drawn again,
+        # in the five coloured halls and three times in Lilycove's
+        "name": "contest_stage",
+        "interior": {"layout": "LAYOUT_CONTEST_HALL", "ground": [0x271, 0x225],
+                     "pieces": own_shell(contest_stage())},
+    },
+] + [
+    {
+        # the coloured stages: the same room, its stairs and emblem in the
+        # contest's colour (walked on, drawn flat). The cushions and the case
+        # stand as reused; the back wall, the room's own, is laid again
+        "name": "contest_stage_" + kind,
+        "interior": {"layout": "LAYOUT_CONTEST_HALL_" + kind.upper(), "ground": [0x271, 0x225],
+                     "pieces": own_shell(contest_stage()[-1:])},
+    }
+    for kind in ("beauty", "cool", "cute", "smart", "tough")
 ]
