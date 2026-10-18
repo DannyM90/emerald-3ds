@@ -5165,11 +5165,7 @@ SPECS = [
         # Lilycove's contest hall: its walls and palms (its stages stand the
         # contest stage's pieces)
         "name": "lilycove_contest_room",
-        # (its ground the stages' green: every piece of a room stands on its
-        # floor, and the contest stage's found again here stand on the
-        # stages; the hall's checker round a palm is laid as the palm's
-        # floor marks)
-        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_CONTEST_HALL", "ground": [0x271],
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_CONTEST_HALL", "ground": [0x260],
                      "pieces": own_shell(lilycove_contest_room())},
     },
 ] + [
