@@ -18,6 +18,12 @@ under = "its cupboard doors are drawn in the planks' own colours, inside its out
 [allow.lab_canisters]
 under = "their lower bands are drawn in the floor's shade grey, inside their outline: they are the canisters, not the floor under them"
 
+[allow.dept_store_1f_planter_s]
+under = "its box is drawn in the floor's own oranges, inside its outline: it is the planter, not the floor under it"
+
+[allow.dept_store_1f_planter_n]
+under = "its box is drawn in the floor's own oranges, inside its outline: it is the planter, not the floor under it"
+
 [allow.pc2f_counter]
 copied = "its side is its front's bands - the top's lip, the dark line under it, the lilac band, the panel - which run round its ends as along its front: the counter's make, not a drawer's edge"
 

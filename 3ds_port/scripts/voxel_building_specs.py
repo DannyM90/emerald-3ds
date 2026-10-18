@@ -3553,6 +3553,62 @@ def lilycove_contest_room():
     ]
 
 
+# ── Lilycove's Department Store ───────────────────────────────────────────
+#
+# 1F: the reception's counter, a U whose arms run back to the wall with a
+# computer on each, and two planters by the west wall. Its potted palms are
+# the Center's (reused); the stools stand on walked cells and stay drawn on
+# the floor. The elevator's door and the escalator's are painted on the back
+# wall, as Lavaridge's Center's door is.
+
+DEPT_1F_FLOOR = ("cd8320", "ac5a20", "e69c39", "f6c539")     # the orange floor
+DEPT_WALL = ("d5ded5", "b4b4a4", "ffa47b", "cd947b")         # plaster, trim, the peach band
+DEPT_WALL_SIDE = (64, 0, 80, 32)        # a stretch of plain wall, its trim and band
+
+
+def dept_store_1f():
+    return [
+        # the planters: their box drawn in the floor's own oranges, so no
+        # colour is left - their outline is their shape
+        piece("planter_s", [(0, 105, 31, 127)], 9),
+        piece("planter_n", [(0, 73, 31, 95)], 9),
+        # the computers on the counter's arms
+        piece("pc_w", [(98, 37, 112, 52)], 8, base=10, solid=True, leave=("cdffd5",)),
+        piece("pc_e", [(178, 25, 191, 39)], 8, base=10, solid=True),
+        # the counter, a U in plan as the contest lobby's: the bar across the
+        # front as deep as its drawn top, the arms back towards the wall (their
+        # back corners square: drawn in the counter's own grey)
+        piece("counter", [(96, 24, 112, 63), (176, 24, 192, 63), (96, 44, 192, 63)], 10,
+              leave=DEPT_1F_FLOOR + DEPT_WALL,
+              plan=[(96, 34), (112, 34), (112, 54), (176, 54), (176, 34), (192, 34), (192, 64),
+                    (96, 64)]),
+        piece("wall", [(0, 0, 288, 32)], 32, fill=16, foot=32, side=DEPT_WALL_SIDE),
+        piece("side_w", [], 32, side=DEPT_WALL_SIDE, walls=[((0, 128), (0, 32))]),
+        piece("side_e", [], 32, side=DEPT_WALL_SIDE, walls=[((288, 32), (288, 128))]),
+    ]
+
+
+# 2F: a glass counter, its bar along the back and an arm towards the room at
+# each end, the clerk's floor between them; its monitor is 1F's (reused), as
+# are the Mart's shelves and the Center's palms. The floor is drawn in the
+# counter's own mint and white, which its outline keeps apart.
+
+DEPT_GREEN_FLOOR = ("a4eebd", "ffffff", "cdffd5", "b4b4a4", "9cd57b", "d5ded5", "b4de8b")
+
+
+def dept_store_2f():
+    return [
+        piece("counter", [(96, 76, 112, 127), (176, 76, 192, 127), (112, 77, 176, 95)], 10,
+              leave=DEPT_GREEN_FLOOR,
+              # (the glass bar's top drawn a row below the arms': its back at z 87)
+              plan=[(96, 86), (112, 86), (112, 87), (176, 87), (176, 86), (192, 86), (192, 128),
+                    (176, 128), (176, 96), (112, 96), (112, 128), (96, 128)]),
+        piece("wall", [(0, 0, 288, 32)], 32, fill=16, foot=32, side=DEPT_WALL_SIDE),
+        piece("side_w", [], 32, side=DEPT_WALL_SIDE, walls=[((0, 128), (0, 32))]),
+        piece("side_e", [], 32, side=DEPT_WALL_SIDE, walls=[((288, 32), (288, 128))]),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5167,6 +5223,17 @@ SPECS = [
         "name": "lilycove_contest_room",
         "interior": {"layout": "LAYOUT_LILYCOVE_CITY_CONTEST_HALL", "ground": [0x260],
                      "pieces": own_shell(lilycove_contest_room())},
+    },
+    {
+        # Lilycove's Department Store, 1F
+        "name": "dept_store_1f",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_1F", "ground": [0x268],
+                     "pieces": own_shell(dept_store_1f())},
+    },
+    {
+        "name": "dept_store_2f",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_2F", "ground": [0x201],
+                     "pieces": own_shell(dept_store_2f())},
     },
 ] + [
     {
