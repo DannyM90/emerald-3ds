@@ -7328,6 +7328,18 @@ static void Activate(u8 id, u8 mode)
     }
 }
 
+#ifdef CTR_TEST_SWOOP
+/* Azahar aid (3ds_game_full.c): the OPTIONS screen opened on the bottom,
+ * then VOXEL 3D tapped there, as the player does it (bottom redraws between). */
+void CtrBottom_TestSwoop(unsigned step)
+{
+    if (step == 0)
+        sScreen = SCR_OPTION;
+    else
+        Activate(HIT_OPTION + 7, MODE_FIELD); /* the row the player taps (port.log: tap c7) */
+}
+#endif
+
 /* Returns the id to show as pressed. */
 static u8 ProcessTouch(u8 mode)
 {

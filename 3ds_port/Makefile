@@ -87,6 +87,19 @@ endif
 ifdef FORCE_SLIDER
 CPPFLAGS += -DCTR_FORCE_SLIDER=$(FORCE_SLIDER)f
 endif
+# TEST_SWOOP=frame (Azahar aid for the swoop between the voxel world and the
+# 2D field, 3ds_game_full.c): from that frame on the field, the 3D option off
+# and on again, then a warp indoors and back out; with FRAME_DUMP=1 and
+# DUMP_SWOOP=1 every frame the swoop plays is written to frames.raw.
+ifdef TEST_SWOOP
+GAMEFLAGS += -DCTR_TEST_SWOOP=$(TEST_SWOOP)
+endif
+ifdef FRAME_DUMP
+CPPFLAGS += -DCTR_FRAME_DUMP=1
+ifdef DUMP_SWOOP
+CPPFLAGS += -DCTR_DUMP_SWOOP=1
+endif
+endif
 # A small FPS counter in the top-left corner of the top screen, shown when
 # the bottom screen's options turn it on (off by default).
 SHOW_FPS ?= 1

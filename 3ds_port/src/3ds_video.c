@@ -341,6 +341,7 @@ unsigned CtrVideo_VoxelUploadsLeft(void)
 #if CTR_VOXEL_ENABLED
 #include "voxel/ctr_voxel.h"
 #include "voxel/voxel_battle.h"
+#include "voxel/voxel_swoop.h"
 #endif
 
 /*
@@ -522,8 +523,12 @@ static uint32_t sVoxelWeatherOam[4];
  * for a field move over its banner, Fly's bird and its rider. The map's own
  * sprites are cards in the 3D scene (voxel_entities.c).
  */
-enum { VOXEL_OBJ_NONE, VOXEL_OBJ_WEATHER, VOXEL_OBJ_SCREEN };
+enum { VOXEL_OBJ_NONE, VOXEL_OBJ_WEATHER, VOXEL_OBJ_SCREEN, VOXEL_OBJ_FIELD };
 static unsigned sVoxelObjPass = VOXEL_OBJ_NONE;
+/* The swoop (voxel_swoop.c) has squashed the world's sprite cards away: the
+ * game's own object sprites are laid over the world instead, where the 2D
+ * field puts them (VOXEL_OBJ_FIELD). */
+static bool sSwoopFieldObjs;
 
 void CtrVideo_ClearVoxelWeatherOam(void)
 {
@@ -5452,7 +5457,8 @@ static void DrawObjects(unsigned priority, bool effects)
             bool weather = (sVoxelWeatherOam[i >> 5] & (1u << (i & 31))) != 0;
             bool screen = (sScreenOam[i >> 5] & (1u << (i & 31))) != 0;
 
-            if (sVoxelObjPass == VOXEL_OBJ_WEATHER ? !weather : (weather || !screen))
+            if (sVoxelObjPass == VOXEL_OBJ_WEATHER ? !weather
+                : sVoxelObjPass == VOXEL_OBJ_FIELD ? (weather || screen) : (weather || !screen))
                 continue;
         }
 #endif
@@ -5640,6 +5646,23 @@ static struct
 static uint32_t sBackdropShown = 0xFF000000u;
 /* The field is the voxel world this frame: its dark is VoxelFlashLight's. */
 static bool sFieldVoxel;
+#if CTR_VOXEL_ENABLED
+/*
+ * The swoop between the two renderers of the field (voxel_swoop.c). Which
+ * renderer drew the last field frame - the voxel world or the 2D layers -
+ * is kept across the frames that draw neither (a map warming up is black),
+ * and a change of it starts the swoop: the option toggled, a map with or
+ * without voxel data entered. Frames off the field (a battle, a menu, the
+ * title) forget it, so coming back from those is the cut it always was.
+ */
+enum { FIELD_MODE_NONE, FIELD_MODE_PIXEL, FIELD_MODE_VOXEL };
+/* How long the 2D field may wait for the voxel world's chunks (1.5 s). */
+#define VOXEL_SWOOP_HOLD_FRAMES 90u
+/* The most game frames one shown picture may step the swoop by. */
+#define VOXEL_SWOOP_STEPS_MAX 4u
+static unsigned sFieldMode;
+static VoxelSwoop sSwoop;
+#endif
 
 void CtrVideo_SetFieldLight(bool on, int x, int y, int radius)
 {
@@ -8745,7 +8768,10 @@ static float DioramaStrength(void)
 
 static void VoxelDiorama(void)
 {
-    float strength = DioramaStrength();
+    /* The swoop takes the blur off with the grade (CtrVoxel_SwoopNeutral). */
+    float strength = DioramaStrength() * (1.0f - CtrVoxel_SwoopNeutral());
+
+    if (strength <= 0.005f) return;
 
     SurfaceFilter(GPU_LINEAR);
     /* Half a texel either way: two 2x2 averages on either side of each
@@ -8981,6 +9007,14 @@ static void ComposeVoxelOverlay(void)
     bool screen = ((sScreenOam[0] & ~sVoxelWeatherOam[0]) | (sScreenOam[1] & ~sVoxelWeatherOam[1])
                    | (sScreenOam[2] & ~sVoxelWeatherOam[2]) | (sScreenOam[3] & ~sVoxelWeatherOam[3])) != 0;
 
+    if (sSwoopFieldObjs)
+    {
+        /* The object events as the 2D field draws them, under everything
+         * else of the overlay (the swoop, with the cards squashed away). */
+        sVoxelObjPass = VOXEL_OBJ_FIELD;
+        Layers(1u << 4);
+        BlendForget();
+    }
     sVoxelObjPass = VOXEL_OBJ_WEATHER;
     /* With the blending: clouds and fog are semi-transparent sprites, and
      * drawn without it they hid the world under them. */
@@ -9153,14 +9187,137 @@ static void RenderVoxelTo(C3D_RenderTarget *target, int eye, uint32_t clear, boo
  * one picture; with it up the world is drawn to each eye from its own camera
  * (CtrVoxel_SetStereo was given the slider before the update).
  */
+/*
+ * The swoop's crossfade (voxel_swoop.c): the 2D field, whole, composed as the
+ * battle transition composes it (RenderTransition), laid over the finished
+ * voxel picture at `alpha`. The text layer is left out: the voxel overlay
+ * has drawn it. Into the logical surface, which the voxel picture has left.
+ */
+static unsigned DepthPlanes(void);
+static unsigned BandMask(unsigned band, unsigned count);
+static float BandDepth(unsigned band, unsigned count);
+
+/* The whole logical picture laid over the target, moved by a fraction of a
+ * pixel with the linear filter on: one tap of a blur (see DioramaTap). */
+static void SwoopBlurTap(float dx, float dy, float alpha)
+{
+    const Tex3DS_SubTexture region = {CTR_GAME_WIDTH - 2, CTR_GAME_HEIGHT - 2,
+        (1.0f + dx) / 512.0f, 1.0f - (1.0f + dy) / 256.0f,
+        (1.0f + dx + CTR_GAME_WIDTH - 2) / 512.0f, 1.0f - (1.0f + dy + CTR_GAME_HEIGHT - 2) / 256.0f};
+    C2D_ImageTint tint;
+
+    C2D_AlphaImageTint(&tint, alpha);
+    C2D_DrawImageAt((C2D_Image){&sSurface, &region}, 1, 1, 0, &tint, 1, 1);
+}
+
+/* The logical picture softened over the target: four taps round each pixel
+ * at `blur` (0..1) of their full strength. */
+static void SwoopBlur(float blur)
+{
+    float wide = blur > 1.0f ? blur - 1.0f : 0.0f;
+
+    if (blur > 1.0f) blur = 1.0f;
+    SurfaceFilter(GPU_LINEAR);
+    SwoopBlurTap(0.5f, 0.5f, 0.55f * blur);
+    SwoopBlurTap(-0.5f, -0.5f, 0.45f * blur);
+    SwoopBlurTap(1.5f, -0.5f, 0.35f * blur);
+    SwoopBlurTap(-1.5f, 0.5f, 0.30f * blur);
+    /* Past 1: wider taps on top, for a softer picture still. */
+    if (wide > 0.0f)
+    {
+        SwoopBlurTap(2.5f, 1.5f, 0.35f * wide);
+        SwoopBlurTap(-2.5f, -1.5f, 0.35f * wide);
+        SwoopBlurTap(1.5f, -2.5f, 0.30f * wide);
+        SwoopBlurTap(-1.5f, 2.5f, 0.30f * wide);
+    }
+    SurfaceFilter(GPU_NEAREST);
+}
+
+static void Field2DOver(float alpha, float blur, uint32_t clear, C3D_RenderTarget *target, float parallax)
+{
+    const Tex3DS_SubTexture logical = {CTR_GAME_WIDTH, CTR_GAME_HEIGHT, 0, 1,
+        CTR_GAME_WIDTH / 512.0f, 1 - CTR_GAME_HEIGHT / 256.0f};
+    C2D_ImageTint tint;
+
+    /* The voxel picture, still in the logical surface, softened in place
+     * on the target before the 2D field goes over it. */
+    if (blur > 0.005f)
+    {
+        C2D_Prepare();
+        C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+        BlendForget();
+        SceneOn(target);
+        C2D_ViewReset();
+        Blend(5, false, false);
+        SwoopBlur(blur);
+        C2D_Flush();
+        C3D_FrameSplit(0);
+    }
+
+    /* The eye's parallax, as the field's depth planes give its layers
+     * (DepthPlanes, BlitBands: the planes it would cut, the furthest at the
+     * screen and the rest forward by whole pixels, the backgrounds scrolled
+     * together on one plane): composed flat, every layer jumped by it on
+     * the frame the swoop began and the frame it ended. Without planes the
+     * field is composed per priority (RenderEye), and so is this. */
+    unsigned count = parallax != 0.0f && sBandsReady ? DepthPlanes() : 0;
+
+    sParallax = count >= 2 ? 0.0f : parallax;
+    sLayerShift = 0;
+    C2D_Prepare();
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+    BlendForget();
+    ColourClear(sLogical, clear);
+    SceneOn(sLogical);
+    Blend(5, false, false);
+    StageUnderlay();
+    /* As RenderEye composes the 2D field, without its text layer. */
+    sLayerExclude = 1;
+    if (!(Reg(0) & 128))
+    {
+        if (count < 2)
+            Compose();
+        else
+            for (int band = (int)count - 1; band >= 0; --band)
+            {
+                sPriorityMask = BandMask(band, count);
+                sLayerOrigin = parallax * BandDepth(band, count);
+                Compose();
+            }
+        sPriorityMask = SLOTS_ALL;
+        sLayerOrigin = 0.0f;
+    }
+    sLayerExclude = 0;
+    C2D_Flush();
+    C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
+    C3D_FrameSplit(0);
+    BlendForget();
+    SceneOn(target);
+    C2D_ViewReset();
+    Blend(5, false, false);
+    C2D_AlphaImageTint(&tint, alpha > 1.0f ? 1.0f : alpha);
+    C2D_DrawImageAt((C2D_Image){&sSurface, &logical}, 0, 0, 0, &tint, 1, 1);
+    /* ... and softened likewise, as far as it is there. */
+    if (blur > 0.005f) SwoopBlur(blur * (alpha > 1.0f ? 1.0f : alpha));
+    C2D_Flush();
+    C3D_FrameSplit(0);
+}
+
 static void RenderVoxel(uint32_t clear, float stereo)
 {
     /* The brightness effect (BLDY) on the field's backgrounds and sprites. */
     unsigned control = Reg(0x50), effect = (control >> 6) & 3;
     float bright = effect >= 2 ? Min(Reg(0x54) & 31, 16) / 16.0f : 0.0f;
+    VoxelSwoopFrame swoop;
 
-    CtrVoxel_SetBrightness((control & 0x0e) ? bright : 0.0f, (control & 0x10) ? bright : 0.0f,
-                           effect == 2);
+    VoxelSwoop_Frame(&sSwoop, &swoop);
+    /* Arriving from the 2D field, the world's light rings down from white -
+     * unless the game has an effect of its own on. */
+    if (swoop.whiteout > 0.0f && bright <= 0.0f)
+        CtrVoxel_SetBrightness(swoop.whiteout, swoop.whiteout, true);
+    else
+        CtrVoxel_SetBrightness((control & 0x0e) ? bright : 0.0f, (control & 0x10) ? bright : 0.0f,
+                               effect == 2);
     if (stereo > 0.0f)
     {
         uint64_t eyesStart = svcGetSystemTick();
@@ -10107,6 +10264,16 @@ static unsigned BlendingPriorities(void)
  */
 #define CTR_BANDS_IDLE_FRAMES 180
 static uint32_t sBandsUsedFrame;
+/*
+ * The planes' parallax eased in over this many frames once they are made,
+ * and out again before the voxel world takes their VRAM back
+ * (VoxelVramManage): around the swoop the field went from flat to its full
+ * depth in one frame - every layer jumping by its whole pixels - as the
+ * planes came a second after the world parked, or went the frame the
+ * option came on. 0..1, BlitBands scales by it.
+ */
+#define CTR_PLANE_RAMP_FRAMES 20u
+static float sPlaneRamp;
 /* Asked by the overworld when an atlas found no VRAM (sPlaneReleaseAsked,
  * declared with the bottom screen's surface); honoured before the next frame
  * opens, since deleting a render target may wait for the GPU. */
@@ -10135,6 +10302,7 @@ static bool sBandsWanted;
 
 static void BandsRelease(void)
 {
+    sPlaneRamp = 0.0f;
     for (unsigned i = 0; i < CTR_BANDS; ++i)
     {
         if (sBand[i]) { ClearWhenMadeForget(sBand[i]); C3D_RenderTargetDelete(sBand[i]); }
@@ -10477,7 +10645,7 @@ static void BlitBands(C3D_RenderTarget *target, unsigned count, float parallax)
     for (int band = (int)count - 2; band >= 0; --band)
         if (sBandUsed[band])
             C2D_DrawImageAt((C2D_Image){&sBandTex[band], &logical},
-                            parallax * BandDepth(band, count), 0, 0, NULL, 1, 1);
+                            parallax * sPlaneRamp * BandDepth(band, count), 0, 0, NULL, 1, 1);
     C2D_Flush();
 }
 
@@ -10557,6 +10725,40 @@ static void DrawNoHome(C3D_RenderTarget *target)
     C2D_DrawLine(x + 6, y + 6, red, x + 22, y + 22, red, 3, 0);
     C2D_Flush();
 }
+
+#if CTR_VOXEL_ENABLED
+/*
+ * The swoop's light over a finished picture of the top screen, the same in
+ * both eyes (on the glass): the flat flash and a radial bloom from the middle
+ * as it dies away. Four triangles and a rectangle at most, nothing allocated.
+ */
+static void DrawSwoopLight(C3D_RenderTarget *target, const VoxelSwoopFrame *fx)
+{
+    const float w = CTR_GAME_WIDTH, h = CTR_GAME_HEIGHT, cx = w * 0.5f, cy = h * 0.5f;
+    uint32_t rgb = fx->colour & 0x00FFFFFFu;
+
+    C2D_Prepare();
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+    BlendForget();
+    SceneOn(target);
+    C2D_ViewReset();
+    Blend(5, false, false);
+    if (fx->bloom > 0.005f)
+    {
+        /* A diamond, bright in the middle and gone at the screen's edges. */
+        uint32_t core = rgb | ((uint32_t)(fx->bloom * 0.9f * 255.0f) << 24), edge = rgb;
+        float rx = w * 0.75f, ry = h * 0.9f;
+
+        C2D_DrawTriangle(cx, cy, core, cx - rx, cy, edge, cx, cy - ry, edge, 0);
+        C2D_DrawTriangle(cx, cy, core, cx, cy - ry, edge, cx + rx, cy, edge, 0);
+        C2D_DrawTriangle(cx, cy, core, cx + rx, cy, edge, cx, cy + ry, edge, 0);
+        C2D_DrawTriangle(cx, cy, core, cx, cy + ry, edge, cx - rx, cy, edge, 0);
+    }
+    if (fx->flash > 0.005f)
+        C2D_DrawRectSolid(0, 0, 0, w, h, rgb | ((uint32_t)(fminf(fx->flash, 1.0f) * 255.0f) << 24));
+    C2D_Flush();
+}
+#endif
 
 static void DrawPoisonVeil(C3D_RenderTarget *target, unsigned alpha)
 {
@@ -10667,7 +10869,10 @@ static void VoxelVramManage(void)
          * its scene surface). No battle on show: it is over. */
         if (CtrVoxel_InBattle() && !sBattle && !sBattleRequested)
             CtrVoxel_EndBattle();
-        if (++sUnwanted >= VOXEL_PARK_FRAMES && CtrVoxel_HoldsVram() && !CtrVoxel_InBattle())
+        /* Not under the swoop: parking stalls the frame (a quarter second on
+         * a New 3DS), and the world is still on show through it. */
+        if (++sUnwanted >= VOXEL_PARK_FRAMES && CtrVoxel_HoldsVram() && !CtrVoxel_InBattle()
+            && !VoxelSwoop_Active(&sSwoop))
         {
             StereoSurfaceRelease();
             CtrVoxel_ParkVram();
@@ -10681,6 +10886,10 @@ static void VoxelVramManage(void)
     }
     sUnwanted = 0;
     if (CtrVoxel_HoldsVram() || sStats.frames < sRetryFrame)
+        return;
+    /* The field's planes still at depth: their parallax eases out first
+     * (CTR_PLANE_RAMP_FRAMES), and the world comes back to a flat field. */
+    if (sBandsReady && sPlaneRamp > 0.0f)
         return;
     StereoSurfaceRelease();
     if (sBandsReady) BandsRelease();
@@ -10814,7 +11023,10 @@ void CtrVideo_Present(void)
     }
     ClipToView();
     /* The voxel overworld draws the field itself when it is switched on. */
-    sFieldLayers = !sStage && !sCentred && !sBattle && CtrGame_IsOverworld() && !CtrSettings_Voxel();
+    /* ... and through the swoop (voxel_swoop.c), from the frame the option
+     * goes on: its crossfade composes the 2D field over the voxel world. */
+    sFieldLayers = !sStage && !sCentred && !sBattle && CtrGame_IsOverworld()
+                   && (!CtrSettings_Voxel() || VoxelSwoop_Active(&sSwoop) || sFieldMode == FIELD_MODE_PIXEL);
     /* The field in 2D or in voxel: the audit found every write announced there. */
     VramTrustFrame(CTR_VRAM_TRUST && !sStage && !sCentred && !sBattle && CtrGame_IsOverworld() && !sTransition
                    && !sFieldBanner && !CtrGame_FieldRawVram());
@@ -10866,6 +11078,20 @@ void CtrVideo_Present(void)
 #define CTR_DUMP_STEP 30
 #endif
     if (sBattle && sStats.frames - battleStart >= CTR_DUMP_FROM && sStats.frames % CTR_DUMP_STEP == 0 && dumped++ < 40)
+#elif defined(CTR_DUMP_SWOOP) && CTR_VOXEL_ENABLED
+    /* Every frame the swoop plays, and the 150 after the option changed
+     * (the frames before the swoop starts are where a black one would be),
+     * up to 1600 in all; each dumped frame logged with the route of the
+     * picture it holds (the frame before this one). */
+    static unsigned dumped, sinceToggle = 1000;
+    static bool lastVoxelOption;
+    if (CtrSettings_Voxel() != lastVoxelOption) { lastVoxelOption = CtrSettings_Voxel(); sinceToggle = 0; }
+    else if (sinceToggle < 1000) ++sinceToggle;
+    bool dumping = VoxelSwoop_Active(&sSwoop) || sinceToggle < 150;
+    if (dumping && dumped < 1600)
+        CtrLog_Write(CTR_LOG_VIDEO, "DUMP f=%lu route=%u mode=%u field=%u swoop=%u/%u", (unsigned long)sStats.frames,
+                     (unsigned)sStats.route, (unsigned)sStats.mode, sFieldMode, (unsigned)sSwoop.phase, sSwoop.frame);
+    if (dumping && dumped++ < 1600)
 #else
     if (sStats.frames >= 150 && (sStats.frames - 150) % 150 == 0 && sStats.frames <= 6000)
 #endif
@@ -11003,7 +11229,30 @@ void CtrVideo_Present(void)
      * planes: holding them there is what kept the overworld's atlas out of
      * VRAM for good, the 2D picture standing in for it frame after frame. */
     /* Opt-in from the bottom screen's options (CtrSettings_Voxel). */
-    bool overworld = field && CtrSettings_Voxel() && CtrVoxel_IsAvailable();
+    bool voxelMap = field && CtrVoxel_IsAvailable();
+    bool wantVoxel = voxelMap && CtrSettings_Voxel();
+    /*
+     * The swoop between the renderers (sSwoop), decided before the update so
+     * the camera's first frame is its own. The option gone off: the voxel
+     * world stays up for the camera's rise. The 2D field about to become the
+     * voxel world: the flash starts now, undone below if the world is not
+     * drawn after all (still warming up).
+     */
+    if (!bottom && !VoxelSwoop_Active(&sSwoop))
+    {
+        if (sFieldMode == FIELD_MODE_VOXEL && field && !wantVoxel && voxelMap)
+            VoxelSwoop_Begin(&sSwoop, false, true);
+        else if (sFieldMode == FIELD_MODE_PIXEL && wantVoxel)
+            VoxelSwoop_Begin(&sSwoop, true, true);
+    }
+    bool overworld = wantVoxel || (voxelMap && VoxelSwoop_ShowsVoxel(&sSwoop));
+    {
+        VoxelSwoopFrame swoop;
+
+        VoxelSwoop_Frame(&sSwoop, &swoop);
+        CtrVoxel_SetSwoop(swoop.camera, swoop.height, swoop.cards, swoop.shadows);
+        sSwoopFieldObjs = !swoop.cards;
+    }
     /* The slider before the update: the world's eyes are set, and its
      * frustum widened to what they see, before it picks this frame's chunks.
      * Per eye the frame clears and splits twice: the chunk uploads leave the
@@ -11014,7 +11263,24 @@ void CtrVideo_Present(void)
     bool voxel = overworld && CtrVoxel_Update();
     /* A new map still being made - a frame or two, behind the fade - is
      * black rather than the 2D picture flashing up before the 3D one. */
-    bool blank = overworld && !voxel && CtrVoxel_IsWarmingUp();
+    /* ... unless the 2D field was up: it stays until the voxel world is
+     * drawn and the swoop crossfades into it (no black in between). */
+    bool blank = overworld && !voxel && CtrVoxel_IsWarmingUp() && sFieldMode != FIELD_MODE_PIXEL;
+    if (!bottom)
+    {
+        unsigned mode = !field ? FIELD_MODE_NONE : voxel ? FIELD_MODE_VOXEL
+                      : blank ? sFieldMode : FIELD_MODE_PIXEL;
+
+        if (mode == FIELD_MODE_NONE)
+            VoxelSwoop_Cancel(&sSwoop);
+        else if (sSwoop.phase == VOXEL_SWOOP_FLASH_IN && sSwoop.frame == 0 && mode != FIELD_MODE_VOXEL)
+            VoxelSwoop_Cancel(&sSwoop); /* not drawn after all: next frame */
+        else if (VoxelSwoop_ShowsVoxel(&sSwoop) && !voxel)
+            VoxelSwoop_LoseVoxel(&sSwoop);
+        else if (!VoxelSwoop_Active(&sSwoop) && sFieldMode == FIELD_MODE_VOXEL && mode == FIELD_MODE_PIXEL)
+            VoxelSwoop_Begin(&sSwoop, false, false); /* the map's voxel world is gone: the flash alone */
+        sFieldMode = mode;
+    }
 #else
     const bool voxel = false, overworld = false, blank = false;
 #endif
@@ -11079,7 +11345,11 @@ void CtrVideo_Present(void)
      * has in a frame, so they take the planes like any other 2D screen. */
     if (!sStage) sStageWithoutPlanes = false;
     bool planes = stereo && !overworld && !sBattle && !sStageWithoutPlanes && BandsUsable();
-    bool planesMissing = stereo && !overworld && !sStage && !sBattle && !planes;
+    /* ... and the 2D field drawn while the voxel world is still being made
+     * (the option just on): flat as well, not per priority (RenderEye's
+     * layer parallax splits the field's scrolled-together backgrounds that
+     * its planes keep on one plane, and the swoop's crossfade is flat too). */
+    bool planesMissing = stereo && !voxel && !blank && !sStage && !sBattle && !planes;
     if (planesMissing) stereo = false;
     if (bottom) stereo = planes = battleStereo = false;
     /* A magnified stage is one flat picture (RenderEye). */
@@ -11089,6 +11359,30 @@ void CtrVideo_Present(void)
     bool dexTop = bottom && CtrDexTop_Active();
     if (dexTop) stereo = sTopRight && slider > 0.02f;
     else CtrDexTop_Idle();
+    /* The planes' parallax ramp (sPlaneRamp): in while they are used, out
+     * once the voxel world is wanted (its VRAM waits for it, VoxelVramManage). */
+    if (!bottom)
+    {
+#if CTR_VOXEL_ENABLED
+        bool planesLeaving = field && CtrSettings_Voxel();
+#else
+        const bool planesLeaving = false;
+#endif
+        float step = 1.0f / (float)CTR_PLANE_RAMP_FRAMES;
+
+        if (planes && !planesLeaving) sPlaneRamp = sPlaneRamp + step > 1.0f ? 1.0f : sPlaneRamp + step;
+        else if (planes) sPlaneRamp = sPlaneRamp - step < 0.0f ? 0.0f : sPlaneRamp - step;
+        /* Not used and no swoop to keep them under: nothing to ease. The
+         * swoop's crossfade takes the ramp where it stood (Field2DOver). */
+        else if (planesLeaving && !VoxelSwoop_Active(&sSwoop)) sPlaneRamp = 0.0f;
+        /* Leaving the voxel world with the slider up: the planes cannot be
+         * made until the world's VRAM is parked, after the swoop, so the
+         * crossfade's 2D field takes its layers to depth itself (Field2DOver
+         * through sParallax), and the planes arrive at that depth instead
+         * of sliding in afterwards as a second motion. */
+        else if (!planes && !planesLeaving && field && VoxelSwoop_Active(&sSwoop) && sTopRight && slider > 0.0f)
+            sPlaneRamp = sPlaneRamp + step > 1.0f ? 1.0f : sPlaneRamp + step;
+    }
     if (stereo != sStereo) { gfxSet3D(stereo); sStereo = stereo; }
     /* The voxel world reports the slider in tenths, the 2D path its pixels. */
     sStats.stereo = !stereo ? 0 : voxelStereo ? (uint32_t)ceilf(slider * 10.0f)
@@ -11141,7 +11435,21 @@ void CtrVideo_Present(void)
         }
     }
     PORT_PROF_BEGIN(layers);
-    if (!voxel && !blank) LayersRender();
+#if CTR_VOXEL_ENABLED
+    /* The swoop's crossfade: the 2D field is composed over the voxel world. */
+    float fade2d = 0.0f, blur2d = 0.0f;
+    if (voxel && !bottom)
+    {
+        VoxelSwoopFrame swoop;
+
+        VoxelSwoop_Frame(&sSwoop, &swoop);
+        fade2d = swoop.fade2d;
+        blur2d = swoop.blur;
+    }
+#else
+    const float fade2d = 0.0f;
+#endif
+    if ((!voxel && !blank) || fade2d > 0.0f) LayersRender();
     /* Before anything is composed: it is drawn from within (ComposeBand). */
     sObjWin.ready = false;
     if (!voxel && !blank && !bottom) ObjWindowCompose();
@@ -11166,6 +11474,15 @@ void CtrVideo_Present(void)
 #if CTR_VOXEL_ENABLED
         sPlanes = 0;
         RenderVoxel(clear, voxelStereo && stereo ? slider : 0.0f);
+        if (fade2d > 0.004f)
+        {
+            /* The 2D field's own stereo pixels, as its planes would shift
+             * them with the slider where it is. */
+            float field2d = sTopRight && slider > 0.0f ? roundf(slider * CTR_STEREO_PIXELS) * sPlaneRamp : 0.0f;
+
+            Field2DOver(fade2d, blur2d, clear, sTop, field2d);
+            if (voxelStereo && stereo) Field2DOver(fade2d, blur2d, clear, sTopRight, -field2d);
+        }
 #endif
     }
     else if (blank)
@@ -11214,6 +11531,43 @@ void CtrVideo_Present(void)
         DrawPoisonVeil(sTop, PoisonVeil());
         if (stereo) DrawPoisonVeil(sTopRight, PoisonVeil());
     }
+#if CTR_VOXEL_ENABLED
+    if (!bottom && VoxelSwoop_Active(&sSwoop))
+    {
+        VoxelSwoopFrame swoop;
+
+        VoxelSwoop_Frame(&sSwoop, &swoop);
+        if (swoop.flash > 0.005f || swoop.bloom > 0.005f)
+        {
+            DrawSwoopLight(sTop, &swoop);
+            if (stereo) DrawSwoopLight(sTopRight, &swoop);
+        }
+        /* Into the voxel world: the 2D field stays whole over it until every
+         * chunk the oblique view needs is built (a black hole in the fade
+         * otherwise), for up to VOXEL_SWOOP_HOLD_FRAMES. */
+        {
+            static unsigned held;
+            static uint64_t lastGameFrame;
+            /* Paced by the game's frames, not the pictures shown: on an Old
+             * 3DS the swoop shows at 40 fps while the game runs 60, and
+             * stepped once a picture it took half as long again. */
+            uint64_t gameFrame = CtrPlatform_FrameCount();
+            unsigned steps = lastGameFrame != 0 && gameFrame > lastGameFrame ? (unsigned)(gameFrame - lastGameFrame) : 1u;
+
+            if (steps > VOXEL_SWOOP_STEPS_MAX) steps = VOXEL_SWOOP_STEPS_MAX;
+            lastGameFrame = gameFrame;
+            if (sSwoop.phase == VOXEL_SWOOP_FLASH_IN && voxel && CtrVoxel_GetStats()->chunksMissing != 0
+                && held < VOXEL_SWOOP_HOLD_FRAMES)
+                ++held;
+            else
+            {
+                held = 0;
+                while (steps-- != 0 && VoxelSwoop_Active(&sSwoop))
+                    VoxelSwoop_Step(&sSwoop);
+            }
+        }
+    }
+#endif
 #if CTR_SHOW_FPS
     if (CtrSettings_ShowFps())
     {

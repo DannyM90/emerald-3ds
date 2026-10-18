@@ -64,6 +64,11 @@
 #include "script_pokemon_util.h"
 #endif
 #include "librfu.h"
+#ifdef CTR_TEST_SWOOP
+#include "field_screen_effect.h"
+#include "script.h"
+#include "constants/maps.h"
+#endif
 #include "port_platform.h"
 #include "port_log.h"
 #include "port_prof.h"
@@ -1295,6 +1300,48 @@ void CtrGame_WaitFrame(void)
     CtrPlatform_Diagnostic(sFrames, 0, 0);
     if (CtrScenario_Active())
         ScenarioCheckpoints();
+#ifdef CTR_TEST_SWOOP
+    /* Azahar aid (-DCTR_TEST_SWOOP=frame): the swoop between the voxel world
+     * and the 2D field, every way it starts - the 3D option off, then on
+     * again, then a warp into a house and one back out. */
+    {
+        static unsigned step;
+        static u32 at;
+
+        if (step < 11 && sFrames >= CTR_TEST_SWOOP && gMain.callback2 == CB2_Overworld
+            && !ArePlayerFieldControlsLocked() && sFrames - at >= 150)
+        {
+            at = sFrames;
+            switch (step++)
+            {
+            case 0: /* out of doors first, wherever the save stands */
+                SetWarpDestination(MAP_GROUP(MAP_LITTLEROOT_TOWN), MAP_NUM(MAP_LITTLEROOT_TOWN), WARP_ID_NONE, 5, 9);
+                DoWarp();
+                break;
+            /* The option toggled as the player does it: OPTIONS on the bottom
+             * screen, then its VOXEL 3D row tapped, off and on; in the middle
+             * of Littleroot at 90%, at its west edge at 100%, in Oldale. */
+            case 1: CtrBottom_TestSwoop(0); break;
+            case 2: case 5: case 8: CtrBottom_TestSwoop(1); break;
+            case 3: case 6: case 9: CtrBottom_TestSwoop(1); break;
+            case 4:
+                CtrSettings_ApplyLine("voxel_zoom=100");
+                SetWarpDestination(MAP_GROUP(MAP_LITTLEROOT_TOWN), MAP_NUM(MAP_LITTLEROOT_TOWN), WARP_ID_NONE, 1, 9);
+                DoWarp();
+                break;
+            case 7:
+                SetWarpDestination(MAP_GROUP(MAP_OLDALE_TOWN), MAP_NUM(MAP_OLDALE_TOWN), WARP_ID_NONE, 8, 10);
+                DoWarp();
+                break;
+            case 10:
+                SetWarpDestination(MAP_GROUP(MAP_LITTLEROOT_TOWN_BRENDANS_HOUSE_1F),
+                                   MAP_NUM(MAP_LITTLEROOT_TOWN_BRENDANS_HOUSE_1F), WARP_ID_NONE, 4, 8);
+                DoWarp();
+                break;
+            }
+        }
+    }
+#endif
 #ifdef CTR_TEST_BATTLE
     /* Azahar measurement aid (-DCTR_TEST_BATTLE=frame): a wild battle from
      * wherever the save stands, once the field is up at that frame. */
