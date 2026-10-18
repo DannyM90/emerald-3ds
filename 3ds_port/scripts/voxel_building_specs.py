@@ -3515,6 +3515,44 @@ def contest_lobby():
     ]
 
 
+# ── Lilycove's contest hall ───────────────────────────────────────────────
+#
+# The hall the three stages stand in (their pieces are the contest stage's,
+# found again). Its back wall steps forward in three tiers either side - the
+# judges' portraits in the middle, a plaque on each wing -, each 60 px from
+# the cap drawn over it to its foot; side walls close each step and the
+# hall. The potted palms are cards; the chairs stand on walked cells and
+# stay drawn on the floor.
+
+HALL_FLOOR = ("f6b49c", "d5ac7b")
+HALL_WALL_SIDE = (176, 4, 192, 64)      # a stretch of the middle's curtain with nothing on it
+HALL_PALMS = ((8, 9), (42, 9), (2, 11), (5, 11), (45, 11), (48, 11),
+              (3, 32), (7, 32), (11, 32), (39, 32), (43, 32), (47, 32))   # their pots' cells
+
+
+def lilycove_contest_room():
+    side = HALL_WALL_SIDE
+    palms = sorted(HALL_PALMS, key=lambda c: (-c[1], c[0]))
+    return [piece("palm_%d_%d" % (cx, cy), [(cx * 16, cy * 16 - 16, cx * 16 + 16, cy * 16 + 14)],
+                  31, leave=HALL_FLOOR, card=True) for (cx, cy) in palms] + [
+        piece("wall_ow", [(0, 68, 80, 128)], 60, fill=16, foot=128, side=side),
+        piece("wall_oe", [(736, 68, 816, 128)], 60, fill=16, foot=128, side=side),
+        piece("wall_ww", [(80, 36, 160, 96)], 60, fill=16, foot=96, side=side),
+        piece("wall_we", [(656, 36, 736, 96)], 60, fill=16, foot=96, side=side),
+        # the middle in two halves, as the Center's back wall: one 496 px
+        # long left no room beside it on the hall's texture page
+        piece("wall_e", [(408, 4, 656, 64)], 60, fill=16, foot=64, side=side),
+        piece("wall", [(160, 4, 408, 64)], 60, fill=16, foot=64, side=side),
+        # the steps' sides, then the hall's
+        piece("side_step_ow", [], 60, side=side, walls=[((80, 128), (80, 96))]),
+        piece("side_step_ww", [], 60, side=side, walls=[((160, 96), (160, 64))]),
+        piece("side_step_we", [], 60, side=side, walls=[((656, 64), (656, 96))]),
+        piece("side_step_oe", [], 60, side=side, walls=[((736, 96), (736, 128))]),
+        piece("side_w", [], 60, side=side, walls=[((0, 528), (0, 128))]),
+        piece("side_e", [], 60, side=side, walls=[((816, 128), (816, 528))]),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5122,6 +5160,17 @@ SPECS = [
         "name": "contest_lobby",
         "interior": {"layout": "LAYOUT_LILYCOVE_CITY_CONTEST_LOBBY", "ground": [0x260],
                      "pieces": own_shell(contest_lobby())},
+    },
+    {
+        # Lilycove's contest hall: its walls and palms (its stages stand the
+        # contest stage's pieces)
+        "name": "lilycove_contest_room",
+        # (its ground the stages' green: every piece of a room stands on its
+        # floor, and the contest stage's found again here stand on the
+        # stages; the hall's checker round a palm is laid as the palm's
+        # floor marks)
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_CONTEST_HALL", "ground": [0x271],
+                     "pieces": own_shell(lilycove_contest_room())},
     },
 ] + [
     {
