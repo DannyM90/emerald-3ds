@@ -10855,7 +10855,10 @@ static void VoxelVramManage(void)
          * its scene surface). No battle on show: it is over. */
         if (CtrVoxel_InBattle() && !sBattle && !sBattleRequested)
             CtrVoxel_EndBattle();
-        if (++sUnwanted >= VOXEL_PARK_FRAMES && CtrVoxel_HoldsVram() && !CtrVoxel_InBattle())
+        /* Not under the swoop: parking stalls the frame (a quarter second on
+         * a New 3DS), and the world is still on show through it. */
+        if (++sUnwanted >= VOXEL_PARK_FRAMES && CtrVoxel_HoldsVram() && !CtrVoxel_InBattle()
+            && !VoxelSwoop_Active(&sSwoop))
         {
             StereoSurfaceRelease();
             CtrVoxel_ParkVram();
@@ -11327,6 +11330,13 @@ void CtrVideo_Present(void)
         /* Not used and no swoop to keep them under: nothing to ease. The
          * swoop's crossfade takes the ramp where it stood (Field2DOver). */
         else if (planesLeaving && !VoxelSwoop_Active(&sSwoop)) sPlaneRamp = 0.0f;
+        /* Leaving the voxel world with the slider up: the planes cannot be
+         * made until the world's VRAM is parked, after the swoop, so the
+         * crossfade's 2D field takes its layers to depth itself (Field2DOver
+         * through sParallax), and the planes arrive at that depth instead
+         * of sliding in afterwards as a second motion. */
+        else if (!planes && !planesLeaving && field && VoxelSwoop_Active(&sSwoop) && sTopRight && slider > 0.0f)
+            sPlaneRamp = sPlaneRamp + step > 1.0f ? 1.0f : sPlaneRamp + step;
     }
     if (stereo != sStereo) { gfxSet3D(stereo); sStereo = stereo; }
     /* The voxel world reports the slider in tenths, the 2D path its pixels. */
