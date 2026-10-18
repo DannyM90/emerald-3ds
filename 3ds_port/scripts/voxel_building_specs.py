@@ -3667,6 +3667,21 @@ def dept_store_5f():
     ]
 
 
+# The elevator: its back wall, drawn from 8 rows down its first cell (the
+# black over it is nothing) to its foot 48 rows down, the window and the
+# golden handrail on its face; the side walls dressed with its pillar.
+
+DEPT_ELEVATOR_SIDE = (0, 8, 8, 48)      # the west pillar and its blue base
+
+
+def dept_store_elevator():
+    return [
+        piece("wall", [(0, 8, 80, 48)], 40, fill=16, foot=48, side=DEPT_ELEVATOR_SIDE),
+        piece("side_w", [], 40, side=DEPT_ELEVATOR_SIDE, walls=[((0, 96), (0, 48))]),
+        piece("side_e", [], 40, side=DEPT_ELEVATOR_SIDE, walls=[((80, 48), (80, 96))]),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5307,6 +5322,11 @@ SPECS = [
         "name": "dept_store_5f",
         "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_5F", "ground": [0x2f2],
                      "pieces": own_shell(dept_store_5f())},
+    },
+    {
+        "name": "dept_store_elevator",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_ELEVATOR", "ground": [0x265],
+                     "pieces": own_shell(dept_store_elevator())},
     },
 ] + [
     {
