@@ -3479,6 +3479,42 @@ def contest_stage():
     ]
 
 
+# ── Lilycove's contest lobby ──────────────────────────────────────────────
+#
+# The reception's counter, a U whose arms run back to the wall, the terminal
+# beside it, the four Berry Blenders, and the back wall with its two
+# doorways into the hall. The sofas down the side walls stand on cells the
+# player walks on, and stay drawn on the floor.
+
+LOBBY_FLOOR = ("f6b49c", "d5ac7b", "cd9c7b", "b48b5a", "c55231")   # the checker, the wall's shade and foot
+LOBBY_WALL_SIDE = (16, 3, 32, 32)       # a stretch of curtain with nothing on it
+LOBBY_CURTAIN = ("cd295a", "de6a52")    # the curtain, seen past the counter's rounded back corners
+
+
+def contest_lobby():
+    blenders = [piece("blender_%d_%d" % (bx, by), [(bx, by, bx + 16, by + 15)], 8, leave=LOBBY_FLOOR)
+                for (bx, by) in ((368, 144), (432, 144), (368, 80), (432, 80))]
+    return blenders + [
+        # the counter, a U in plan: a bar across the front as deep as its
+        # drawn top (z 54 to 63), an arm back towards the wall at each end
+        # (from z 35, its back corners nicked as the Center's are, where the
+        # drawing leaves the wall), the
+        # receptionists' floor between them; 10 px tall, its
+        # front the green lip and the white panels. The bow on the east arm's
+        # front corner is its own paint; the row under its front, its shadow
+        piece("counter", [(176, 25, 192, 62), (288, 25, 304, 62), (176, 44, 304, 62)], 10,
+              leave=LOBBY_FLOOR + LOBBY_CURTAIN,
+              plan=[(176, 36.2), (177.2, 35), (190.8, 35), (192, 36.2), (192, 54), (288, 54),
+                    (288, 36.2), (289.2, 35), (302.8, 35), (304, 36.2), (304, 63), (176, 63)]),
+        piece("terminal", [(304, 8, 320, 39)], 24, back=32),
+        # the back wall, its two doorways painted on its face as Lavaridge's
+        # Center's door to the spring is
+        piece("wall", [(0, 3, 496, 32)], 29, fill=16, foot=32, side=LOBBY_WALL_SIDE),
+        piece("side_w", [], 29, side=LOBBY_WALL_SIDE, walls=[((0, 192), (0, 32))]),
+        piece("side_e", [], 29, side=LOBBY_WALL_SIDE, walls=[((496, 32), (496, 192))]),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5080,6 +5116,12 @@ SPECS = [
         "name": "contest_stage",
         "interior": {"layout": "LAYOUT_CONTEST_HALL", "ground": [0x271, 0x225],
                      "pieces": own_shell(contest_stage())},
+    },
+    {
+        # Lilycove's contest lobby: the reception, the Berry Blenders
+        "name": "contest_lobby",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_CONTEST_LOBBY", "ground": [0x260],
+                     "pieces": own_shell(contest_lobby())},
     },
 ] + [
     {
