@@ -261,6 +261,29 @@ static unsigned sStagingUsed, sChunkUploads;
 static VoxelGpuVertex *sDynamic;       /* billboards and shadows, linear */
 static VoxelBuilder sBuilder;
 static VoxelCamera sCamera;
+/* The swoop's share of the camera this frame (CtrVoxel_SetSwoop), and the
+ * orthographic end of its projection: half the 2D field in tiles. */
+static float sSwoop;
+static float sSwoopHeight = 1.0f;
+static bool sSwoopCards = true, sSwoopShadows = true;
+/* Flattening, height becomes distance up the picture, as the GBA's art
+ * draws a tall thing in the tiles above its base: tiles north per tile of
+ * height lost. 1 puts a two-tall crown on the tile above its trunk. */
+#define VOXEL_SWOOP_SHEAR 0.0f /* 0 since the oblique end camera does this itself */
+/*
+ * The swoop's colour: as the camera goes to the 2D field's pose the world's
+ * light eases to neutral - plain texture colour, no grade, haze, dapples,
+ * rays, motes, moonlight or bloom (and 3ds_video.c takes the diorama blur
+ * off with it) - so the crossfade is between two pictures of the same
+ * colour. From this far along the camera's way (0..1) the light starts
+ * towards neutral, reaching it with the camera at its end pose.
+ */
+#define VOXEL_SWOOP_NEUTRAL_START 0.0f
+/* The ease's shape: 1 linear in the camera, above it the colour holds its
+ * own longer and goes late. */
+#define VOXEL_SWOOP_NEUTRAL_POWER 1.0f
+#define VOXEL_SWOOP_HALF_W (CTR_GAME_WIDTH / 16.0f / 2.0f)
+#define VOXEL_SWOOP_HALF_H (CTR_GAME_HEIGHT / 16.0f / 2.0f)
 static VoxelAtlasSlot sAtlases[VOXEL_ATLAS_SLOTS];
 static uint32_t sAtlasStamp;
 static unsigned sAtlasExtensionsSkipped;
@@ -787,12 +810,63 @@ static void CameraMatrices(C3D_Mtx *projection, C3D_Mtx *view, bool fit, int eye
         projection->r[0].z = -e / screen;
         projection->r[0].w = -e;
     }
+    if (sSwoop > 0.0f)
+    {
+        /*
+         * The swoop to the 2D field (CtrVoxel_SetSwoop): the projection
+         * blends, element by element, into an orthographic one of the 2D
+         * field's extent - 25 by 15 tiles of ground - which is the GBA's
+         * own art, an oblique view with no perspective.
+         * The camera stands where the perspective ground framing is the same
+         * (VoxelCamera_Swoop), so the ground holds still and only the walls
+         * and the trees lose their splay. The eye's skew carries over: in
+         * the orthographic end it is a parallax linear in depth, which is
+         * what a flat stereo pair wants.
+         */
+        C3D_Mtx ortho;
+        float k = sSwoop > 1.0f ? 1.0f : sSwoop;
+
+        /* The 2D field's extent of ground: its half height foreshortened by
+         * the pitch, so that the ground comes out square, 1:1, and a tile of
+         * height a tile up the picture at 45 degrees (VOXEL_SWOOP_PITCH). */
+        float halfH = VOXEL_SWOOP_HALF_H * sinf(C3D_AngleFromDegrees(VOXEL_SWOOP_PITCH));
+
+        Mtx_Ortho(&ortho, -VOXEL_SWOOP_HALF_W, VOXEL_SWOOP_HALF_W, -halfH, halfH,
+                  VOXEL_NEAR, VOXEL_FAR, false);
+        if (iod > 0.0f)
+        {
+            float e = (eye == 0 ? -0.5f : 0.5f) * iod / VOXEL_SWOOP_HALF_W;
+
+            ortho.r[0].z = -e / screen;
+            ortho.r[0].w = -e;
+        }
+        for (int r = 0; r < 4; ++r)
+            for (int c = 0; c < 4; ++c)
+                projection->r[r].c[c] = projection->r[r].c[c] * (1.0f - k) + ortho.r[r].c[c] * k;
+    }
     if (fit)
         FitToLogicalSurface(projection);
     Mtx_LookAt(view,
                FVec3_New(sCamera.x, sCamera.y, sCamera.z),
                FVec3_New(sCamera.targetX, sCamera.targetY, sCamera.targetZ),
                FVec3_New(0.0f, 1.0f, 0.0f), false);
+    if (sSwoopHeight < 1.0f)
+    {
+        /* The pop-up book (CtrVoxel_SetSwoop): the world squashed towards
+         * the ground under the player, and sheared north as it goes
+         * (VOXEL_SWOOP_SHEAR), so that flat it is the 2D map seen from
+         * above. Folded into the view, so every draw takes it. */
+        float h = sSwoopHeight > 0.002f ? sSwoopHeight : 0.002f;
+        C3D_Mtx squash, out;
+
+        Mtx_Identity(&squash);
+        squash.r[1].y = h;
+        squash.r[2].y = -(1.0f - h) * VOXEL_SWOOP_SHEAR;
+        Mtx_Translate(view, 0.0f, sCamera.ground, 0.0f, true);
+        Mtx_Multiply(&out, view, &squash);
+        Mtx_Copy(view, &out);
+        Mtx_Translate(view, 0.0f, -sCamera.ground, 0.0f, true);
+    }
 }
 
 static float StereoParallax(int eye, float depth);
@@ -938,6 +1012,13 @@ static void UpdateFrustum(void)
                 GrowRect(rect, sCamera.x + dx * t, sCamera.z + dz * t);
             }
         }
+    if (sSwoop > 0.0f)
+    {
+        /* The swoop's orthographic end sees the 2D field's whole extent at
+         * every depth, which the perspective rays above narrow down. */
+        GrowRect(rect, sCamera.targetX - VOXEL_SWOOP_HALF_W - 2.0f, sCamera.targetZ - VOXEL_SWOOP_HALF_H - 4.0f);
+        GrowRect(rect, sCamera.targetX + VOXEL_SWOOP_HALF_W + 2.0f, sCamera.targetZ + VOXEL_SWOOP_HALF_H + 2.0f);
+    }
     {
         float lo[2] = {sCamera.targetX - VOXEL_VIEW_REACH_MAX, sCamera.targetZ - VOXEL_VIEW_REACH_MAX};
         float hi[2] = {sCamera.targetX + VOXEL_VIEW_REACH_MAX, sCamera.targetZ + VOXEL_VIEW_REACH_MAX};
@@ -5574,6 +5655,9 @@ bool CtrVoxel_Update(void)
                                         + VoxelEntities_PlayerDeck(), 0);
         VoxelCamera_Update(&sCamera, smoothX, smoothZ);
     }
+    /* The swoop to or from the 2D field, on top of the player's pose. */
+    if (!sBattle.on)
+        VoxelCamera_Swoop(&sCamera, sSwoop);
     if (sBattle.on)
     {
         if (!sBattle.chosen)
@@ -7061,6 +7145,26 @@ float CtrVoxel_Bloom(void)
     return sReady ? sBloomStrength : 0.0f;
 }
 
+float CtrVoxel_SwoopNeutral(void)
+{
+    float k = sSwoop > 1.0f ? 1.0f : sSwoop;
+
+    if (k <= VOXEL_SWOOP_NEUTRAL_START)
+        return 0.0f;
+    k = (k - VOXEL_SWOOP_NEUTRAL_START) / (1.0f - VOXEL_SWOOP_NEUTRAL_START);
+    if (k >= 1.0f)
+        return 1.0f;
+    return VOXEL_SWOOP_NEUTRAL_POWER == 1.0f ? k : powf(k, VOXEL_SWOOP_NEUTRAL_POWER);
+}
+
+void CtrVoxel_SetSwoop(float t, float height, bool cards, bool shadows)
+{
+    sSwoop = t;
+    sSwoopHeight = height < 0.0f ? 0.0f : height > 1.0f ? 1.0f : height;
+    sSwoopCards = cards;
+    sSwoopShadows = shadows;
+}
+
 void CtrVoxel_SetBrightness(float backgrounds, float sprites, bool white)
 {
     sBrightBg = backgrounds;
@@ -7656,7 +7760,9 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
     const VoxelMapInstance *current = VoxelWorld_Instance(0);
     bool indoor = current != NULL && current->indoor;
     VoxelLight light = LightFor(indoor), unlit = LightFor(true);
-    bool dapples = DapplesOn(&light);
+    /* The swoop: the light towards neutral with the camera (VOXEL_SWOOP_NEUTRAL_START). */
+    float neutral = CtrVoxel_SwoopNeutral();
+    bool dapples;
 #if CTR_VOXEL_LIGHTING
     float fog = !indoor && sHaveFog ? VoxelWorld_FogDensity() : 0.0f;
     bool cave = fog > 0.0f && VoxelWorld_Underground();
@@ -7672,6 +7778,20 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
     const CtrDayNightLight *cycle = CtrDayNight_Get();
     CtrDayNightBlend moon = CtrDayNight_Moonlight(cycle, 0.0f, cycle->rgb);
 
+#if CTR_VOXEL_LIGHTING
+    if (neutral > 0.0f)
+    {
+        /* Neutral is what the 2D compositor does to the field: the day-night
+         * cycle's tint and its moonlight (Blend, 3ds_video.c), nothing else. */
+        VoxelLight plain = unlit;
+
+        if (!indoor)
+            for (unsigned channel = 0; channel < 3; ++channel)
+                plain.sun[channel] = plain.shade[channel] = cycle->rgb[channel] * (1.0f - moon.amount);
+        light = LightMix(&light, &plain, neutral);
+    }
+#endif
+    dapples = DapplesOn(&light);
     sMoonlight = indoor ? 0.0f : moon.amount;
     sMoonlightColour = 0xFF000000u;
     for (unsigned channel = 0; channel < 3; ++channel)
@@ -7691,7 +7811,7 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
     {
         CameraMatrices(&projection, &view, false, eye);
         PlaceGloom(&projection, &view);
-        sGloomAmount = VOXEL_GLOOM_MAX * fog;
+        sGloomAmount = VOXEL_GLOOM_MAX * fog * (1.0f - neutral);
     }
 #endif
     CameraMatrices(&projection, &view, true, eye);
@@ -7872,7 +7992,7 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
      * tested against the finished terrain and crowns, never written: a shadow
      * must not occlude a sprite. One draw for all of them.
      */
-    if (sShadowVertices != 0)
+    if (sShadowVertices != 0 && sSwoopShadows)
     {
         SetGrade(&unlit);
         C3D_TexBind(0, &sSpriteAtlas);
@@ -7903,13 +8023,17 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
      * the sprite is actually opaque, which is what makes a wall occlude an NPC
      * without the NPC's empty corners punching a hole in it.
      */
-    if (sSpriteVertices != 0)
+    if (sSpriteVertices != 0 && sSwoopCards)
     {
         int playerFirst = VoxelEntities_PlayerVertexFirst();
+        /* Through the swoop the cards tilt back to face its camera
+         * (voxel_entities.c) and lean into the walls behind them: over
+         * everything, as the 2D field draws its sprites, and no ghost. */
+        bool lying = sSwoop > 0.0f;
 
         C3D_AlphaTest(true, GPU_GREATER, 0);
         C3D_TexBind(0, &sSpriteAtlas);
-        if (playerFirst >= 0)
+        if (playerFirst >= 0 && !lying)
         {
             /* Reversed depth: LESS selects only the player's pixels hidden by
              * terrain. Texture alpha preserves the sprite outline. One quad,
@@ -7942,7 +8066,9 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
         if (sMoonlight > 0.0f)
             C3D_TexEnvColor(C3D_GetTexEnv(dapples ? 2 : 0), MoonlightColour(sWorldFade.amount));
         FadeFor(true);
+        if (lying) C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
         C3D_DrawArrays(GPU_TRIANGLES, 0, sSpriteVertices);
+        if (lying) C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
     }
 #if CTR_VOXEL_LIGHTING
     /* The fog's banks lie in the scene, so they go before the light in the
@@ -7950,7 +8076,7 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
     if (fog > 0.0f)
     {
         FadeFor(false);
-        DrawFogBanks(&view, &light, cave, fog);
+        DrawFogBanks(&view, &light, cave, fog * (1.0f - neutral));
     }
 #ifdef CTR_F8_LOAD
     {

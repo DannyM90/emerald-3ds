@@ -39,6 +39,9 @@ uint16_t CtrBottom_InjectedKeys(void);
 /* The player's keys as the game should see them: none while the button
  * column has the X focus, or until the keys that left it are let go. */
 uint16_t CtrBottom_FilterKeys(uint16_t held);
+#ifdef CTR_TEST_SWOOP
+void CtrBottom_TestSwoop(unsigned step);
+#endif
 
 /*
  * The light green the bottom screen's sections sit on (its own screens, and

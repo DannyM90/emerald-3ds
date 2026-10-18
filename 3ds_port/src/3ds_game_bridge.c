@@ -3,6 +3,10 @@
 #include "3ds_audio.h"
 #include "3ds_emu_regs.h"
 #include "3ds_bottom.h"
+#ifdef CTR_TEST_SWOOP
+#include "main.h"
+#include "overworld.h"
+#endif
 #include "siirtc.h"
 #include "gba/flash_internal.h"
 
@@ -47,6 +51,12 @@ u16 Platform_GetKeyInput(void)
     /* The bottom screen's column takes the buttons while X has its focus;
      * its touch controls press buttons through here. */
     held = CtrBottom_FilterKeys(held) | CtrBottom_InjectedKeys();
+#ifdef CTR_TEST_SWOOP
+    /* Emulator aid (3ds_game_full.c): A tapped through the intro, the title
+     * and the menu until the field is up, for a keyboard-less run. */
+    if (gMain.callback2 != CB2_Overworld && gMain.vblankCounter1 % 40 == 0)
+        held |= A_BUTTON;
+#endif
     REG_KEYINPUT = held ^ KEYS_MASK;
     return held;
 }
