@@ -1278,6 +1278,54 @@ def apply_sea_ramps(path, quiet=False):
         open(path, "wb").write(voxel_relief_fixes.pack(relief))
 
 
+CUT_SINK = 2        # pixels: a cut's foot further under all the ground beside it is raised
+
+
+def cut_feet(relief, quiet=False):
+    """Every cut tile's foot (the ground run on under its rock, seen through
+    its background) at most CUT_SINK under the lowest edge point of the
+    cells beside it that are no cut tile themselves, over a parsed relief.bin
+    (voxel_relief_fixes.parse), in place. cut_cells reads the foot off the
+    cell's lattice before the cut levels it: a lone piece of rock on level
+    ground (Jagged Pass's shrubs, the stairs up to Lilycove's department
+    store, a rock in the sea) dips there, and its ground stood in a pit the
+    ground round it never reaches, the void showing at the pit's rim.
+    Returns how many feet it raised."""
+    side = PER_CELL + 1
+    facing = {(0, -1): [(side - 1) * side + i for i in range(side)],    # north: its south edge
+              (0, 1): list(range(side)),
+              (-1, 0): [j * side + side - 1 for j in range(side)],
+              (1, 0): [j * side for j in range(side)]}
+    cuts = relief["cuts"]
+    raised = 0
+    for (lay, x, y), rec in cuts.items():
+        t = relief["layouts"].get(lay)
+        if rec[0] == 0xFFFF or t is None:
+            continue
+        lows = []
+        for (dx, dy), points in facing.items():
+            n = (x + dx, y + dy)
+            if not (0 <= n[0] < t["w"] and 0 <= n[1] < t["h"]):
+                continue
+            other = cuts.get((lay,) + n)
+            if other is not None and other[0] != 0xFFFF:
+                continue    # (a cut beside it: its own lattice dips the same way)
+            g = t["cells"].get(n)
+            lows.append(min(g[k] for k in points) if g else 0)
+        if lows and rec[1] < min(lows) - CUT_SINK:
+            rec[1] = min(lows)
+            raised += 1
+    if not quiet:
+        print("voxel relief: %d cut tiles' feet raised to the ground beside them" % raised)
+    return raised
+
+
+def apply_cut_feet(path, quiet=False):
+    relief = voxel_relief_fixes.parse(open(path, "rb").read())
+    if cut_feet(relief, quiet):
+        open(path, "wb").write(voxel_relief_fixes.pack(relief))
+
+
 def drawn_canvas(name):
     """The group's canvas: (layouts, width, height, per-pixel kind, per-cell
     hiding - a roof or a tree a face can go down behind -, per-cell side: +1
@@ -4220,6 +4268,8 @@ def main():
         voxel_terraces.apply_file(args.output)
         # the level a step seam gives up, as a slope across the open sea
         apply_sea_ramps(args.output)
+        # no cut tile's ground in a pit under the ground beside it
+        apply_cut_feet(args.output)
         # the hand corrections (assets/voxel/relief_fixes.json) over the drawing's
         if not os.environ.get("VOXEL_RELIEF_NO_FIXES"):
             voxel_relief_fixes.apply_file(args.output)

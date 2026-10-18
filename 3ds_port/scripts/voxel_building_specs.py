@@ -3448,6 +3448,240 @@ def rustboro_gym():
     ]
 
 
+# ── The contest stage ─────────────────────────────────────────────────────
+#
+# The stage a contest is held on (LAYOUT_CONTEST_HALL and its five coloured
+# twins; Lilycove's contest hall draws three of them again): one floor, every
+# cell of it walked on at the same elevation, so nothing on it stands up but
+# what blocks the way - the low cushions round the green, the trophy's case
+# and the back wall. The stairs down its front and the emblem in the middle
+# are walked on, and stay drawn on the floor.
+
+STAGE_FLOOR = ("94acb4", "738383", "838b83", "bddec5")   # the dotted floor, its channel, the green
+
+# the cushions round the green, each with its dark outline: the back row,
+# the two sides, the front row either side of the stairs
+STAGE_CUSHIONS = (
+    [(x, 48, x + 14, 55) for x in range(49, 178, 16)]
+    # (a side one's shape stops at its front's last row - a shape takes its
+    # bottom row, and the row under its front is the channel's grey between
+    # its side lines)
+    + [(x, y, x + 5, y + 13) for y in range(57, 122, 16) for x in (49, 185)]
+    + [(x, 136, x + 14, 143) for x in (49, 65, 81, 145, 161, 177)])
+
+
+def contest_stage():
+    cushions = sorted(STAGE_CUSHIONS, key=lambda r: (-r[3], r[0]))
+    return [piece("cushion_%d" % i, [r], 4, leave=STAGE_FLOOR) for i, r in enumerate(cushions)] + [
+        # the trophy in its glass case, by the green's north-east corner
+        piece("case", [(144, 73, 160, 88)], 8, leave=STAGE_FLOOR),
+        piece("wall", [(0, 0, 240, 16)], 16, fill=16, foot=16, side=(0, 0, 16, 16)),
+    ]
+
+
+# ── Lilycove's contest lobby ──────────────────────────────────────────────
+#
+# The reception's counter, a U whose arms run back to the wall, the terminal
+# beside it, the four Berry Blenders, and the back wall with its two
+# doorways into the hall. The sofas down the side walls stand on cells the
+# player walks on, and stay drawn on the floor.
+
+LOBBY_FLOOR = ("f6b49c", "d5ac7b", "cd9c7b", "b48b5a", "c55231")   # the checker, the wall's shade and foot
+LOBBY_WALL_SIDE = (16, 3, 32, 32)       # a stretch of curtain with nothing on it
+LOBBY_CURTAIN = ("cd295a", "de6a52")    # the curtain, seen past the counter's rounded back corners
+
+
+def contest_lobby():
+    blenders = [piece("blender_%d_%d" % (bx, by), [(bx, by, bx + 16, by + 15)], 8, leave=LOBBY_FLOOR)
+                for (bx, by) in ((368, 144), (432, 144), (368, 80), (432, 80))]
+    return blenders + [
+        # the counter, a U in plan: a bar across the front as deep as its
+        # drawn top (z 54 to 63), an arm back towards the wall at each end
+        # (from z 35, its back corners nicked as the Center's are, where the
+        # drawing leaves the wall), the
+        # receptionists' floor between them; 10 px tall, its
+        # front the green lip and the white panels. The bow on the east arm's
+        # front corner is its own paint; the row under its front, its shadow
+        piece("counter", [(176, 25, 192, 62), (288, 25, 304, 62), (176, 44, 304, 62)], 10,
+              leave=LOBBY_FLOOR + LOBBY_CURTAIN,
+              plan=[(176, 36.2), (177.2, 35), (190.8, 35), (192, 36.2), (192, 54), (288, 54),
+                    (288, 36.2), (289.2, 35), (302.8, 35), (304, 36.2), (304, 63), (176, 63)]),
+        piece("terminal", [(304, 8, 320, 39)], 24, back=32),
+        # the back wall, its two doorways painted on its face as Lavaridge's
+        # Center's door to the spring is
+        piece("wall", [(0, 3, 496, 32)], 29, fill=16, foot=32, side=LOBBY_WALL_SIDE),
+        piece("side_w", [], 29, side=LOBBY_WALL_SIDE, walls=[((0, 192), (0, 32))]),
+        piece("side_e", [], 29, side=LOBBY_WALL_SIDE, walls=[((496, 32), (496, 192))]),
+    ]
+
+
+# ── Lilycove's contest hall ───────────────────────────────────────────────
+#
+# The hall the three stages stand in (their pieces are the contest stage's,
+# found again). Its back wall steps forward in three tiers either side - the
+# judges' portraits in the middle, a plaque on each wing -, each 60 px from
+# the cap drawn over it to its foot; side walls close each step and the
+# hall. The potted palms are cards; the chairs stand on walked cells and
+# stay drawn on the floor.
+
+HALL_FLOOR = ("f6b49c", "d5ac7b")
+HALL_WALL_SIDE = (176, 4, 192, 64)      # a stretch of the middle's curtain with nothing on it
+HALL_PALMS = ((8, 9), (42, 9), (2, 11), (5, 11), (45, 11), (48, 11),
+              (3, 32), (7, 32), (11, 32), (39, 32), (43, 32), (47, 32))   # their pots' cells
+
+
+def lilycove_contest_room():
+    side = HALL_WALL_SIDE
+    palms = sorted(HALL_PALMS, key=lambda c: (-c[1], c[0]))
+    return [piece("palm_%d_%d" % (cx, cy), [(cx * 16, cy * 16 - 16, cx * 16 + 16, cy * 16 + 14)],
+                  31, leave=HALL_FLOOR, card=True) for (cx, cy) in palms] + [
+        piece("wall_ow", [(0, 68, 80, 128)], 60, fill=16, foot=128, side=side),
+        piece("wall_oe", [(736, 68, 816, 128)], 60, fill=16, foot=128, side=side),
+        piece("wall_ww", [(80, 36, 160, 96)], 60, fill=16, foot=96, side=side),
+        piece("wall_we", [(656, 36, 736, 96)], 60, fill=16, foot=96, side=side),
+        # the middle in two halves, as the Center's back wall: one 496 px
+        # long left no room beside it on the hall's texture page
+        piece("wall_e", [(408, 4, 656, 64)], 60, fill=16, foot=64, side=side),
+        piece("wall", [(160, 4, 408, 64)], 60, fill=16, foot=64, side=side),
+        # the steps' sides, then the hall's
+        piece("side_step_ow", [], 60, side=side, walls=[((80, 128), (80, 96))]),
+        piece("side_step_ww", [], 60, side=side, walls=[((160, 96), (160, 64))]),
+        piece("side_step_we", [], 60, side=side, walls=[((656, 64), (656, 96))]),
+        piece("side_step_oe", [], 60, side=side, walls=[((736, 96), (736, 128))]),
+        piece("side_w", [], 60, side=side, walls=[((0, 528), (0, 128))]),
+        piece("side_e", [], 60, side=side, walls=[((816, 128), (816, 528))]),
+    ]
+
+
+# ── Lilycove's Department Store ───────────────────────────────────────────
+#
+# 1F: the reception's counter, a U whose arms run back to the wall with a
+# computer on each, and two planters by the west wall. Its potted palms are
+# the Center's (reused); the stools stand on walked cells and stay drawn on
+# the floor. The elevator's door and the escalator's are painted on the back
+# wall, as Lavaridge's Center's door is.
+
+DEPT_1F_FLOOR = ("cd8320", "ac5a20", "e69c39", "f6c539")     # the orange floor
+DEPT_WALL = ("d5ded5", "b4b4a4", "ffa47b", "cd947b")         # plaster, trim, the peach band
+DEPT_WALL_SIDE = (64, 0, 80, 32)        # a stretch of plain wall, its trim and band
+
+
+def dept_store_1f():
+    return [
+        # the planters: their box drawn in the floor's own oranges, so no
+        # colour is left - their outline is their shape
+        piece("planter_s", [(0, 105, 31, 127)], 9),
+        piece("planter_n", [(0, 73, 31, 95)], 9),
+        # the computers on the counter's arms
+        piece("pc_w", [(98, 37, 112, 52)], 8, base=10, solid=True, leave=("cdffd5",)),
+        piece("pc_e", [(178, 25, 191, 39)], 8, base=10, solid=True),
+        # the counter, a U in plan as the contest lobby's: the bar across the
+        # front as deep as its drawn top, the arms back towards the wall (their
+        # back corners square: drawn in the counter's own grey)
+        piece("counter", [(96, 24, 112, 63), (176, 24, 192, 63), (96, 44, 192, 63)], 10,
+              leave=DEPT_1F_FLOOR + DEPT_WALL,
+              plan=[(96, 34), (112, 34), (112, 54), (176, 54), (176, 34), (192, 34), (192, 64),
+                    (96, 64)]),
+        piece("wall", [(0, 0, 288, 32)], 32, fill=16, foot=32, side=DEPT_WALL_SIDE),
+        piece("side_w", [], 32, side=DEPT_WALL_SIDE, walls=[((0, 128), (0, 32))]),
+        piece("side_e", [], 32, side=DEPT_WALL_SIDE, walls=[((288, 32), (288, 128))]),
+    ]
+
+
+# 2F: a glass counter, its bar along the back and an arm towards the room at
+# each end, the clerk's floor between them; its monitor is 1F's (reused), as
+# are the Mart's shelves and the Center's palms. The floor is drawn in the
+# counter's own mint and white, which its outline keeps apart.
+
+DEPT_GREEN_FLOOR = ("a4eebd", "ffffff", "cdffd5", "b4b4a4", "9cd57b", "d5ded5", "b4de8b")
+
+
+def dept_store_2f():
+    return [
+        piece("counter", [(96, 76, 112, 127), (176, 76, 192, 127), (112, 77, 176, 95)], 10,
+              leave=DEPT_GREEN_FLOOR,
+              # (the glass bar's top drawn a row below the arms': its back at z 87)
+              plan=[(96, 86), (112, 86), (112, 87), (176, 87), (176, 86), (192, 86), (192, 128),
+                    (176, 128), (176, 96), (112, 96), (112, 128), (96, 128)]),
+        piece("wall", [(0, 0, 288, 32)], 32, fill=16, foot=32, side=DEPT_WALL_SIDE),
+        piece("side_w", [], 32, side=DEPT_WALL_SIDE, walls=[((0, 128), (0, 32))]),
+        piece("side_e", [], 32, side=DEPT_WALL_SIDE, walls=[((288, 32), (288, 128))]),
+    ]
+
+
+# 3F: the glass counter as a U, 1F's in plan, its glass bar's top a row
+# below the arms' (its back at z 55); both computers are 1F's (reused).
+
+
+def dept_store_3f():
+    return [
+        piece("counter", [(96, 24, 112, 63), (176, 24, 192, 63), (112, 45, 176, 63)], 10,
+              leave=DEPT_GREEN_FLOOR,
+              plan=[(96, 34), (112, 34), (112, 55), (176, 55), (176, 34), (192, 34), (192, 64),
+                    (96, 64)]),
+        piece("wall", [(0, 0, 288, 32)], 32, fill=16, foot=32, side=DEPT_WALL_SIDE),
+        piece("side_w", [], 32, side=DEPT_WALL_SIDE, walls=[((0, 128), (0, 32))]),
+        piece("side_e", [], 32, side=DEPT_WALL_SIDE, walls=[((288, 32), (288, 128))]),
+    ]
+
+
+# 4F: the glass counter as 2F's, a cell narrower; three pairs of low display
+# shelves, two-tiered, each as long as the two cells its collision blocks,
+# as the Mart's are (5F stands them again).
+
+DEPT_4F_SHELVES = (16, 32, 208, 224, 240, 256)
+
+
+def dept_store_4f():
+    return [piece("shelf_%d" % x, [(x, 80, x + 16, 111)], 17, back=80, leave=DEPT_GREEN_FLOOR)
+            for x in DEPT_4F_SHELVES] + [
+        piece("counter", [(96, 76, 112, 127), (160, 76, 176, 127), (112, 77, 160, 95)], 10,
+              leave=DEPT_GREEN_FLOOR,
+              plan=[(96, 86), (112, 86), (112, 87), (160, 87), (160, 86), (176, 86), (176, 128),
+                    (160, 128), (160, 96), (112, 96), (112, 128), (96, 128)]),
+        piece("wall", [(0, 0, 288, 32)], 32, fill=16, foot=32, side=DEPT_WALL_SIDE),
+        piece("side_w", [], 32, side=DEPT_WALL_SIDE, walls=[((0, 128), (0, 32))]),
+        piece("side_e", [], 32, side=DEPT_WALL_SIDE, walls=[((288, 32), (288, 128))]),
+    ]
+
+
+# 5F: the glass counter as 3F's U, a cell wider; by the east wall a glass
+# counter as 2F's, one arm and its bar running into the wall. Its low shelves
+# are 4F's, its tall one the Mart's, its computers 1F's (all reused).
+
+DEPT_5F_FLOOR = ("ffffcd", "dedea4", "ffc5ac", "cdffcd", "acdeb4", "e6a483", "bdbd83")
+
+
+def dept_store_5f():
+    return [
+        piece("counter_e", [(224, 76, 240, 127), (240, 77, 288, 95)], 10, leave=DEPT_5F_FLOOR,
+              plan=[(224, 86), (240, 86), (240, 87), (288, 87), (288, 96), (240, 96), (240, 128),
+                    (224, 128)]),
+        piece("counter", [(80, 24, 96, 63), (176, 24, 192, 63), (96, 45, 176, 63)], 10,
+              leave=DEPT_5F_FLOOR,
+              plan=[(80, 34), (96, 34), (96, 55), (176, 55), (176, 34), (192, 34), (192, 64),
+                    (80, 64)]),
+        piece("wall", [(0, 0, 288, 32)], 32, fill=16, foot=32, side=DEPT_WALL_SIDE),
+        piece("side_w", [], 32, side=DEPT_WALL_SIDE, walls=[((0, 128), (0, 32))]),
+        piece("side_e", [], 32, side=DEPT_WALL_SIDE, walls=[((288, 32), (288, 128))]),
+    ]
+
+
+# The elevator: its back wall, drawn from 8 rows down its first cell (the
+# black over it is nothing) to its foot 48 rows down, the window and the
+# golden handrail on its face; the side walls dressed with its pillar.
+
+DEPT_ELEVATOR_SIDE = (0, 8, 8, 48)      # the west pillar and its blue base
+
+
+def dept_store_elevator():
+    return [
+        piece("wall", [(0, 8, 80, 48)], 40, fill=16, foot=48, side=DEPT_ELEVATOR_SIDE),
+        piece("side_w", [], 40, side=DEPT_ELEVATOR_SIDE, walls=[((0, 96), (0, 48))]),
+        piece("side_e", [], 40, side=DEPT_ELEVATOR_SIDE, walls=[((80, 48), (80, 96))]),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5043,4 +5277,65 @@ SPECS = [
                                0x216, 0x22C],
                      "pieces": own_shell(petalburg_gym())},
     },
+    {
+        # the contest stage: its pieces stand on every stage drawn again,
+        # in the five coloured halls and three times in Lilycove's
+        "name": "contest_stage",
+        "interior": {"layout": "LAYOUT_CONTEST_HALL", "ground": [0x271, 0x225],
+                     "pieces": own_shell(contest_stage())},
+    },
+    {
+        # Lilycove's contest lobby: the reception, the Berry Blenders
+        "name": "contest_lobby",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_CONTEST_LOBBY", "ground": [0x260],
+                     "pieces": own_shell(contest_lobby())},
+    },
+    {
+        # Lilycove's contest hall: its walls and palms (its stages stand the
+        # contest stage's pieces)
+        "name": "lilycove_contest_room",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_CONTEST_HALL", "ground": [0x260],
+                     "pieces": own_shell(lilycove_contest_room())},
+    },
+    {
+        # Lilycove's Department Store, 1F
+        "name": "dept_store_1f",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_1F", "ground": [0x268],
+                     "pieces": own_shell(dept_store_1f())},
+    },
+    {
+        "name": "dept_store_2f",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_2F", "ground": [0x201],
+                     "pieces": own_shell(dept_store_2f())},
+    },
+    {
+        "name": "dept_store_3f",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_3F", "ground": [0x201],
+                     "pieces": own_shell(dept_store_3f())},
+    },
+    {
+        "name": "dept_store_4f",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_4F", "ground": [0x201],
+                     "pieces": own_shell(dept_store_4f())},
+    },
+    {
+        "name": "dept_store_5f",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_5F", "ground": [0x2f2],
+                     "pieces": own_shell(dept_store_5f())},
+    },
+    {
+        "name": "dept_store_elevator",
+        "interior": {"layout": "LAYOUT_LILYCOVE_CITY_DEPARTMENT_STORE_ELEVATOR", "ground": [0x265],
+                     "pieces": own_shell(dept_store_elevator())},
+    },
+] + [
+    {
+        # the coloured stages: the same room, its stairs and emblem in the
+        # contest's colour (walked on, drawn flat). The cushions and the case
+        # stand as reused; the back wall, the room's own, is laid again
+        "name": "contest_stage_" + kind,
+        "interior": {"layout": "LAYOUT_CONTEST_HALL_" + kind.upper(), "ground": [0x271, 0x225],
+                     "pieces": own_shell(contest_stage()[-1:])},
+    }
+    for kind in ("beauty", "cool", "cute", "smart", "tough")
 ]
