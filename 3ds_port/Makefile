@@ -276,6 +276,11 @@ verify-field-fade-hold:
 
 verify-voxel-overlay-depth:
 	"$(PYTHON)" tests/voxel_overlay_depth_test.py --cc "$(HOSTCC)"
+
+.PHONY: verify-rng-seeding
+verify: verify-rng-seeding
+verify-rng-seeding:
+	"$(PYTHON)" tests/rng_seeding_test.py --cc "$(HOSTCC)"
 .PHONY: verify-field-view
 verify-field-view: build/field_view_test$(EXESUFFIX)
 	./build/field_view_test$(EXESUFFIX)
