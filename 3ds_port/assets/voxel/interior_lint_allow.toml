@@ -92,3 +92,20 @@ stripes = "a desk a single row deep: its only rows to dress its sides with are i
 
 [allow.day_care_pc]
 stripes = "the Centers' computer, drawn alike: its only columns to dress its sides with are its casing's edge, the screen's white over grey down it"
+
+[allow.harbor_rail_n]
+foreign = "its ends show the bars and the floor or water between them as its front does (through): the dock seen through a railing, not a fin"
+
+[allow.harbor_rail_s]
+stripes = "its sides are its bars, grey between the floor and the water: a railing's make, not a barcode"
+copied = "its sides are the back railing's bars, upright lines as its own front's: the same railing"
+
+[allow.harbor_rail_w]
+stripes = "its sides are its bars, grey between the floor and the water: a railing's make, not a barcode"
+copied = "its sides are the back railing's bars, upright lines as its own front's: the same railing"
+foreign = "a railing running down the dock is drawn as its top line alone: its long sides carry the back railing's bars (HARBOR_BARS), as Rustboro's railings' flanks carry the row's"
+
+[allow.harbor_rail_v]
+stripes = "its sides are its bars, grey between the floor and the water: a railing's make, not a barcode"
+copied = "its sides are the back railing's bars, upright lines as its own front's: the same railing"
+foreign = "a railing running down the dock is drawn as its top line alone: its long sides carry the back railing's bars (HARBOR_BARS), as Rustboro's railings' flanks carry the row's"
