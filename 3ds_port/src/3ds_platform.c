@@ -290,11 +290,52 @@ static void PaceUpdate(void)
     }
 }
 
+/*
+ * The battle scene's speed (CtrSettings_BattleSpeedHalves): while the battle
+ * itself is on screen, its own speed paces the frames; the bag, the party and
+ * the summary a battle opens, and the field, keep the overworld's SPEED. The
+ * game reports the scene once a frame (CtrGame_WaitFrame). A link session
+ * plays at 1x for everyone and a measured scenario is recorded at 1x, so
+ * neither takes the battle's keys or speed.
+ */
+#define BADGE_MS 2000
+static bool sBattleScene;
+static uint64_t sBadgeUntil;
+
+void CtrPlatform_SetBattleScene(bool on)
+{
+    sBattleScene = on;
+}
+
+bool CtrPlatform_BattleSpeedKeys(void)
+{
+    return sBattleScene && !LocalLink_InSession() && !CtrScenario_Active();
+}
+
+void CtrPlatform_StepBattleSpeed(int direction, bool wrap)
+{
+    CtrSettings_StepBattleSpeed(direction, wrap);
+    /* Shown even at an end of the range, so the press is answered. */
+    sBadgeUntil = CtrPlatform_Milliseconds() + BADGE_MS;
+}
+
+int CtrPlatform_BattleSpeedBadge(void)
+{
+    int halves;
+
+    if (!CtrPlatform_BattleSpeedKeys())
+        return 0;
+    halves = CtrSettings_BattleSpeedHalves();
+    return CtrPlatform_Milliseconds() < sBadgeUntil ? halves : 0;
+}
+
 static bool FrameShown(uint64_t now)
 {
     /* In a local wireless session everyone plays at the same speed: the link
      * code times out on a partner that runs slower. */
-    unsigned speed = LocalLink_InSession() ? 2 : CtrSettings_SpeedHalves();
+    unsigned speed = LocalLink_InSession() ? 2
+                   : CtrPlatform_BattleSpeedKeys() ? CtrSettings_BattleSpeedHalves()
+                   : CtrSettings_SpeedHalves();
     float since = sShownTick ? (now - sShownTick) * 1000.0f / SYSCLOCK_ARM11 : FRAME_MS;
 
     sPacedFrame = sPace && speed <= 2;

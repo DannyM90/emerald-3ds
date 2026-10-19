@@ -295,6 +295,14 @@ verify-voxel-overlay-depth:
 
 .PHONY: verify-rng-seeding
 verify: verify-rng-seeding
+.PHONY: verify-battle-speed
+verify: verify-battle-speed
+verify-battle-speed: build/battle_speed_test$(EXESUFFIX)
+	./build/battle_speed_test$(EXESUFFIX)
+
+build/battle_speed_test$(EXESUFFIX): tests/battle_speed_test.c src/3ds_settings.c include/3ds_platform.h
+	@mkdir -p $(@D)
+	$(HOSTCC) -std=gnu99 -O2 -Wall -Wextra -Werror -Itests/settings_host -Iinclude $< -pthread -o $@
 verify-rng-seeding:
 	"$(PYTHON)" tests/rng_seeding_test.py --cc "$(HOSTCC)"
 .PHONY: verify-field-view

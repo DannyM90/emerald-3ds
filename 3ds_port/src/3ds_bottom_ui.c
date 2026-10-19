@@ -2605,7 +2605,7 @@ static bool8 sQuickBallFocus;  /* the D-pad is on the ball button (A throws) */
 
 /*
  * The quick ball (battle_controller_player.c, an optional patch in the
- * public tree): the ball R or the ball button would throw now, or
+ * public tree): the ball X or the ball button would throw now, or
  * ITEM_NONE. Without that patch no battle offers one.
  */
 u16 __attribute__((weak)) CtrBattle_QuickBallItem(void)
@@ -2759,10 +2759,12 @@ void CtrBattleMenu_Begin(void)
     sQuickBallFocus = FALSE;
 }
 
-/* The ball button, once per tap: the action handler throws the ball. */
+/* The ball button once per tap, or X once per press (R and L are the battle
+ * speed's): the action handler throws the ball. X is free in a battle, the
+ * column that takes it in the field is not shown. */
 bool8 CtrBattleMenu_TakeQuickBall(void)
 {
-    bool8 tapped = sQuickBallTap;
+    bool8 tapped = sQuickBallTap || (CtrInput_Get()->physicalDown & CTR_KEY_X) != 0;
 
     sQuickBallTap = FALSE;
     return tapped;
@@ -3079,13 +3081,21 @@ static void SnapshotSave(ViewState *s)
 /* The party ball states, as battle_interface.c's party indicator has them. */
 enum { PARTY_BALL_OK, PARTY_BALL_STATUS, PARTY_BALL_FAINT, PARTY_BALL_EMPTY };
 
+/* The focus ring's blink tone, by the clock and not by game frames (16 of
+ * them at 60 Hz, 267 ms): fast-forward runs several game frames in a shown
+ * one, and a ring counted in them blinked as many times faster. */
+static u8 BlinkPhase(void)
+{
+    return (CtrPlatform_Milliseconds() / 267) & 1;
+}
+
 static void SnapshotBattle(ViewState *s)
 {
     s->isDouble = (gBattleTypeFlags & BATTLE_TYPE_DOUBLE) != 0;
     s->safari = (gBattleTypeFlags & BATTLE_TYPE_SAFARI) != 0;
     if (s->mode == MODE_BATTLE_INFO)
         return;
-    s->blink = (sFrames >> 4) & 1;
+    s->blink = BlinkPhase();
 }
 
 /* The six party balls: the mons in party order, then the empty places (an
@@ -3330,7 +3340,7 @@ static void Snapshot(ViewState *s, u8 mode, u8 pressed)
     s->focus = sFocus;
     s->optFocus = FOCUS_NONE;
     if (sFocus != FOCUS_NONE || sInside == INSIDE_OPTIONS)
-        s->blink = (sFrames >> 4) & 1;
+        s->blink = BlinkPhase();
 
     switch (s->mode)
     {
@@ -5746,28 +5756,30 @@ static void WarmQuickBalls(const ViewState *s)
  * The trainer card's cache, made ahead in strips (CardCacheSteps) on frames
  * the field leaves the bottom screen idle, with the slice IdleSlice gives.
  * Its stars walk the Pokédex, so they are counted again only every
- * CARD_STARS_FRAMES; a card opened with others than these is made whole
+ * CARD_STARS_MS; a card opened with others than these is made whole
  * then, as it always was. TRUE while the card has steps left: the frame is
  * the card's, the option cells wait (WarmOptionCells).
  */
-#define CARD_STARS_FRAMES 256u
+/* By the clock, not game frames: fast-forward would count them several times
+ * as fast. 256 frames at 60 Hz. */
+#define CARD_STARS_MS 4267u
 
 static bool8 WarmCardCache(u8 mode)
 {
     static u8 stars = 0xFF;
-    static u32 starsFrame;
+    static uint64_t starsAt;
     static unsigned starved;
     float slice;
 
     if (mode != MODE_FIELD || sShown.mode != MODE_FIELD || sShown.inBattle || sShown.screen == SCR_CARD
      || !sCache[CACHE_CARD] || sBuildBudget != 0xFF)
         return FALSE;
-    if (stars == 0xFF || sFrames - starsFrame >= CARD_STARS_FRAMES)
+    if (stars == 0xFF || CtrPlatform_Milliseconds() - starsAt >= CARD_STARS_MS)
     {
         stars = CardStars();
         if (stars > 4)
             stars = 4;
-        starsFrame = sFrames;
+        starsAt = CtrPlatform_Milliseconds();
     }
     if (sCardCacheKey == stars * 2 + sShown.gender)
         return FALSE;
@@ -5794,9 +5806,10 @@ static bool8 WarmCardCache(u8 mode)
  * Pages in order, the options' first, as many cells as CELL_PICS holds. A
  * slot holding one of those pictures is never taken for another; with the
  * screen open nothing is made (its pictures are the ones in use). Once all
- * are there the settings are looked at again only every CELL_WARM_FRAMES.
+ * are there the settings are looked at again only every CELL_WARM_MS.
  */
-#define CELL_WARM_FRAMES 64u
+/* By the clock, as CARD_STARS_MS: 64 frames at 60 Hz. */
+#define CELL_WARM_MS 1067u
 
 typedef struct
 {
@@ -5881,7 +5894,7 @@ static void WarmOptionCell(int slot, u32 key, const CellArgs *c)
 static void WarmOptionCells(u8 mode)
 {
     static bool8 settled;
-    static u32 settledFrame;
+    static uint64_t settledAt;
     static unsigned starved;
     u32 keys[CELL_PICS];
     u8 pages[CELL_PICS], rows[CELL_PICS], options[OPTION_ROWS];
@@ -5893,7 +5906,7 @@ static void WarmOptionCells(u8 mode)
     if (mode != MODE_FIELD || sShown.mode != MODE_FIELD || sShown.inBattle || sShown.screen == SCR_OPTION
      || !sCache[CACHE_MENU] || sBuildBudget != 0xFF || !gSaveBlock2Ptr)
         return;
-    if (settled && sFrames - settledFrame < CELL_WARM_FRAMES)
+    if (settled && CtrPlatform_Milliseconds() - settledAt < CELL_WARM_MS)
         return;
     if (!IdleSlice(&starved, &slice))
         return;
@@ -5935,7 +5948,7 @@ static void WarmOptionCells(u8 mode)
             continue;
         /* Settled only once every picture is made, by this frame or an
          * earlier one: a cell whose text keeps changing then costs one
-         * picture every CELL_WARM_FRAMES, not one every frame. */
+         * picture every CELL_WARM_MS, not one every frame. */
         if (CtrPlatform_TickMs(CtrPlatform_Ticks() - start) >= slice)
         {
             settled = FALSE;
@@ -5964,7 +5977,7 @@ static void WarmOptionCells(u8 mode)
         WarmOptionCell(slot, keys[i], &c);
     }
     if (settled)
-        settledFrame = sFrames;
+        settledAt = CtrPlatform_Milliseconds();
     sOX = ox;
 }
 

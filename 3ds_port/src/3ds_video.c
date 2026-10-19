@@ -10811,6 +10811,67 @@ static void DrawFps(C3D_RenderTarget *target)
 #endif
 
 /*
+ * The battle speed badge (CtrPlatform_BattleSpeedBadge): ">> X2", ">> X1.5"
+ * in the top right corner, in the FPS counter's 3x5 pixel font at 3x, over a
+ * translucent box. Drawn last, like the counter, at zero parallax.
+ */
+#define BADGE_PIXEL 3.0f
+static const char *const sBadgeGlyphs[] =
+{
+    "111101101101111", "010110010010111", "111001111100111", "111001111001111",
+    "101101111001001", "111100111001111", "111100111101111", "111001001001001",
+    "111101111101111", "111101111001111",
+    "101101010101101", /* X */
+    "000000000000010", /* . */
+};
+
+static void DrawSpeedBadge(C3D_RenderTarget *target, int halves)
+{
+    char text[16];
+    unsigned glyphs[6], count = 0;
+    float width = 0.0f, x, y;
+    const float arrows = 2 * (3 * BADGE_PIXEL + BADGE_PIXEL), pad = 2 * BADGE_PIXEL;
+    const u32 white = C2D_Color32(255, 255, 255, 255);
+
+    halves = halves < 2 ? 2 : halves > 8 ? 8 : halves;
+    snprintf(text, sizeof(text), "X%d%s", halves / 2, halves & 1 ? ".5" : "");
+    for (const char *c = text; *c && count < 6; ++c)
+        glyphs[count++] = *c == 'X' ? 10u : *c == '.' ? 11u : (unsigned)(*c - '0');
+    for (unsigned i = 0; i < count; ++i)
+        width += (glyphs[i] == 11 ? 2 : 4) * BADGE_PIXEL;
+    x = CTR_GAME_WIDTH - 4 - (pad + arrows + width + pad);
+    y = 4;
+
+    C2D_Prepare();
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+    BlendForget();
+    SceneOn(target);
+    C2D_ViewReset();
+    Blend(5, false, false);
+    C2D_DrawRectSolid(x, y, 0, pad + arrows + width + pad, 5 * BADGE_PIXEL + 2 * pad, C2D_Color32(0, 0, 0, 160));
+    x += pad;
+    y += pad;
+    /* Two arrowheads: fast forward. */
+    for (int i = 0; i < 2; ++i)
+    {
+        float ax = x + i * 4 * BADGE_PIXEL;
+
+        C2D_DrawTriangle(ax, y, white, ax, y + 5 * BADGE_PIXEL, white, ax + 3 * BADGE_PIXEL, y + 2.5f * BADGE_PIXEL, white, 0);
+    }
+    x += arrows;
+    for (unsigned i = 0; i < count; ++i)
+    {
+        const char *bits = sBadgeGlyphs[glyphs[i]];
+
+        for (unsigned p = 0; p < 15; ++p)
+            if (bits[p] == '1')
+                C2D_DrawRectSolid(x + (p % 3) * BADGE_PIXEL, y + (p / 3) * BADGE_PIXEL, 0, BADGE_PIXEL, BADGE_PIXEL, white);
+        x += (glyphs[i] == 11 ? 2 : 4) * BADGE_PIXEL;
+    }
+    C2D_Flush();
+}
+
+/*
  * The bottom screen runs some of the game's menus without showing them (the
  * party menu, the bag): while it does, the top screen keeps the last frame it
  * presented, the world as it was when the menu opened. Nothing is rendered;
@@ -11575,6 +11636,15 @@ void CtrVideo_Present(void)
         if (stereo) DrawFps(sTopRight);
     }
 #endif
+    {
+        int speedHalves = CtrPlatform_BattleSpeedBadge();
+
+        if (speedHalves != 0)
+        {
+            if (!bottom || dexTop) DrawSpeedBadge(sTop, speedHalves);
+            if (stereo) DrawSpeedBadge(sTopRight, speedHalves);
+        }
+    }
     /* Queued in the frame, behind the drawing into sBottom (BottomTransfer). */
     if (bottom) BottomTransfer();
     PORT_PROF_END(draw, PORT_PROF_DRAW);

@@ -24,6 +24,7 @@
 #include "scanline_effect.h"
 #include "item_menu.h"
 #include "party_menu.h"
+#include "battle_main.h"
 #include "fldeff_misc.h"
 #include "field_effect.h"
 #include "constants/field_effects.h"
@@ -1279,6 +1280,9 @@ void CtrGame_WaitFrame(void)
     if (sFrames < 4)
         CtrLog_Write(CTR_LOG_GAME, "frame %lu: game reached VBlank wait", (unsigned long)sFrames);
     Port_ProfScene((const void *)gMain.callback2);
+    /* The battle scene itself, not the bag, party or summary it opens: it has
+     * its own speed and keys (3ds_platform.c). */
+    CtrPlatform_SetBattleScene(gMain.inBattle && gMain.callback2 == BattleMainCB2);
     /* Before the frame is drawn: the copies made this frame get theirs. */
     CtrSprites_Track();
     CtrCycle_Frame();
