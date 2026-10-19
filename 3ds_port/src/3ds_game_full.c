@@ -117,11 +117,12 @@ static void StartCgbChannels(void)
 }
 
 /*
- * Soft reset: A+B+START+SELECT, and the game's own DoSoftReset (after the save
- * is cleared, a failed save, the clock reset and the like). The GBA clears its
- * RAM and starts the game again. Here the game's variables (its .data and .bss,
- * gathered by emerald3ds.ld.in) are put back as they were when AgbMain first
- * started, the emulated hardware is cleared, and AgbMain is entered again. Not
+ * Soft reset: L+R+START+SELECT (CTR_SOFT_RESET_KEYS), and the game's own
+ * DoSoftReset (after the save is cleared, a failed save, the clock reset and
+ * the like). The GBA clears its RAM and starts the game again. Here the game's
+ * variables (its .data and .bss, gathered by emerald3ds.ld.in) are put back as
+ * they were when AgbMain first started, the emulated hardware is cleared, and
+ * AgbMain is entered again. Not
  * put back: the game's platform/ layer (emulated hardware, the flash with the
  * save), the port's state and the data the port loaded before AgbMain.
  */
@@ -151,14 +152,14 @@ static void KeepGameAtStart(void)
 
 /*
  * The game reads the keys the frame boundary scanned, and a reset comes before
- * the next boundary: with A+B+START+SELECT still held, AgbMain would reset
+ * the next boundary: with L+R+START+SELECT still held, AgbMain would reset
  * again at once, for ever, and nothing would scan the keys (nor answer HOME).
  * The GBA reads them live and resets until they are let go; here the reset
  * waits, frame by frame, until they are.
  */
 static void WaitForResetKeysUp(void)
 {
-    const u16 keys = A_BUTTON | B_BUTTON | START_BUTTON | SELECT_BUTTON;
+    const u16 keys = CTR_SOFT_RESET_KEYS;
 
     while ((Platform_GetKeyInput() & keys) == keys)
     {
