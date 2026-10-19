@@ -2478,7 +2478,7 @@ static bool8 sQuickBallFocus;  /* the D-pad is on the ball button (A throws) */
 
 /*
  * The quick ball (battle_controller_player.c, an optional patch in the
- * public tree): the ball R or the ball button would throw now, or
+ * public tree): the ball X or the ball button would throw now, or
  * ITEM_NONE. Without that patch no battle offers one.
  */
 u16 __attribute__((weak)) CtrBattle_QuickBallItem(void)
@@ -2638,10 +2638,12 @@ void CtrBattleMenu_Begin(void)
     sQuickBallFocus = FALSE;
 }
 
-/* The ball button, once per tap: the action handler throws the ball. */
+/* The ball button once per tap, or X once per press (R and L are the battle
+ * speed's): the action handler throws the ball. X is free in a battle, the
+ * column that takes it in the field is not shown. */
 bool8 CtrBattleMenu_TakeQuickBall(void)
 {
-    bool8 tapped = sQuickBallTap;
+    bool8 tapped = sQuickBallTap || (CtrInput_Get()->physicalDown & CTR_KEY_X) != 0;
 
     sQuickBallTap = FALSE;
     return tapped;
@@ -3122,13 +3124,21 @@ static void SnapshotNuzlocke(ViewState *s)
 /* The party ball states, as battle_interface.c's party indicator has them. */
 enum { PARTY_BALL_OK, PARTY_BALL_STATUS, PARTY_BALL_FAINT, PARTY_BALL_EMPTY };
 
+/* The focus ring's blink tone, by the clock and not by game frames (16 of
+ * them at 60 Hz, 267 ms): fast-forward runs several game frames in a shown
+ * one, and a ring counted in them blinked as many times faster. */
+static u8 BlinkPhase(void)
+{
+    return (CtrPlatform_Milliseconds() / 267) & 1;
+}
+
 static void SnapshotBattle(ViewState *s)
 {
     s->isDouble = (gBattleTypeFlags & BATTLE_TYPE_DOUBLE) != 0;
     s->safari = (gBattleTypeFlags & BATTLE_TYPE_SAFARI) != 0;
     if (s->mode == MODE_BATTLE_INFO)
         return;
-    s->blink = (sFrames >> 4) & 1;
+    s->blink = BlinkPhase();
 }
 
 /* The six party balls: the mons in party order, then the empty places (an
