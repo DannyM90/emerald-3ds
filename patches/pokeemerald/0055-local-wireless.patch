@@ -1,4 +1,4 @@
-Pokémon Emerald 3Ds Dual Screen changes to pret/pokeemerald: local wireless play
+Emerald 3DS changes to pret/pokeemerald: local wireless play
 Applies after 0054-pokedex-capture-layout.patch; apply with tools/bootstrap.py.
 
 diff --git a/data/event_scripts.s b/data/event_scripts.s
@@ -81,7 +81,7 @@ index 50b0c8e..9ee2c85 100644
  	specialvar VAR_RESULT, IsWirelessAdapterConnected
  	goto_if_eq VAR_RESULT, FALSE, CableClub_EventScript_UnionRoomAdapterNotConnected
  	message CableClub_Text_WelcomeUnionRoomEnter
-@@ -951,6 +960,42 @@ CableClub_EventScript_DontAskAboutLinking::
+@@ -951,6 +960,83 @@ CableClub_EventScript_DontAskAboutLinking::
  	release
  	return
  
@@ -108,6 +108,46 @@ index 50b0c8e..9ee2c85 100644
 +	msgbox CableClub_Text_LocalOtherBuild, MSGBOX_DEFAULT
 +	return
 +
++#if GAME_LANGUAGE == LANGUAGE_SPANISH
++CableClub_Text_LocalLooking:
++	.string "Buscando jugadores cercanos…$"
++
++CableClub_Text_LocalOtherBuild:
++	.string "El jugador cercano tiene otra\n"
++	.string "versión del juego.\p"
++	.string "Las dos consolas deben tener la\n"
++	.string "misma versión para jugar juntas.$"
++
++CableClub_Text_LocalFailed:
++	.string "No se pudo iniciar la conexión\n"
++	.string "inalámbrica. ¿Está activada?$"
++#elif GAME_LANGUAGE == LANGUAGE_FRENCH
++CableClub_Text_LocalLooking:
++	.string "Recherche de joueurs à proximité…$"
++
++CableClub_Text_LocalOtherBuild:
++	.string "Le joueur à proximité a une autre\n"
++	.string "version du jeu.\p"
++	.string "Les deux consoles doivent avoir la\n"
++	.string "même version pour jouer ensemble.$"
++
++CableClub_Text_LocalFailed:
++	.string "Impossible de lancer la connexion\n"
++	.string "sans fil. Est-elle activée?$"
++#elif GAME_LANGUAGE == LANGUAGE_ITALIAN
++CableClub_Text_LocalLooking:
++	.string "Ricerca di altri giocatori vicini…$"
++
++CableClub_Text_LocalOtherBuild:
++	.string "Il giocatore vicino ha una\n"
++	.string "versione diversa del gioco.\p"
++	.string "Per giocare insieme, le console\n"
++	.string "devono avere la stessa versione.$"
++
++CableClub_Text_LocalFailed:
++	.string "Impossibile avviare la connessione\n"
++	.string "wireless. È attiva?$"
++#else
 +CableClub_Text_LocalLooking:
 +	.string "Looking for other players nearby…$"
 +
@@ -120,11 +160,12 @@ index 50b0c8e..9ee2c85 100644
 +CableClub_Text_LocalFailed:
 +	.string "The wireless connection couldn't be\n"
 +	.string "started. Is wireless turned on?$"
++#endif
 +
  CableClub_EventScript_DirectCornerAttendant::
  	lock
  	faceplayer
-@@ -958,6 +1003,11 @@ CableClub_EventScript_DirectCornerAttendant::
+@@ -958,6 +1044,11 @@ CableClub_EventScript_DirectCornerAttendant::
  	goto_if_unset FLAG_SYS_POKEDEX_GET, CableClub_EventScript_WirelessClubAdjustements
  	specialvar VAR_RESULT, IsBadEggInParty
  	goto_if_eq VAR_RESULT, TRUE, CableClub_EventScript_AbortLinkPlayerHasBadEgg
@@ -136,7 +177,7 @@ index 50b0c8e..9ee2c85 100644
  	specialvar VAR_RESULT, IsWirelessAdapterConnected
  	goto_if_eq VAR_RESULT, FALSE, CableClub_EventScript_WelcomeToCableClub
  	message CableClub_Text_WelcomeWhichDirectCornerRoom
-@@ -1291,6 +1341,11 @@ MossdeepCity_GameCorner_1F_EventScript_MinigameInfoExit::
+@@ -1291,6 +1382,11 @@ MossdeepCity_GameCorner_1F_EventScript_MinigameInfoExit::
  MossdeepCity_GameCorner_1F_EventScript_OldMan2::
  	lock
  	faceplayer
@@ -397,7 +438,7 @@ index 602a289..fe04605 100644
          if (gTasks[taskId].tCurrentBlock_Start != gTasks[taskId].tCurrentBlock_End)
          {
              if (gTasks[taskId].tBlockSendDelayTimer == 0)
-@@ -862,12 +934,73 @@ static void Task_HandleSendLinkBuffersData(u8 taskId)
+@@ -862,12 +934,77 @@ static void Task_HandleSendLinkBuffersData(u8 taskId)
  // handled uniformly unless a game specifically decides to do
  // otherwise. Pokemon, evidently, did not specifically decide to do
  // otherwise.
@@ -412,6 +453,10 @@ index 602a289..fe04605 100644
 +    {
 +        dataSize = msg[LINK_BUFF_SIZE_LO] | (msg[LINK_BUFF_SIZE_HI] << 8);
 +        if (dataSize + LINK_BUFF_DATA > len)
++            continue;
++        // From the network: a battler or size no message of ours has would
++        // write past gBattleBufferA/B and the port's per-battler counts.
++        if (msg[LINK_BUFF_ACTIVE_BATTLER] >= MAX_BATTLERS_COUNT || dataSize > sizeof(gBattleBufferA[0]))
 +            continue;
 +        if (gTasks[sLinkReceiveTaskId].tCurrentBlock_End + 9 + dataSize > 0x1000)
 +        {
@@ -471,7 +516,7 @@ index 602a289..fe04605 100644
      if (gReceivedRemoteLinkPlayers && (gBattleTypeFlags & BATTLE_TYPE_LINK_IN_BATTLE))
      {
          DestroyTask_RfuIdle();
-@@ -900,7 +1033,8 @@ void TryReceiveLinkBattleData(void)
+@@ -900,7 +1037,8 @@ void TryReceiveLinkBattleData(void)
      }
  }
  
@@ -481,7 +526,7 @@ index 602a289..fe04605 100644
  {
      u16 blockSize;
      u8 battler;
-@@ -909,7 +1043,8 @@ static void Task_HandleCopyReceivedLinkBuffersData(u8 taskId)
+@@ -909,7 +1047,8 @@ static void Task_HandleCopyReceivedLinkBuffersData(u8 taskId)
      #define BYTE_TO_RECEIVE(offset) \
          gLinkBattleRecvBuffer[gTasks[taskId].tCurrentBlock_Start + offset]
  
@@ -491,7 +536,7 @@ index 602a289..fe04605 100644
      {
          if (gTasks[taskId].tCurrentBlock_Start >  gTasks[taskId].tCurrentBlock_End
           && gTasks[taskId].tCurrentBlock_Start == gTasks[taskId].tCurrentBlock_WrapFrom)
-@@ -924,10 +1059,31 @@ static void Task_HandleCopyReceivedLinkBuffersData(u8 taskId)
+@@ -924,10 +1063,31 @@ static void Task_HandleCopyReceivedLinkBuffersData(u8 taskId)
          {
          case B_COMM_TO_CONTROLLER:
              if (IS_BATTLE_CONTROLLER_ACTIVE_ON_LOCAL(battler))
@@ -524,7 +569,7 @@ index 602a289..fe04605 100644
  
              if (!(gBattleTypeFlags & BATTLE_TYPE_IS_MASTER))
              {
-@@ -942,16 +1098,77 @@ static void Task_HandleCopyReceivedLinkBuffersData(u8 taskId)
+@@ -942,16 +1102,77 @@ static void Task_HandleCopyReceivedLinkBuffersData(u8 taskId)
              break;
          case B_COMM_CONTROLLER_IS_DONE:
              playerId = BYTE_TO_RECEIVE(LINK_BUFF_DATA);
@@ -1110,9 +1155,9 @@ index 8d6ae75..582777c 100644
      InitRFU();
  #endif
      RtcInit();
-@@ -184,9 +184,7 @@ void AgbMain(void)
-          && JOY_HELD_RAW(A_BUTTON)
+@@ -190,9 +190,7 @@ void AgbMain(void)
           && JOY_HELD_RAW(B_START_SELECT) == B_START_SELECT)
+ #endif
          {
 -#ifndef PORTABLE
 -            // No wireless adapter on the port: rfu_initializeAPI is a stub, and

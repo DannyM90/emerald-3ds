@@ -77,7 +77,12 @@ void CtrPlatform_NoteBottom(float ms) { sTiming.bottomMs = ms; }
 
 bool CtrPlatform_Init(void)
 {
-    gfxInitDefault();
+    /* The bottom screen at RGB565 from the start: its frame buffers live in
+     * the linear heap, and gfxInitDefault made them BGR8 (450 KiB) before
+     * CtrLog_Init turned the screen to 565, which never shrinks them. The
+     * top screen stays BGR8: at 565 the top screen came out garbled on a
+     * New 3DS from the first frame (Azahar showed it fine). */
+    gfxInit(GSP_BGR8_OES, GSP_RGB565_OES, false);
     /* A New 3DS runs the application core at 804 MHz with its L2 cache when
      * asked; an Old 3DS ignores this. */
     osSetSpeedupEnable(true);
@@ -205,10 +210,13 @@ bool CtrPlatform_BeginFrame(void)
 }
 
 /*
- * Fast-forward (CtrSettings_Speed). Of every `speed` game frames only the last
- * is presented and waits for the display; the others run back to back. Only
+ * Fast-forward (CtrSettings_SpeedHalves). Each game frame earns two halves;
+ * a frame is presented and waits for the display once `speed` halves have
+ * been earned, the others run back to back: at 2x one frame in two is shown,
+ * at 1.5x two in three. Only
  * a presented frame ticks the sound engine (CtrPlatform_SoundTick), so music
- * and effects keep their speed while the game runs faster. A frame is also
+ * and effects keep their speed while the game runs faster; a frame hidden by
+ * real-time pacing (below) ticks it too, as it stands for real time. A frame is also
  * presented as soon as one more hidden frame and the present would no longer
  * fit in the display's frame: the game then runs as fast as the console
  * allows (an Old 3DS less than a New 3DS at 804 MHz) and the picture and the
@@ -216,6 +224,8 @@ bool CtrPlatform_BeginFrame(void)
  */
 #define FRAME_MS (1000.0f / 60)
 static bool sSoundTick = true;
+static unsigned sEarned;
+/* Real-time pacing's hidden frame (PaceBehind): never two in a row. */
 static unsigned sHidden;
 static uint64_t sShownTick;
 static float sPresentMs = 4.0f;
@@ -238,6 +248,10 @@ static float sPresentMs = 4.0f;
 static bool sPace;
 static uint64_t sPaceStart;
 static float sPaceFrames;
+/* This frame went through pacing, not fast-forward (FrameShown): a frame it
+ * hides still ticks the sound engine, which otherwise (no worker on the DSP's
+ * clock) would slow by exactly the frames pacing hides. */
+static bool sPacedFrame;
 
 /* Whether the game is a frame behind the clock, counting this frame as run. */
 static bool PaceBehind(uint64_t now)
@@ -280,10 +294,11 @@ static bool FrameShown(uint64_t now)
 {
     /* In a local wireless session everyone plays at the same speed: the link
      * code times out on a partner that runs slower. */
-    int speed = LocalLink_InSession() ? 1 : CtrSettings_Speed();
+    unsigned speed = LocalLink_InSession() ? 2 : CtrSettings_SpeedHalves();
     float since = sShownTick ? (now - sShownTick) * 1000.0f / SYSCLOCK_ARM11 : FRAME_MS;
 
-    if (sPace && speed <= 1)
+    sPacedFrame = sPace && speed <= 2;
+    if (sPacedFrame)
     {
         bool behind = PaceBehind(now);
 
@@ -295,9 +310,15 @@ static bool FrameShown(uint64_t now)
         sHidden = 0;
         return true;
     }
-    if (speed <= 1 || ++sHidden >= (unsigned)speed || since + sTiming.gameMs + sPresentMs > FRAME_MS)
+    sEarned += 2;
+    if (speed <= 2 || since + sTiming.gameMs + sPresentMs > FRAME_MS)
     {
-        sHidden = 0;
+        sEarned = 0;
+        return true;
+    }
+    if (sEarned >= speed)
+    {
+        sEarned -= speed;
         return true;
     }
     return false;
@@ -337,7 +358,7 @@ void CtrPlatform_EndFrame(void)
     sTiming.gameMs = (endStart - sWorkStart) * 1000.0f / SYSCLOCK_ARM11;
     PaceUpdate();
     bool shown = FrameShown(endStart);
-    sSoundTick = shown;
+    sSoundTick = shown || sPacedFrame;
     if (sHooks.audioFrame)
         sHooks.audioFrame();
     /* Latch the logical frame BEFORE GPU reads its registers/OAM/palette.
@@ -386,7 +407,7 @@ void CtrPlatform_Diagnostic(uint32_t frames, uint32_t aPresses, uint32_t checks)
     const CtrVoxelStats *voxel = CtrVoxel_GetStats();
     char text[1020];
     snprintf(text, sizeof(text),
-        "Pokemon Emerald 3Ds Dual Screen\n"
+        "Emerald 3DS\n"
         "FPS: %5.1f FRAME: %-10lu\n"
         "Frame:%6.2f Work:%6.2f ms\n"
         "Peak:%6.2f Slow:%-8lu\n"
@@ -467,7 +488,7 @@ void CtrPlatform_ShowDataError(const char *title, const char *detail)
     consoleInit(GFX_TOP, &console);
     consoleSelect(&console);
     consoleClear();
-    printf("\x1b[2;2HPokemon Emerald 3Ds Dual Screen\n\n\x1b[31m %s\x1b[0m\n\n", title);
+    printf("\x1b[2;2HEmerald 3DS\n\n\x1b[31m %s\x1b[0m\n\n", title);
     for (const char *line = detail; line && *line;)
     {
         const char *end = strchr(line, '\n');

@@ -14,20 +14,20 @@
  * battle, a shop or the PC it has the whole screen. And the Pokédex
  * (pokedex.c, CtrPokedex_Touch), left of the column.
  *
- * Map, trainer card, summary, save and options are drawn and run here
- * directly. Switching mons, giving items or field moves need the game's own
- * logic, so the game's party menu runs *hidden*:
- * the top screen holds its last frame (CtrVideo_HoldTop), the menu is driven
- * by button presses fed through Platform_GetKeyInput, and what it shows (its
- * submenu entries, messages, yes/no questions) is mirrored here as buttons.
- * The player never sees a cursor move; the game still decides everything.
+ * Map, trainer card, save and options are drawn and run here directly. The
+ * party menu is the game's own too (party_menu.c, CTR_CENTRED_PARTY), drawn
+ * left of the column and taking a tap itself (CtrMenu_PostTap). While one of
+ * the game's screens is open, or on its way (a START entry asked for,
+ * CtrBottom_KeepWorld), the top screen holds the world (CtrVideo_HoldTop, the
+ * sessions below); the game still decides everything.
  *
  * The column is the port's own design (an emerald rail, plates, a focus
- * ring; see "The column's look"), with the game's item icons on it and two
- * new pictures, the RUN shoe and the Y badge (3ds_bottom_art.h, from
- * assets/artwork/bottom). Everything else is the game's own graphics,
+ * ring; see "The column's look"), with the game's item icons on it and a few
+ * new pictures: the RUN shoe, the Y badge and the Pokédex icon
+ * (3ds_bottom_art.h, from assets/artwork/bottom). Everything else is the
+ * game's own graphics,
  * decoded from the same RomFS files the game loads: the party menu
- * background, the battle text box frames, the Hoenn region map, the trainer
+ * background, the Hoenn region map, the trainer
  * card, mon/item/type/status icons, front pictures, the bag sprite, the
  * window frames and the game's fonts. Texts are the game's strings where it
  * has them. X walks the column with the buttons (ProcessKeys); the 3DS's Y
@@ -40,8 +40,7 @@
  *     pre-rendered backgrounds (a memcpy) plus the live parts, and copied to
  *     the framebuffer;
  *   - RomFS is never read inside a redraw: icons and pictures are fetched one
- *     per frame beforehand, everything else is decoded once at boot;
- *   - icon animation: only the icon rectangles are restored and redrawn.
+ *     per frame beforehand, everything else is decoded once at boot.
  * No GPU time, no VRAM, no linear memory.
  */
 
@@ -94,7 +93,10 @@
 #include "text.h"
 #include "text_window.h"
 #include "util.h"
+#include "wild_encounter.h"
 #include "constants/items.h"
+#include "constants/maps.h"
+#include "constants/vars.h"
 #include "constants/map_types.h"
 #include "constants/party_menu.h"
 #include "constants/region_map_sections.h"
@@ -107,6 +109,7 @@
 #include "3ds_bottom.h"
 #include "3ds_extras.h"
 #include "3ds_bottom_art.h"
+#include "3ds_clock_store.h"
 #include "3ds_input.h"
 #include "3ds_log.h"
 #include "3ds_platform.h"
@@ -118,7 +121,6 @@ void CB2_BagMenuRun(void);
 bool8 CtrParty_Close(bool8 leaving);
 /* menu.c: a tap on a game screen shown here, for what waits for input. */
 void CtrMenu_PostTap(s16 x, s16 y);
-bool8 CtrMenu_YesNoOpen(void);
 void CtrStartMenu_Request(u8 action);
 bool8 CtrStartMenu_Pending(void);
 bool8 CtrStartMenu_Available(void);
@@ -282,12 +284,6 @@ static u16 Rgb565(u16 bgr)
     return (r << 11) | (((g << 1) | (g >> 4)) << 5) | b;
 }
 
-/* The same colour at 55% brightness: how a pressed or chosen button looks. */
-static u16 Darker(u16 c)
-{
-    u16 r = (c >> 11) & 31, g = (c >> 5) & 63, b = c & 31;
-    return ((r * 9 / 16) << 11) | ((g * 9 / 16) << 5) | (b * 9 / 16);
-}
 
 typedef struct { u16 c[16]; } Pal;
 
@@ -296,12 +292,6 @@ static void ToPals(Pal *dst, const u16 *src, int count)
     for (int p = 0; p < count; ++p)
         for (int i = 0; i < 16; ++i)
             dst[p].c[i] = Rgb565(src[p * 16 + i]);
-}
-
-static void DarkPal(Pal *dst, const Pal *src)
-{
-    for (int i = 0; i < 16; ++i)
-        dst->c[i] = Darker(src->c[i]);
 }
 
 /*
@@ -347,19 +337,6 @@ static void DrawTile(const u8 *tile, int x, int y, const u16 *pal, bool8 hflip, 
                 Put(x + px, y + py, pal[v]);
         }
     }
-}
-
-/* The single colour of a tile with no transparent or differing pixel, or -1. */
-static int SolidTileColor(const u8 *tile)
-{
-    u8 v = tile[0] & 15;
-
-    if (!v)
-        return -1;
-    for (int i = 0; i < 32; ++i)
-        if (tile[i] != (v | (v << 4)))
-            return -1;
-    return v;
 }
 
 /* A sprite in the GBA's one-dimensional tile layout. */
@@ -493,16 +470,14 @@ static struct
     u32 partyTileCount;
     u16 partyRaw[16 * 11];
     Pal partyPal[11];
-    /* Battle text box frames, and their darkened copies. */
-    u8 *boxTiles;
-    u32 boxTileCount;
-    Pal boxPal[2], boxPalDark[2];
     /* Icons. */
     Icon column[SCR_COUNT];
     u8 *typeTiles;
     Pal typePal[3];
     const u8 *categoryTiles;
     Pal categoryPal;
+    /* The SAVE view's party. */
+    Pal monIconPal[3];
     /* Region map. */
     u8 *mapTiles;
     u32 mapTileCount;
@@ -583,18 +558,15 @@ static void LoadResources(void)
         ToPals(sRes.partyPal, sRes.partyRaw, 11);
     }
 
-    sRes.boxTiles = UnlzFile("battle_interface/textbox.4bpp.lz", &size);
-    sRes.boxTileCount = size / 32;
-    PalFile("battle_interface/textbox.gbapal.lz", sRes.boxPal, 2, TRUE);
-    DarkPal(&sRes.boxPalDark[0], &sRes.boxPal[0]);
-    DarkPal(&sRes.boxPalDark[1], &sRes.boxPal[1]);
-
     /* The column's icons: the game's own item icons, and the PokéNav's. */
     LoadItemIcon(&sRes.column[SCR_MAP], gItemIcon_TownMap, gItemIconPalette_TownMap);
     LoadItemIcon(&sRes.column[SCR_POKEMON], gItemIcon_PokeBall, gItemIconPalette_PokeBall);
     LoadItemIcon(&sRes.column[SCR_BAG], gItemIcon_BerryPouch, gItemIconPalette_BerryPouch);
     LoadItemIcon(&sRes.column[SCR_CARD], gItemIcon_ContestPass, gItemIconPalette_ContestPass);
-    LoadItemIcon(&sRes.column[SCR_POKEDEX], gItemIcon_FameChecker, gItemIconPalette_FameChecker);
+    /* Emerald has no Pokédex item icon; port art (Platinum menu Pokédex). */
+    sRes.column[SCR_POKEDEX].tiles = (u8 *)sArtPokedex;
+    sRes.column[SCR_POKEDEX].size = 3;
+    ToPals(&sRes.column[SCR_POKEDEX].pal, sArtPalette, 1);
     LoadItemIcon(&sRes.column[SCR_SAVE], GetItemIconPicOrPalette(ITEM_LETTER, 0), GetItemIconPicOrPalette(ITEM_LETTER, 1));
     LoadItemIcon(&sRes.column[SCR_OPTION], gItemIcon_TeachyTV, gItemIconPalette_TeachyTV);
     sRes.column[SCR_POKENAV].tiles = UnlzFile("pokenav/nav_icon.4bpp.lz", NULL);
@@ -609,6 +581,8 @@ static void LoadResources(void)
         sRes.categoryTiles = GetMoveCategoryIconGfx(&pal);
         ToPals(&sRes.categoryPal, pal, 1);
     }
+    for (int i = 0; i < 3; ++i)
+        PalSymbol(gMonIconPaletteTable[i].data, &sRes.monIconPal[i], 1);
 
     sRes.mapTiles = UnlzFile("pokenav/region_map/map.8bpp.lz", &size);
     sRes.mapTileCount = size / 64;
@@ -647,9 +621,9 @@ static void LoadResources(void)
 
     for (int i = 0; i < CACHE_BATTLE; ++i)
         sCache[i] = malloc(sizeof(sCanvas));
-    sRes.ready = sRes.partyTiles && sRes.boxTiles && sCache[CACHE_MENU] && sCache[CACHE_WIDE];
+    sRes.ready = sRes.partyTiles && sCache[CACHE_MENU] && sCache[CACHE_WIDE];
     if (!sRes.ready)
-        CtrLog_Write(CTR_LOG_ERROR, "bottom: party menu or text box graphics missing, screen stays off");
+        CtrLog_Write(CTR_LOG_ERROR, "bottom: party menu graphics or canvas caches missing, screen stays off");
 }
 
 /*
@@ -659,6 +633,43 @@ static void LoadResources(void)
  */
 static bool8 sIconBudget;
 static u32 sIconClock;
+
+/* Mon icons, the first of their two 32x32 frames: the SAVE view's party. */
+static struct
+{
+    u16 key;
+    u32 age;
+    u8 tiles[512];
+} sMonIcons[PARTY_SIZE];
+
+static const u8 *MonIcon(u16 iconSpecies, bool8 deoxysForm)
+{
+    u16 key = iconSpecies | (deoxysForm ? 0x8000 : 0);
+    int victim = 0;
+    const u8 *src;
+
+    for (int i = 0; i < PARTY_SIZE; ++i)
+    {
+        if (sMonIcons[i].key == key && key != 0)
+        {
+            sMonIcons[i].age = ++sIconClock;
+            return sMonIcons[i].tiles;
+        }
+        if (sMonIcons[i].age < sMonIcons[victim].age)
+            victim = i;
+    }
+    if (iconSpecies >= SPECIES_EGG + 28 || iconSpecies == SPECIES_NONE || !sIconBudget)
+        return NULL;
+    sIconBudget = FALSE;
+    src = Port_ResolveAssetPointer(gMonIconTable[iconSpecies]);
+    if (!src)
+        return NULL;
+    /* Deoxys keeps its alternate form in the same file, 0x400 in. */
+    memcpy(sMonIcons[victim].tiles, src + (deoxysForm ? 0x400 : 0), 512);
+    sMonIcons[victim].key = key;
+    sMonIcons[victim].age = ++sIconClock;
+    return sMonIcons[victim].tiles;
+}
 
 /* Item icons: 24x24 with their own palette. */
 #define ITEM_ICON_SLOTS 24
@@ -1966,62 +1977,9 @@ static int SmoothInkWidth(const Font *font, const u8 *str, int k)
 #define TXT_BLUE TXT(TEXT_COLOR_BLUE)
 #define TXT_LBLUE TXT(TEXT_COLOR_LIGHT_BLUE)
 
-/* Labels on a normal button, and on one shown darker (chosen or pressed). */
-#define LABEL_FG(on) ((on) ? TXT_WHITE : TXT_DARK)
-#define LABEL_SH(on) ((on) ? TXT_DARK : TXT_LIGHT)
-
 /* ------------------------------------------------------------------------ */
 /* Frames and backgrounds                                                   */
 /* ------------------------------------------------------------------------ */
-
-enum { BOX_MENU, BOX_MESSAGE };
-
-/*
- * The battle text box's two frames, stretched in whole tiles: the white menu
- * box for buttons and lists, the teal message box for what the game says.
- * A dark box is the same frame at lower brightness: chosen or pressed.
- */
-static void DrawBoxEx(int kind, int x, int y, int wt, int ht, bool8 dark)
-{
-    static const u8 menu[3][3] = {{0x12, 0x13, 0x14}, {0x15, 0x16, 0x17}, {0x18, 0x19, 0x1A}};
-    static const u8 message[3][5] = {
-        {0x03, 0x04, 0x05, 0x06, 0x07},
-        {0x08, 0x09, 0x0A, 0x0B, 0x0C},
-        {0x0D, 0x0E, 0x0F, 0x10, 0x11},
-    };
-    /* Caps are one tile wide on the menu box, two on the message box. */
-    int cap = kind == BOX_MENU ? 1 : 2;
-    u16 bank = kind == BOX_MENU ? 0x1000 : 0;
-    u8 center = kind == BOX_MENU ? menu[1][1] : message[1][2];
-    int solid = center < sRes.boxTileCount ? SolidTileColor(sRes.boxTiles + center * 32) : -1;
-    const Pal *pals = dark ? sRes.boxPalDark : sRes.boxPal;
-
-    /* The interior is one flat colour: fill it, draw only the frame. */
-    if (solid >= 0 && wt > 2 * cap && ht > 2)
-        FillRect(x + cap * 8, y + 8, (wt - 2 * cap) * 8, (ht - 2) * 8, pals[bank >> 12].c[solid]);
-    for (int ty = 0; ty < ht; ++ty)
-    {
-        int row = ty == 0 ? 0 : ty == ht - 1 ? 2 : 1;
-        for (int tx = 0; tx < wt; ++tx)
-        {
-            bool8 inside = row == 1 && tx >= cap && tx < wt - cap;
-            u8 tile;
-
-            if (inside && solid >= 0)
-                continue;
-            if (kind == BOX_MENU)
-                tile = menu[row][tx == 0 ? 0 : tx == wt - 1 ? 2 : 1];
-            else
-                tile = message[row][tx == 0 ? 0 : tx == 1 ? 1 : tx == wt - 2 ? 3 : tx == wt - 1 ? 4 : 2];
-            DrawMapEntry(sRes.boxTiles, sRes.boxTileCount, bank | tile, x + tx * 8, y + ty * 8, pals);
-        }
-    }
-}
-
-static void DrawBox(int kind, int x, int y, int wt, int ht)
-{
-    DrawBoxEx(kind, x, y, wt, ht, FALSE);
-}
 
 /*
  * The party menu background, framed on all four sides: the GBA screen leaves
@@ -2212,9 +2170,10 @@ static void DrawColumnBackground(void)
 
 /*
  * The faint Poké Ball in the middle of the light green: 2px rim, 2px band,
- * the button's ring with nothing inside, the top half half a step lighter.
+ * the button's ring with nothing inside, the bottom half - the white one on a
+ * real ball - half a step lighter.
  * Symmetric about the pixel grid: distances from pixel centres, doubled so
- * they stay integers. 0 nothing, 1 the line colour, 2 the top half.
+ * they stay integers. 0 nothing, 1 the line colour, 2 the bottom half.
  */
 #define BALL_R CTR_SECTION_BALL_RADIUS
 static u8 sBall[2 * BALL_R * 2 * BALL_R];
@@ -2235,7 +2194,7 @@ static void BuildBall(void)
                 v = (d2 >= 4 * 13 * 13 || (d2 >= 4 * 7 * 7 && d2 < 4 * 9 * 9)) ? 1 : 0;
             else if (dy > -4 && dy < 4)
                 v = 1;
-            else if (dy < 0)
+            else if (dy > 0)
                 v = 2;
             sBall[y * 2 * BALL_R + x] = v;
         }
@@ -2334,19 +2293,6 @@ enum
     MODE_BATTLE_TARGET,
 };
 
-/* What the lower panel of the party and bag views offers. */
-enum
-{
-    PANEL_NONE,
-    PANEL_HINT,       /* the menu waits for a mon or an item: CANCEL */
-    PANEL_ACTIONS,    /* the game's submenu, as buttons */
-    PANEL_MESSAGE,    /* a message: tap to go on */
-    PANEL_YESNO,      /* a question */
-    PANEL_QUANTITY,   /* how many: up, down, OK, CANCEL */
-};
-
-#define MAX_MENU_ITEMS 8
-
 typedef struct
 {
     u16 species;      /* SPECIES_NONE: empty slot */
@@ -2356,28 +2302,35 @@ typedef struct
     u8 nick[POKEMON_NAME_LENGTH + 2];
 } MonView;
 
+/* A row of the map's wild Pokemon list (map extras): a species of one
+ * method's table, its slots' levels and chances added up. */
+#define ENC_ROWS 12
+typedef struct
+{
+    u16 species;
+    u8 minLevel, maxLevel, percent, seen;
+} EncRow;
+
 /* Everything a redraw reads. Zeroed before every snapshot: memcmp-safe. */
 typedef struct
 {
     u8 mode, screen, pressed, gender, inBattle;
     u8 title;                         /* MODE_OFF on the title screen */
     u8 enabled;                       /* bit per column screen */
-    /* Party. */
-    s8 partyCursor;
+    /* Party, for the SAVE screen's icons. */
     MonView party[PARTY_SIZE];
-    /* The lower panel: a game menu, a message or a question. */
-    u8 panel, menuCount, menuCols, menuCursor;
-    const u8 *menuNames[MAX_MENU_ITEMS];
-    const u8 *message;
-    /* Summary. */
-    s8 summary;
-    u16 stats[6], moves[MAX_MON_MOVES];
-    u8 pp[MAX_MON_MOVES], maxPp[MAX_MON_MOVES], nature, ability, types[2];
-    u16 heldItem;
     /* Region map. */
     u8 mapsec, cursorX, cursorY, pickMapsec, pickX, pickY;
     u8 clockShown, clockValid, clockRate, clockPhase;
     u16 clockMinute;
+    /* Map extras (3ds_field_qol_extras.inc), all zero with them off: the
+     * list toggle on, the list shown instead of the map, its page (of
+     * encPages, 0 with no table here) and method, its rows; the Repel's
+     * steps; the clock-not-restored banner. */
+    u8 encOn, encView, encPage, encPages, encMethod, encCount;
+    u8 repelShown, clockNotice;
+    u16 repelSteps;
+    EncRow enc[ENC_ROWS];
     /* Bag: which of the game's is on show, BAG_VIEW_*. */
     u8 bagView;
     /* Trainer card. */
@@ -2386,7 +2339,7 @@ typedef struct
     u16 id, dex, hours;
     u32 money;
     /* Save and options. */
-    u8 saveStep, canSave;
+    u8 saveStep, canSave, frame;
     u8 options[OPTION_ROWS];
     /* The OPTIONS page on show (CTR_EXTRAS_*) and the values of its extras,
      * in table order. */
@@ -2405,7 +2358,7 @@ typedef struct
     u8 safariBalls;
     u8 partyBalls[PARTY_SIZE];        /* PARTY_BALL_*, as the game's party indicator */
     struct ChooseMoveStruct moves4;
-    u8 text[96];
+    u8 text[256];
 } ViewState;
 
 /* Which of the game's bag is on show. */
@@ -2449,6 +2402,13 @@ static bool8 OptionExists(int row)
 static bool8 OptionLive(int row, bool8 voxel)
 {
     return OptionExists(row) && (voxel || row < OPT_VOXEL_PITCH);
+}
+
+/* An extra for the voxel overworld (3D WORLD, 3D DEPTH) is greyed with it
+ * off, as the grid's camera and blur cells are. */
+static bool8 ExtraLive(const CtrExtra *extra, bool8 voxel)
+{
+    return voxel || !CtrExtras_NeedsVoxel(extra);
 }
 
 /* OPTIONS has pages (3ds_extras.h) once any extra exists: a tab strip at the
@@ -2533,13 +2493,16 @@ static u32 sFrames;
 static bool8 RectsMeet(int ax0, int ay0, int ax1, int ay1, int bx0, int by0, int bx1, int by1);
 
 /* Per screen state, kept while another screen is shown. */
-#if 0 /* the old party menu's */
-static s8 sPartyTapped = -1;
-static s8 sSummary = -1;
-#endif
+
 static u8 sPickMapsec = MAPSEC_NONE, sPickX, sPickY;
+/* Map extras: the wild list instead of the map, its page; the load
+ * (CtrClockStore_LoadSerial) whose clock banner was dismissed. */
+static bool8 sEncView;
+static u8 sEncPage;
+static unsigned sClockNoticeSerial;
 static u8 sSaveStep;
-static u8 sSaveMessage[96];
+/* Room for the longest, gText_DifferentSaveFile (some 230 bytes). */
+static u8 sSaveMessage[256];
 
 enum { SAVE_ASK, SAVE_OVERWRITE, SAVE_DONE };
 
@@ -2554,17 +2517,10 @@ enum
 {
     HIT_NONE = 0xFF,
     HIT_COLUMN = 0x10,     /* + screen */
-    HIT_SLOT = 0x20,       /* + party slot */
     HIT_CANCEL = 0x30,
     HIT_OK,
     HIT_YES,
     HIT_NO,
-    HIT_PREV,
-    HIT_NEXT,
-    HIT_BACK,
-    HIT_UP,
-    HIT_DOWN,
-    HIT_PANEL,             /* a message: anywhere on it */
     HIT_ROW = 0x50,        /* + visible list row */
     HIT_ACTION = 0x60,     /* + action cursor */
     HIT_MOVE = 0x70,       /* + move slot */
@@ -2575,8 +2531,10 @@ enum
     HIT_QUICK_BALL_PREV,
     HIT_QUICK_BALL_NEXT,
     HIT_MAP = 0x90,
-    HIT_MENU = 0xB0,       /* + game menu entry */
-    HIT_OPTION = 0xC0,     /* + option row; +HIT_OPTION_BACK for the left arrow */
+    HIT_MAP_INFO,          /* the name plate: map <-> wild list (map extras) */
+    HIT_MAP_PAGE,          /* the wild list: its next page */
+    HIT_CLOCK_NOTICE,      /* the clock banner: hide it */
+    HIT_OPTION = 0xC0,    /* + option row; +HIT_OPTION_BACK for the left arrow */
     HIT_PAGE = 0xE0,       /* + OPTIONS page tab */
 };
 /* More than there are option rows, so a row and a left arrow never share an id. */
@@ -2600,31 +2558,10 @@ static u8 HitTest(int x, int y)
     return HIT_NONE;
 }
 
-static void DrawLabelButtonFont(const Font *font, int x, int y, int wt, int ht, const u8 *label, bool8 on,
-                                bool8 enabled, u8 id)
-{
-    DrawBoxEx(BOX_MENU, x, y, wt, ht, on);
-    DrawStrCentered(font, label, x + wt * 4, y + ht * 4 - font->height / 2, enabled ? LABEL_FG(on) : TXT_LIGHT,
-                    enabled ? LABEL_SH(on) : TXT_WHITE);
-    if (enabled)
-        AddHit(x, y, wt * 8, ht * 8, id);
-}
-
-static void DrawLabelButton(int x, int y, int wt, int ht, const u8 *label, bool8 on, bool8 enabled, u8 id)
-{
-    DrawLabelButtonFont(&sNormal, x, y, wt, ht, label, on, enabled, id);
-}
-
 /* ------------------------------------------------------------------------ */
 /* Game state                                                               */
 /* ------------------------------------------------------------------------ */
 
-#if 0
-static bool8 PartyMenuReady(void)
-{
-    return FuncIsActiveTask(Task_HandleChooseMonInput) && !gPaletteFade.active;
-}
-#endif
 
 /* The player stands in the field with nothing else going on. */
 static bool8 FieldIdle(void)
@@ -2687,6 +2624,10 @@ static u8 CurrentMode(void)
     if (gMain.callback2 == CB2_Overworld)
         sInGame = TRUE;
     if (!sInGame || !gSaveBlock1Ptr || !gSaveBlock2Ptr)
+        return MODE_OFF;
+    /* The legendaries' cutscenes have the top screen to themselves, the
+     * bottom one dark under them. */
+    if (CtrVideo_StageZoomed())
         return MODE_OFF;
     if (CtrPokenav_IsOpen())
         return MODE_POKENAV;
@@ -3008,56 +2949,6 @@ void CtrBattleMenu_TargetInput(void)
 /* Snapshots                                                                */
 /* ------------------------------------------------------------------------ */
 
-#if 0
-static void SnapshotMon(MonView *view, struct Pokemon *mon)
-{
-    u16 species = GetMonData(mon, MON_DATA_SPECIES);
-
-    if (species == SPECIES_NONE)
-        return;
-    view->species = species;
-    view->isEgg = GetMonData(mon, MON_DATA_IS_EGG);
-    view->iconSpecies = view->isEgg ? SPECIES_EGG : GetIconSpecies(species, GetMonData(mon, MON_DATA_PERSONALITY));
-    view->deoxys = species == SPECIES_DEOXYS;
-    view->level = GetMonData(mon, MON_DATA_LEVEL);
-    view->hp = GetMonData(mon, MON_DATA_HP);
-    view->maxHp = GetMonData(mon, MON_DATA_MAX_HP);
-    view->ailment = view->isEgg ? AILMENT_NONE : GetMonAilment(mon);
-    view->fainted = !view->isEgg && view->hp == 0;
-    GetMonNickname(mon, view->nick);
-    view->gender = GetMonGender(mon);
-    /* The party menu leaves the symbol off a Nidoran still named after its
-     * species: the name already says it. */
-    if ((species == SPECIES_NIDORAN_M || species == SPECIES_NIDORAN_F)
-     && StringCompare(view->nick, gSpeciesNames[species]) == 0)
-        view->gender = MON_GENDERLESS;
-}
-
-static void SnapshotSummary(ViewState *s, u8 slot)
-{
-    struct Pokemon *mon = &gPlayerParty[slot];
-    static const u8 stats[6] = {MON_DATA_MAX_HP, MON_DATA_ATK, MON_DATA_DEF, MON_DATA_SPATK, MON_DATA_SPDEF,
-                                MON_DATA_SPEED};
-    u8 bonuses = GetMonData(mon, MON_DATA_PP_BONUSES);
-
-    s->summary = slot;
-    for (int i = 0; i < 6; ++i)
-        s->stats[i] = GetMonData(mon, stats[i]);
-    for (int i = 0; i < MAX_MON_MOVES; ++i)
-    {
-        s->moves[i] = GetMonData(mon, MON_DATA_MOVE1 + i);
-        s->pp[i] = GetMonData(mon, MON_DATA_PP1 + i);
-        s->maxPp[i] = s->moves[i] ? CalculatePPWithBonus(s->moves[i], bonuses, i) : 0;
-    }
-    s->nature = GetNature(mon);
-    s->ability = GetAbilityBySpecies(s->party[slot].species, GetMonData(mon, MON_DATA_ABILITY_NUM));
-    s->types[0] = gSpeciesInfo[s->party[slot].species].types[0];
-    s->types[1] = gSpeciesInfo[s->party[slot].species].types[1];
-    s->heldItem = GetMonData(mon, MON_DATA_HELD_ITEM);
-}
-
-#endif
-
 static u8 PlayerRegionPosition(u8 *outX, u8 *outY)
 {
     /* region_map.c's InitMapBasedOnPlayerLocation, without its UI state. */
@@ -3163,6 +3054,28 @@ static void SnapshotCard(ViewState *s)
             s->badges |= 1 << i;
 }
 
+/* The save view's file: the card's figures, where the player is, the
+ * party's icons and the window frame the player chose. */
+static void SnapshotSave(ViewState *s)
+{
+    SnapshotCard(s);
+    s->mapsec = gMapHeader.regionMapSectionId;
+    s->frame = gSaveBlock2Ptr->optionsWindowFrameType;
+    for (int i = 0; i < PARTY_SIZE && i < gPlayerPartyCount; ++i)
+    {
+        struct Pokemon *mon = &gPlayerParty[i];
+        u16 species = GetMonData(mon, MON_DATA_SPECIES);
+        MonView *view = &s->party[i];
+
+        if (species == SPECIES_NONE)
+            continue;
+        view->species = species;
+        view->isEgg = GetMonData(mon, MON_DATA_IS_EGG);
+        view->iconSpecies = view->isEgg ? SPECIES_EGG : GetIconSpecies(species, GetMonData(mon, MON_DATA_PERSONALITY));
+        view->deoxys = species == SPECIES_DEOXYS;
+    }
+}
+
 /* The party ball states, as battle_interface.c's party indicator has them. */
 enum { PARTY_BALL_OK, PARTY_BALL_STATUS, PARTY_BALL_FAINT, PARTY_BALL_EMPTY };
 
@@ -3211,28 +3124,6 @@ static void CopyText(u8 *dst, int size, const u8 *src)
     dst[n] = EOS;
 }
 
-#if 0
-/* What the hidden party menu is asking, for the lower panel. */
-static void SnapshotPartyPanel(ViewState *s)
-{
-    s->menuCount = CtrPartyMenu_GetActions(s->menuNames, MAX_MENU_ITEMS);
-    s->menuCols = 1;
-    s->message = CtrPartyMenu_GetMessage();
-    if (CtrMenu_YesNoOpen())
-        s->panel = PANEL_YESNO;
-    else if (s->menuCount)
-    {
-        s->panel = PANEL_ACTIONS;
-        s->menuCursor = Menu_GetCursorPos();
-    }
-    else if (PartyMenuReady())
-        s->panel = PANEL_HINT;
-    else if (s->message)
-        s->panel = PANEL_MESSAGE;
-    CopyText(s->text, sizeof(s->text), s->message);
-}
-
-#endif
 
 /* Every option's value as the OPTIONS screen shows it: the snapshot's, and
  * the cell pictures made ahead (WarmOptionCells) read the same. */
@@ -3252,13 +3143,150 @@ static void ReadOptionValues(u8 options[OPTION_ROWS])
     options[OPT_VOXEL_BATTLE] = CtrSettings_VoxelBattle();
 }
 
+/*
+ * Map extras (3ds_field_qol_extras.inc). The wild list reads the area's
+ * normal tables as the game's encounters do: the map's header in
+ * gWildMonHeaders (Altering Cave's set by VAR_ALTERING_CAVE_WILD_SET), the
+ * grass table through CtrEncounters_Land, so the timed tables (WILD POKEMON:
+ * TIMED) show what the hour gives. Each method with a table is a page: grass,
+ * surfing, Rock Smash, and the three rods (their slots of the fishing table).
+ * Not shown, as they are not in those tables: Feebas's tiles, a TV outbreak's
+ * species, the roamers, the Battle Pyramid's and Pike's own tables, static and
+ * scripted Pokemon. A later randomizer (CtrRandomizer_Wild) is to map the
+ * species here too, once its API is final.
+ */
+enum { ENC_LAND, ENC_WATER, ENC_ROCK, ENC_OLD_ROD, ENC_GOOD_ROD, ENC_SUPER_ROD, ENC_METHODS };
+
+/* The game's slot chances (wild_encounter.c), in percent; the fishing table's
+ * slots are the old rod's 0-1, the good rod's 2-4, the super rod's 5-9. */
+static const u8 sEncLandRates[12] = {20, 20, 10, 10, 10, 10, 5, 5, 4, 4, 1, 1};
+static const u8 sEncWaterRates[5] = {60, 30, 5, 4, 1};
+static const u8 sEncFishRates[10] = {70, 30, 60, 20, 20, 40, 40, 15, 4, 1};
+static const u8 sEncFirst[ENC_METHODS] = {0, 0, 0, 0, 2, 5};
+static const u8 sEncSlots[ENC_METHODS] = {12, 5, 5, 2, 3, 5};
+
+/* The slots [first, first + count) as rows, one a species in slot order,
+ * their chances added up and their levels' range; how many rows. */
+static u8 EncCollect(EncRow *rows, const struct WildPokemon *mons, u8 first, u8 count, const u8 *rates)
+{
+    u8 n = 0;
+
+    for (u8 i = 0; i < count; ++i)
+    {
+        const struct WildPokemon *mon = &mons[first + i];
+        u8 k = 0;
+        u16 species;
+
+        if (mon->species == SPECIES_NONE)
+            continue;
+        species = CtrEncounters_DisplaySpecies(mon->species);
+        if (species == SPECIES_NONE)
+            continue;
+        while (k < n && rows[k].species != species)
+            ++k;
+        if (k == n)
+        {
+            if (n == ENC_ROWS)
+                continue;
+            rows[n].species = species;
+            rows[n].minLevel = mon->minLevel;
+            rows[n].maxLevel = mon->maxLevel;
+            rows[n].percent = 0;
+            rows[n].seen = 0;
+            ++n;
+        }
+        if (mon->minLevel < rows[k].minLevel)
+            rows[k].minLevel = mon->minLevel;
+        if (mon->maxLevel > rows[k].maxLevel)
+            rows[k].maxLevel = mon->maxLevel;
+        rows[k].percent += rates[first + i];
+    }
+    return n;
+}
+
+/* The current map's wild header, as the game finds it, or NULL. */
+static const struct WildPokemonHeader *EncHeader(void)
+{
+    u8 group = gSaveBlock1Ptr->location.mapGroup, num = gSaveBlock1Ptr->location.mapNum;
+
+    for (u16 i = 0; gWildMonHeaders[i].mapGroup != MAP_GROUP(MAP_UNDEFINED); ++i)
+    {
+        if (gWildMonHeaders[i].mapGroup != group || gWildMonHeaders[i].mapNum != num)
+            continue;
+        /* Altering Cave's sets follow each other; an unknown set is the first, as in the game. */
+        if (group == MAP_GROUP(MAP_ALTERING_CAVE) && num == MAP_NUM(MAP_ALTERING_CAVE))
+        {
+            u16 set = VarGet(VAR_ALTERING_CAVE_WILD_SET), run = 0;
+
+            while (gWildMonHeaders[i + run].mapGroup == group && gWildMonHeaders[i + run].mapNum == num)
+                ++run;
+            if (set < run)
+                i += set;
+        }
+        return &gWildMonHeaders[i];
+    }
+    return NULL;
+}
+
+static void SnapshotEncounters(ViewState *s)
+{
+    const struct WildPokemonHeader *header = EncHeader();
+    const struct WildPokemonInfo *info[ENC_METHODS] = {NULL};
+    static const u8 *const rates[ENC_METHODS] = {sEncLandRates, sEncWaterRates, sEncWaterRates,
+                                                 sEncFishRates, sEncFishRates, sEncFishRates};
+    u8 methods[ENC_METHODS] = {0}, pages = 0, method;
+
+    if (header)
+    {
+        info[ENC_LAND] = CtrEncounters_Land(header->landMonsInfo, gSaveBlock1Ptr->location.mapGroup,
+                                            gSaveBlock1Ptr->location.mapNum);
+        info[ENC_WATER] = header->waterMonsInfo;
+        info[ENC_ROCK] = header->rockSmashMonsInfo;
+        info[ENC_OLD_ROD] = info[ENC_GOOD_ROD] = info[ENC_SUPER_ROD] = header->fishingMonsInfo;
+    }
+    for (u8 m = 0; m < ENC_METHODS; ++m)
+        if (info[m] && info[m]->wildPokemon)
+            methods[pages++] = m;
+    s->encPages = pages;
+    if (pages == 0)
+        return;
+    s->encPage = sEncPage % pages;
+    method = s->encMethod = methods[s->encPage];
+    s->encCount = EncCollect(s->enc, info[method]->wildPokemon, sEncFirst[method], sEncSlots[method], rates[method]);
+    /* Only what the Pokedex has seen is named. */
+    for (u8 i = 0; i < s->encCount; ++i)
+        s->enc[i].seen = GetSetPokedexFlag(SpeciesToNationalPokedexNum(s->enc[i].species), FLAG_GET_SEEN) != 0;
+}
+
+static void SnapshotMapExtras(ViewState *s)
+{
+    s->encOn = CtrExtras_Get("map_encounters") == 1;
+    s->encView = s->encOn && sEncView;
+    if (s->encView)
+    {
+        /* The list has no marks: walking in the area redraws nothing. */
+        s->cursorX = s->cursorY = 0;
+        s->pickMapsec = MAPSEC_NONE;
+        s->pickX = s->pickY = 0;
+        SnapshotEncounters(s);
+    }
+    /* Read only: the step counter is the game's (UpdateRepelCounter). */
+    if (CtrExtras_Get("repel_steps") == 1)
+    {
+        u16 steps = VarGet(VAR_REPEL_STEP_COUNT);
+
+        s->repelShown = steps != 0;
+        s->repelSteps = steps;
+    }
+    s->clockNotice = CtrExtras_Get("clock_notice") == 1 && CtrClockStore_NeedsNotice(CtrClockStore_Status())
+                  && CtrClockStore_LoadSerial() != sClockNoticeSerial;
+}
+
 static void Snapshot(ViewState *s, u8 mode, u8 pressed)
 {
     memset(s, 0, sizeof(*s));
     s->mode = mode;
     s->pressed = pressed;
-    s->summary = -1;
-    s->partyCursor = -1;
     s->pickMapsec = MAPSEC_NONE;
     if (s->mode == MODE_OFF)
     {
@@ -3316,12 +3344,17 @@ static void Snapshot(ViewState *s, u8 mode, u8 pressed)
             s->pickMapsec = sPickMapsec;
             s->pickX = sPickX;
             s->pickY = sPickY;
-            s->clockShown = !s->inBattle && CtrSettings_GetInt("show_clock", 0) == 1;
-            if (s->clockShown)
+            SnapshotMapExtras(s);
+            /* The hour is always on the bar above the map; the part of the day
+             * and the clock's speed only with the day/night clock or SHOW CLOCK
+             * on. Off, the clock is not running: the hour is the game's own. */
+            s->clockShown = CtrSettings_GetInt("day_night", 0) == 1 || CtrSettings_GetInt("show_clock", 0) == 1;
             {
-                unsigned seconds, rate;
+                unsigned seconds = 0, rate = 1;
 
                 s->clockValid = CtrDayNight_Time(&seconds, &rate);
+                if (!s->clockValid)
+                    s->clockValid = CtrGame_LocalTimeSeconds(&seconds);
                 if (s->clockValid)
                 {
                     s->clockMinute = seconds / 60;
@@ -3337,6 +3370,7 @@ static void Snapshot(ViewState *s, u8 mode, u8 pressed)
             SnapshotCard(s);
             break;
         case SCR_SAVE:
+            SnapshotSave(s);
             s->saveStep = sSaveStep;
             s->canSave = FieldIdle();
             CopyText(s->text, sizeof(s->text), sSaveMessage);
@@ -3392,8 +3426,9 @@ static void Snapshot(ViewState *s, u8 mode, u8 pressed)
 static bool8 Prefetch(const ViewState *s)
 {
     sIconBudget = TRUE;
-    if (sIconBudget && s->summary >= 0 && s->heldItem)
-        ItemIcon(s->heldItem);
+    for (int i = 0; i < PARTY_SIZE && sIconBudget; ++i)
+        if (s->party[i].species)
+            MonIcon(s->party[i].iconSpecies, s->party[i].deoxys);
     if (sIconBudget && s->registered != ITEM_NONE && s->mode < MODE_BATTLE_INFO)
         ItemIcon(s->registered);
     if (sIconBudget && s->mode == MODE_BATTLE_ACTION && s->quickBall != ITEM_NONE)
@@ -3598,263 +3633,6 @@ static void DrawColumn(const ViewState *s)
     DrawSquares(s);
 }
 
-/* ------------------------------------------------------------------------ */
-/* Drawing: party and summary                                               */
-/* ------------------------------------------------------------------------ */
-
-#if 0
-/* The bottom screen's own party menu, summary and lower panel: replaced by the game's party menu
- * (party_menu.c, CTR_CENTRED_PARTY), which draws and takes touch itself. Kept out of the build until
- * the user agrees to delete it. */
-static void SetPartyColor(Pal *pal, u8 offset, u8 id)
-{
-    pal->c[offset] = Rgb565(sRes.partyRaw[id]);
-}
-
-/* party_menu.c's LoadPartyBoxPalette, for the states shown here. */
-static void PartyBoxPalette(Pal *pal, const MonView *m, bool8 selected)
-{
-    static const u8 offsets1[] = {4, 5, 6}, offsets2[] = {1, 7, 8};
-    static const u8 normal1[] = {52, 53, 54}, normal2[] = {49, 55, 56};
-    static const u8 sel1[] = {116, 117, 118}, sel2[] = {97, 103, 104};
-    static const u8 faint1[] = {84, 85, 86}, faint2[] = {81, 87, 88};
-    static const u8 selFaint1[] = {148, 149, 150};
-    static const u8 noMon[] = {17, 27, 28}, noMonOffsets[] = {1, 11, 12};
-    const u8 *ids1, *ids2;
-
-    if (!m->species)
-    {
-        for (int i = 0; i < 3; ++i)
-            SetPartyColor(pal, noMonOffsets[i], noMon[i]);
-        return;
-    }
-    if (m->fainted)
-        ids1 = selected ? selFaint1 : faint1, ids2 = selected ? sel2 : faint2;
-    else
-        ids1 = selected ? sel1 : normal1, ids2 = selected ? sel2 : normal2;
-    for (int i = 0; i < 3; ++i)
-    {
-        SetPartyColor(pal, offsets1[i], ids1[i]);
-        SetPartyColor(pal, offsets2[i], ids2[i]);
-    }
-}
-
-/* Positions from party_menu.c's sPartyBoxInfoRects and sprite coordinates. */
-typedef struct
-{
-    u8 nameX, nameY, levelX, levelY, genderX, genderY, hpX, hpY, maxHpX, maxHpY, barX, barY;
-    s8 iconX, iconY, statusX, statusY;
-} SlotLayout;
-
-static const SlotLayout sMainLayout = {24, 11, 32, 20, 64, 20, 38, 37, 53, 37, 24, 35, -8, 0, 26, 24};
-static const SlotLayout sWideLayout = {22, 3, 30, 12, 62, 12, 102, 12, 117, 12, 88, 10, -8, -6, 24, 15};
-#endif
-
-#if 0
-static void DrawPartySlot(const MonView *m, int slot, int x, int y, bool8 selected)
-{
-    bool8 main = slot == 0;
-    const SlotLayout *l = main ? &sMainLayout : &sWideLayout;
-    const u8 *map;
-    int w = main ? 10 : 18, h = main ? 7 : 3;
-    Pal pal = sRes.partyPal[main ? 3 : 4];
-    u16 fg, sh;
-
-    if (main)
-        map = m->isEgg && sRes.slotMainNoHp ? sRes.slotMainNoHp : sRes.slotMain;
-    else if (!m->species)
-        map = sRes.slotWideEmpty;
-    else
-        map = m->isEgg && sRes.slotWideNoHp ? sRes.slotWideNoHp : sRes.slotWide;
-    PartyBoxPalette(&pal, m, selected);
-    for (int ty = 0; ty < h; ++ty)
-        for (int tx = 0; tx < w; ++tx)
-            DrawTile(sRes.partyTiles + map[ty * w + tx] * 32, x + tx * 8, y + ty * 8, pal.c, FALSE, FALSE);
-    if (!m->species)
-        return;
-
-    fg = pal.c[TEXT_COLOR_LIGHT_GRAY];
-    sh = pal.c[TEXT_COLOR_DARK_GRAY];
-    DrawStr(&sSmall, m->nick, x + l->nameX, y + l->nameY, fg, sh);
-    if (!m->isEgg)
-    {
-        u8 text[16], *end;
-
-        StringCopy(text, gText_LevelSymbol);
-        StringAppend(text, Number(m->level, 3, STR_CONV_MODE_LEFT_ALIGN));
-        DrawStr(&sSmall, text, x + l->levelX, y + l->levelY, fg, sh);
-        if (m->gender == MON_MALE || m->gender == MON_FEMALE)
-        {
-            u8 color = m->gender == MON_MALE ? 59 : 75;
-            DrawStr(&sSmall, m->gender == MON_MALE ? gText_MaleSymbol : gText_FemaleSymbol, x + l->genderX,
-                    y + l->genderY, Rgb565(sRes.partyRaw[color]), Rgb565(sRes.partyRaw[color + 1]));
-        }
-        /* DisplayPartyPokemonHP and ...MaxHP both print a slash, overlapping. */
-        StringCopy(text, Number(m->hp, 3, STR_CONV_MODE_RIGHT_ALIGN));
-        end = text + StringLength(text);
-        end[0] = CHAR_SLASH;
-        end[1] = EOS;
-        DrawStr(&sSmall, text, x + l->hpX, y + l->hpY, fg, sh);
-        StringCopy(text, gText_Slash);
-        StringAppend(text, Number(m->maxHp, 3, STR_CONV_MODE_RIGHT_ALIGN));
-        DrawStr(&sSmall, text, x + l->maxHpX, y + l->maxHpY, fg, sh);
-        DrawHpBar(x + l->barX, y + l->barY, 48, m->hp, m->maxHp, &pal);
-        DrawStatusIcon(m->ailment, x + l->statusX, y + l->statusY);
-    }
-    /* All icons animate, as the one under the cursor does in the party
-     * menu; a fainted mon's stays still, as the game keeps it. */
-    AddMonIcon(m->iconSpecies, m->deoxys, x + l->iconX, y + l->iconY, m->fainted);
-}
-
-/* A message box across the lower panel: the text the hidden menu shows. */
-static void DrawPanelMessage(const u8 *text, int y, int ht, bool8 tappable)
-{
-    DrawBox(BOX_MESSAGE, 0, y, CW / 8, ht);
-    DrawStr(&sNormal, text, 18, y + 8, TXT_WHITE, TXT_DARK);
-    if (tappable)
-        AddHit(0, y, CW, ht * 8, HIT_PANEL);
-}
-
-/* The lower panel of the party and bag views, from y to the bottom. */
-static void DrawPanel(const ViewState *s, int y, const u8 *hint)
-{
-    int ht = (H - y) / 8;
-
-    switch (s->panel)
-    {
-    case PANEL_HINT:
-        DrawBox(BOX_MESSAGE, 0, y, 20, ht);
-        DrawStr(&sNormal, hint, 18, y + 8, TXT_WHITE, TXT_DARK);
-        DrawLabelButton(164, y + 4, 9, ht - 1, gText_Cancel2, s->pressed == HIT_CANCEL, TRUE, HIT_CANCEL);
-        break;
-    case PANEL_MESSAGE:
-        DrawPanelMessage(s->text, y, ht, TRUE);
-        break;
-    case PANEL_YESNO:
-        DrawPanelMessage(s->text, y, ht - 4, FALSE);
-        DrawLabelButton(0, H - 32, 15, 4, gText_Yes, s->pressed == HIT_YES, TRUE, HIT_YES);
-        DrawLabelButton(120, H - 32, 15, 4, gText_No, s->pressed == HIT_NO, TRUE, HIT_NO);
-        break;
-    case PANEL_QUANTITY:
-    {
-        static const u8 up[] = {CHAR_UP_ARROW, EOS}, down[] = {CHAR_DOWN_ARROW, EOS};
-        DrawPanelMessage(s->text, y, ht - 4, FALSE);
-        DrawLabelButton(0, H - 32, 7, 4, up, s->pressed == HIT_UP, TRUE, HIT_UP);
-        DrawLabelButton(56, H - 32, 7, 4, down, s->pressed == HIT_DOWN, TRUE, HIT_DOWN);
-        DrawLabelButton(112, H - 32, 8, 4, Ascii(CTR_TEXT("OK", "VALE", "OK", "OK", "OK")), s->pressed == HIT_OK, TRUE, HIT_OK);
-        DrawLabelButton(176, H - 32, 8, 4, gText_Cancel2, s->pressed == HIT_CANCEL, TRUE, HIT_CANCEL);
-        break;
-    }
-    case PANEL_ACTIONS:
-    {
-        /* The game's submenu: two rows of buttons. */
-        int cols = (s->menuCount + 1) / 2, cellW;
-        if (cols < 1) cols = 1;
-        cellW = (CW / cols) / 8;
-        for (int i = 0; i < s->menuCount; ++i)
-        {
-            int cx = (i % cols) * cellW * 8, cy = y + (i / cols) * ((ht / 2) * 8);
-            DrawLabelButtonFont(cellW >= 10 ? &sNormal : &sSmall, cx, cy, cellW, ht / 2, s->menuNames[i],
-                                s->pressed == HIT_MENU + i, TRUE, HIT_MENU + i);
-        }
-        break;
-    }
-    }
-}
-
-static void DrawParty(const ViewState *s)
-{
-    /* One main slot and five wide ones, as on the GBA, in the 240px view. */
-    const int mainX = 8, wideX = 94, wideTop = 8, gap = 8;
-
-    for (int i = 0; i < PARTY_SIZE; ++i)
-    {
-        int x = i == 0 ? mainX : wideX;
-        int y = i == 0 ? wideTop + 16 : wideTop + (i - 1) * (24 + gap);
-        int hitW = i == 0 ? 80 : 144, hitH = i == 0 ? 56 : 24;
-
-        DrawPartySlot(&s->party[i], i, x, y, s->partyCursor == i || s->pressed == HIT_SLOT + i);
-        if (s->party[i].species)
-            AddHit(x - 8, y - 4, hitW + 8, hitH + 8, HIT_SLOT + i);
-    }
-    DrawPanel(s, 168, gText_ChoosePokemon);
-}
-
-static void DrawSummary(const ViewState *s)
-{
-    static const char *const statNames[6] = {CTR_TEXT("HP", "PS", "PV", "PS", "PS"), CTR_TEXT("ATTACK", "ATAQUE", "ATTAQUE", "ATTACCO", "ATAQUE"), CTR_TEXT("DEFENSE", "DEFENSA", "DÉFENSE", "DIFESA", "DEFESA"),
-                                             CTR_TEXT("SP. ATK", "AT. ESP.", "ATQ. SP.", "ATT. SP.", "AT. ESP."), CTR_TEXT("SP. DEF", "DEF. ESP.", "DÉF. SP.", "DIF. SP.", "DEF. ESP."),
-                                             CTR_TEXT("SPEED", "VELOC.", "VITESSE", "VELOCITA", "VELOCIDADE")};
-    const MonView *m = &s->party[s->summary];
-    u8 text[24];
-
-    /* Who. */
-    DrawBox(BOX_MENU, 0, 0, 30, 7);
-    AddMonIcon(m->iconSpecies, m->deoxys, 6, 8, FALSE);
-    DrawStr(&sNormal, m->nick, 44, 8, TXT_DARK, TXT_LIGHT);
-    if (m->gender == MON_MALE || m->gender == MON_FEMALE)
-        DrawStr(&sNormal, m->gender == MON_MALE ? gText_MaleSymbol : gText_FemaleSymbol,
-                44 + StrWidth(&sNormal, m->nick) + 4, 8, m->gender == MON_MALE ? TXT_BLUE : TXT_RED,
-                m->gender == MON_MALE ? TXT_LBLUE : TXT_LRED);
-    StringCopy(text, gText_LevelSymbol);
-    StringAppend(text, Number(m->level, 3, STR_CONV_MODE_LEFT_ALIGN));
-    DrawStrRight(&sNormal, text, 228, 8, TXT_DARK, TXT_LIGHT);
-    DrawStr(&sSmall, gSpeciesNames[m->species], 44, 26, TXT_DARK, TXT_LIGHT);
-    DrawTypeIcon(s->types[0], 150, 24);
-    if (s->types[1] != s->types[0])
-        DrawTypeIcon(s->types[1], 186, 24);
-    if (s->heldItem)
-    {
-        DrawItemIcon(s->heldItem, 12, 30);
-        DrawStr(&sSmall, GetItemName(s->heldItem), 44, 40, TXT_DARK, TXT_LIGHT);
-    }
-
-    /* Stats, nature and ability. */
-    DrawBox(BOX_MENU, 0, 56, 30, 10);
-    for (int i = 0; i < 6; ++i)
-    {
-        int x = 12 + (i % 2) * 112, y = 64 + (i / 2) * 14;
-        DrawStr(&sSmall, Ascii(statNames[i]), x, y, TXT_DARK, TXT_LIGHT);
-        if (i == 0)
-        {
-            StringCopy(text, Number(m->hp, 3, STR_CONV_MODE_LEFT_ALIGN));
-            StringAppend(text, gText_Slash);
-            StringAppend(text, Number(s->stats[0], 3, STR_CONV_MODE_LEFT_ALIGN));
-            DrawStrRight(&sSmall, text, x + 100, y, TXT_DARK, TXT_LIGHT);
-        }
-        else
-            DrawStrRight(&sSmall, Number(s->stats[i], 3, STR_CONV_MODE_LEFT_ALIGN), x + 100, y, TXT_DARK, TXT_LIGHT);
-    }
-    DrawStr(&sSmall, gNatureNamePointers[s->nature], 12, 108, TXT_BLUE, TXT_LBLUE);
-    DrawStr(&sSmall, gAbilityNames[s->ability], 124, 108, TXT_BLUE, TXT_LBLUE);
-
-    /* Moves. */
-    DrawBox(BOX_MENU, 0, 136, 30, 10);
-    for (int i = 0; i < MAX_MON_MOVES; ++i)
-    {
-        int y = 142 + i * 16;
-        if (!s->moves[i])
-            continue;
-        DrawTypeIcon(gBattleMoves[s->moves[i]].type, 10, y);
-        DrawStr(&sSmall, gMoveNames[s->moves[i]], 48, y + 1, TXT_DARK, TXT_LIGHT);
-        StringCopy(text, gText_MoveInterfacePP);
-        StringAppend(text, Ascii(" "));
-        StringAppend(text, Number(s->pp[i], 2, STR_CONV_MODE_RIGHT_ALIGN));
-        StringAppend(text, gText_Slash);
-        StringAppend(text, Number(s->maxPp[i], 2, STR_CONV_MODE_RIGHT_ALIGN));
-        DrawStrRight(&sSmall, text, 228, y + 1, TXT_DARK, TXT_LIGHT);
-    }
-
-    /* Previous, back, next. */
-    {
-        static const u8 left[] = {CHAR_LEFT_ARROW, EOS}, right[] = {CHAR_RIGHT_ARROW, EOS};
-        DrawLabelButton(0, 216, 7, 3, left, s->pressed == HIT_PREV, TRUE, HIT_PREV);
-        DrawLabelButton(56, 216, 16, 3, gText_Cancel2, s->pressed == HIT_BACK, TRUE, HIT_BACK);
-        DrawLabelButton(184, 216, 7, 3, right, s->pressed == HIT_NEXT, TRUE, HIT_NEXT);
-    }
-}
-
-#endif /* old party menu */
 
 /* ------------------------------------------------------------------------ */
 /* Drawing: region map                                                    */
@@ -3865,12 +3643,17 @@ static void DrawSummary(const ViewState *s)
  * (the plates' outline, a white line, a shade line on its top and left).
  * The map keeps its x; the frame hides its first and last columns, the 248px
  * picture's overflow the GBA's own frame hides too. Hoenn's 150 rows are
- * centred in the window. The area's name is on a plate below it.
+ * centred in the window. The clock is on a bar above it, the area's name on
+ * a plate below it.
  */
+#define CLOCK_X 5
+#define CLOCK_Y 5
+#define CLOCK_W 230
+#define CLOCK_H 15
 #define MAP_ORIGIN_X 0
-#define MAP_ORIGIN_Y 26
+#define MAP_ORIGIN_Y 36
 #define MAP_WIN_X0 8
-#define MAP_WIN_Y0 8
+#define MAP_WIN_Y0 28
 #define MAP_WIN_X1 232
 #define MAP_WIN_Y1 195
 #define NAME_X 5
@@ -3963,19 +3746,134 @@ static void BuildMapCache(void)
     sDst = sCanvas;
 }
 
+/* Map extras on the name plate: its right part holds the list toggle's word
+ * (WILD on the map, MAP on the list) above the Repel's steps. */
+#define NAME_SIDE_X (NAME_X + NAME_W - 80)
+
+static void DrawNameSide(const ViewState *s, bool8 picked)
+{
+    static const char *const wild = CTR_TEXT("WILD", "SALVAJES", "SAUVAGES", "SELVATICI", "SELVAGENS");
+    static const char *const map = CTR_TEXT("MAP", "MAPA", "CARTE", "MAPPA", "MAPA");
+    static const char *const repel = CTR_TEXT("REPEL", "REPEL.", "REPOUS.", "REPELL.", "REPEL.");
+    char text[24];
+    int x0 = NAME_SIDE_X, x1 = NAME_X + NAME_W - 4, y0 = NAME_Y + 2, y1 = NAME_Y + NAME_H - 3;
+    int mid = (y0 + y1) / 2;
+    u16 fg = picked ? TXT_WHITE : TXT_DARK, shadow = picked ? sLook.chosenShadow : TXT_LIGHT;
+
+    if (s->encOn)
+        DrawStrIn(&sSmall, Ascii(s->encView ? map : wild), x0, x1, y0, s->repelShown ? mid : y1, fg, shadow);
+    if (s->repelShown)
+    {
+        snprintf(text, sizeof(text), "%s %u", repel, (unsigned)s->repelSteps);
+        DrawStrIn(&sSmall, Ascii(text), x0, x1, s->encOn ? mid : y0, y1, fg, shadow);
+    }
+}
+
 static void DrawRegionName(const ViewState *s)
 {
     u8 name[32];
-    int height = s->clockShown ? 17 : NAME_H;
     bool8 picked = s->pickMapsec != MAPSEC_NONE;
     u8 mapsec = picked ? s->pickMapsec : s->mapsec;
+    bool8 side = s->encOn || s->repelShown;
 
-    if (mapsec == MAPSEC_NONE)
+    if (mapsec == MAPSEC_NONE && !side)
         return;
-    GetMapName(name, mapsec, 0);
-    DrawPlate(NAME_X, NAME_Y, NAME_W, height, picked ? &sLook.chosen : &sLook.plate, 0, FALSE);
-    DrawStrIn(s->clockShown ? &sSmall : &sNormal, name, NAME_X + 1, NAME_X + NAME_W - 1, NAME_Y + 1, NAME_Y + height - 2,
-              picked ? TXT_WHITE : TXT_DARK, picked ? sLook.chosenShadow : TXT_LIGHT);
+    DrawPlate(NAME_X, NAME_Y, NAME_W, NAME_H, picked ? &sLook.chosen : &sLook.plate, 0, s->pressed == HIT_MAP_INFO);
+    if (mapsec != MAPSEC_NONE)
+    {
+        GetMapName(name, mapsec, 0);
+        DrawStrIn(&sNormal, name, NAME_X + 1, side ? NAME_SIDE_X : NAME_X + NAME_W - 1, NAME_Y + 1, NAME_Y + NAME_H - 2,
+                  picked ? TXT_WHITE : TXT_DARK, picked ? sLook.chosenShadow : TXT_LIGHT);
+    }
+    if (side)
+        DrawNameSide(s, picked);
+}
+
+/* The wild list, in the map's window: a plate, the method's title (and the
+ * page of how many), then a row a species: name, levels, chance. */
+#define ENC_X0 (MAP_WIN_X0 + 2)
+#define ENC_X1 (MAP_WIN_X1 - 2)
+#define ENC_TITLE_Y (MAP_WIN_Y0 + 2)
+#define ENC_TITLE_H 16
+#define ENC_ROW_Y (ENC_TITLE_Y + ENC_TITLE_H + 2)
+#define ENC_ROW_H 12
+#define ENC_COL_LEVEL (ENC_X0 + 102)
+#define ENC_COL_PERCENT (ENC_X0 + 166)
+
+/* A species not seen is "???": the list names no more than the Pokedex. */
+static const u8 *EncName(const EncRow *row)
+{
+    return row->seen ? gSpeciesNames[row->species] : Ascii("???");
+}
+
+static void DrawEncounters(const ViewState *s)
+{
+    static const char *const methods[ENC_METHODS] = {
+        CTR_TEXT("GRASS", "HIERBA", "HERBES", "ERBA", "GRAMA"), CTR_TEXT("SURFING", "SURF", "SURF", "SURF", "SURF"),
+        CTR_TEXT("ROCK SMASH", "GOLPE ROCA", "ÉCLATE-ROC", "SPACCAROCCIA", "QUEBRA-ROCHA"),
+        CTR_TEXT("OLD ROD", "CAÑA VIEJA", "CANNE", "AMO VECCHIO", "VARA VELHA"),
+        CTR_TEXT("GOOD ROD", "CAÑA BUENA", "SUPER CANNE", "AMO BUONO", "VARA BOA"),
+        CTR_TEXT("SUPER ROD", "SUPERCAÑA", "MÉGA CANNE", "SUPERAMO", "SUPER VARA"),
+    };
+    static const char *const none = CTR_TEXT("NO ENCOUNTER TABLE", "SIN TABLA DE ENCUENTROS", "AUCUNE TABLE ICI",
+                                             "NESSUNA TABELLA", "SEM TABELA DE ENCONTROS");
+    static const char *const level = CTR_TEXT("LV", "NV", "N", "LV", "NV");
+    char text[24];
+    int saved[4];
+
+    ClipToMapWindow(saved);
+    DrawPlate(MAP_WIN_X0, MAP_WIN_Y0, MAP_WIN_X1 - MAP_WIN_X0, MAP_WIN_Y1 - MAP_WIN_Y0, &sLook.plate, 0, FALSE);
+    if (s->encPages == 0 || s->encMethod >= ENC_METHODS)
+    {
+        DrawStrIn(&sSmall, Ascii(none), ENC_X0, ENC_X1, MAP_WIN_Y0, MAP_WIN_Y1, TXT_DARK, TXT_LIGHT);
+        RestoreClip(saved);
+        return;
+    }
+    DrawPlate(ENC_X0, ENC_TITLE_Y, ENC_X1 - ENC_X0, ENC_TITLE_H, &sLook.chosen, 0, FALSE);
+    DrawStrIn(&sSmall, Ascii(methods[s->encMethod]), ENC_X0 + 2, ENC_COL_PERCENT, ENC_TITLE_Y,
+              ENC_TITLE_Y + ENC_TITLE_H, TXT_WHITE, sLook.chosenShadow);
+    if (s->encPages > 1)
+    {
+        snprintf(text, sizeof(text), "%u/%u", s->encPage + 1u, (unsigned)s->encPages);
+        DrawStrIn(&sSmall, Ascii(text), ENC_COL_PERCENT, ENC_X1 - 2, ENC_TITLE_Y, ENC_TITLE_Y + ENC_TITLE_H,
+                  TXT_WHITE, sLook.chosenShadow);
+    }
+    for (int i = 0; i < s->encCount && i < ENC_ROWS; ++i)
+    {
+        const EncRow *row = &s->enc[i];
+        int y = ENC_ROW_Y + i * ENC_ROW_H;
+
+        DrawStrIn(&sSmall, EncName(row), ENC_X0 + 2, ENC_COL_LEVEL, y, y + ENC_ROW_H, TXT_DARK, TXT_LIGHT);
+        if (row->minLevel == row->maxLevel)
+            snprintf(text, sizeof(text), "%s%u", level, (unsigned)row->minLevel);
+        else
+            snprintf(text, sizeof(text), "%s%u-%u", level, (unsigned)row->minLevel, (unsigned)row->maxLevel);
+        DrawStrIn(&sSmall, Ascii(text), ENC_COL_LEVEL, ENC_COL_PERCENT, y, y + ENC_ROW_H, TXT_DARK, TXT_LIGHT);
+        snprintf(text, sizeof(text), "%u%%", (unsigned)row->percent);
+        DrawStrIn(&sSmall, Ascii(text), ENC_COL_PERCENT, ENC_X1 - 2, y, y + ENC_ROW_H, TXT_DARK, TXT_LIGHT);
+    }
+    RestoreClip(saved);
+}
+
+/* Over the map's top, until tapped: the saved clock could not be restored
+ * and the 3DS's is in use. The game goes on; nothing is said of the save. */
+#define NOTICE_X (MAP_WIN_X0 + 4)
+#define NOTICE_Y (MAP_WIN_Y0 + 4)
+#define NOTICE_W (MAP_WIN_X1 - MAP_WIN_X0 - 8)
+#define NOTICE_H 30
+
+static void DrawClockNotice(const ViewState *s)
+{
+    static const char *const first = CTR_TEXT("SAVED CLOCK NOT RESTORED", "RELOJ GUARDADO NO RESTAURADO",
+                                              "HORLOGE SAUVÉE NON RESTAURÉE", "OROLOGIO NON RIPRISTINATO", "RELÓGIO SALVO NÃO RESTAURADO");
+    static const char *const second = CTR_TEXT("USING 3DS CLOCK - TAP TO HIDE", "USANDO RELOJ 3DS - TOCA AQUÍ",
+                                               "HORLOGE 3DS UTILISÉE - TOUCHER", "OROLOGIO 3DS IN USO - TOCCA", "USANDO RELÓGIO 3DS - TOQUE AQUI");
+
+    DrawPlate(NOTICE_X, NOTICE_Y, NOTICE_W, NOTICE_H, &sLook.chosen, 0, s->pressed == HIT_CLOCK_NOTICE);
+    DrawStrIn(&sSmall, Ascii(first), NOTICE_X + 2, NOTICE_X + NOTICE_W - 2, NOTICE_Y + 2, NOTICE_Y + 15,
+              TXT_WHITE, sLook.chosenShadow);
+    DrawStrIn(&sSmall, Ascii(second), NOTICE_X + 2, NOTICE_X + NOTICE_W - 2, NOTICE_Y + 14, NOTICE_Y + NOTICE_H - 3,
+              TXT_WHITE, sLook.chosenShadow);
 }
 
 static void DrawMapClock(const ViewState *s)
@@ -3985,11 +3883,11 @@ static void DrawMapClock(const ViewState *s)
         CTR_TEXT("EVENING", "TARDE", "SOIR", "SERA", "TARDE"), CTR_TEXT("NIGHT", "NOCHE", "NUIT", "NOTTE", "NOITE")
     };
     char time[8], speed[8];
-    int top = NAME_Y + 18, bottom = NAME_Y + NAME_H;
+    int top = CLOCK_Y, bottom = CLOCK_Y + CLOCK_H;
 
-    if (!s->clockShown)
+    if (s->inBattle)
         return;
-    DrawPlate(NAME_X, top, NAME_W, bottom - top, &sLook.plate, 0, FALSE);
+    DrawPlate(CLOCK_X, top, CLOCK_W, CLOCK_H, &sLook.plate, 0, FALSE);
     if (s->clockValid)
     {
         snprintf(time, sizeof(time), "%02u:%02u", s->clockMinute / 60u, s->clockMinute % 60u);
@@ -4000,13 +3898,15 @@ static void DrawMapClock(const ViewState *s)
         strcpy(time, "--:--");
         strcpy(speed, "--");
     }
-    DrawStrIn(&sSmall, Ascii(time), NAME_X + 4, NAME_X + 65, top, bottom, TXT_DARK, TXT_LIGHT);
+    DrawStrIn(&sSmall, Ascii(time), CLOCK_X + 4, CLOCK_X + 65, top, bottom, TXT_DARK, TXT_LIGHT);
+    if (!s->clockShown)
+        return;
     unsigned phase = s->clockPhase == CTR_TIME_NIGHT ? 3u
                    : s->clockPhase == CTR_TIME_MORNING ? 0u
                    : s->clockMinute >= 16u * 60u ? 2u : 1u;
     DrawStrIn(&sSmall, Ascii(s->clockValid ? phases[phase] : "--"),
-              NAME_X + 66, NAME_X + 168, top, bottom, TXT_DARK, TXT_LIGHT);
-    DrawStrIn(&sSmall, Ascii(speed), NAME_X + 169, NAME_X + NAME_W - 4, top, bottom, TXT_DARK, TXT_LIGHT);
+              CLOCK_X + 66, CLOCK_X + 168, top, bottom, TXT_DARK, TXT_LIGHT);
+    DrawStrIn(&sSmall, Ascii(speed), CLOCK_X + 169, CLOCK_X + CLOCK_W - 4, top, bottom, TXT_DARK, TXT_LIGHT);
 }
 
 /* The player's mark and a picked cell's cursor, inside the window. */
@@ -4026,10 +3926,26 @@ static void DrawMapMarks(const ViewState *s)
 
 static void DrawRegionMap(const ViewState *s)
 {
-    DrawMapMarks(s);
-    AddHit(MAP_WIN_X0, MAP_WIN_Y0, MAP_WIN_X1 - MAP_WIN_X0, MAP_WIN_Y1 - MAP_WIN_Y0, HIT_MAP);
+    if (s->encView)
+    {
+        DrawEncounters(s);
+        if (s->encPages > 1)
+            AddHit(MAP_WIN_X0, MAP_WIN_Y0, MAP_WIN_X1 - MAP_WIN_X0, MAP_WIN_Y1 - MAP_WIN_Y0, HIT_MAP_PAGE);
+    }
+    else
+    {
+        DrawMapMarks(s);
+        AddHit(MAP_WIN_X0, MAP_WIN_Y0, MAP_WIN_X1 - MAP_WIN_X0, MAP_WIN_Y1 - MAP_WIN_Y0, HIT_MAP);
+    }
+    if (s->encOn)
+        AddHit(NAME_X, NAME_Y, NAME_W, NAME_H, HIT_MAP_INFO);
     DrawRegionName(s);
     DrawMapClock(s);
+    if (s->clockNotice)
+    {
+        DrawClockNotice(s);
+        AddHit(NOTICE_X, NOTICE_Y, NOTICE_W, NOTICE_H, HIT_CLOCK_NOTICE);
+    }
 }
 
 /* The section under a tapped map cell, as the region map's cursor finds it. */
@@ -4256,19 +4172,6 @@ static void DrawTrainerCard(const ViewState *s)
 /* Drawing: save, options, PokéNav                                          */
 /* ------------------------------------------------------------------------ */
 
-static void DrawSave(const ViewState *s)
-{
-    DrawBox(BOX_MESSAGE, 0, 40, 30, 8);
-    DrawStr(&sNormal, s->text, 18, 52, TXT_WHITE, TXT_DARK);
-    if (s->saveStep == SAVE_DONE)
-    {
-        DrawLabelButton(64, 136, 14, 5, Ascii(CTR_TEXT("OK", "VALE", "OK", "OK", "OK")), s->pressed == HIT_OK, TRUE, HIT_OK);
-        return;
-    }
-    DrawLabelButton(8, 136, 13, 6, gText_Yes, s->pressed == HIT_YES, s->canSave, HIT_YES);
-    DrawLabelButton(128, 136, 13, 6, gText_No, s->pressed == HIT_NO, TRUE, HIT_NO);
-}
-
 static const u8 *OptionValue(int row, u8 value)
 {
     static u8 frame[16];
@@ -4321,6 +4224,159 @@ static void DrawWindowFrame(u8 type, int x, int y, int wt, int ht, u16 fill)
                 continue;
             DrawTile(tiles + (row * 3 + col) * 32, x + tx * 8, y + ty * 8, pal.c, FALSE, FALSE);
         }
+}
+
+/*
+ * SAVE: the question in the window frame the player chose (OPTIONS), the
+ * file as one big plate of the column's look - the trainer's picture in a
+ * tinted socket, name, ID, where the player is, the Pokédex, the time, the
+ * badges and the party's icons - and the answers as plates below.
+ */
+#define SAVE_MSG_X 8
+#define SAVE_MSG_Y 8
+#define SAVE_FILE_Y 51
+#define SAVE_PIC_X 18
+#define SAVE_PIC_Y 59
+#define SAVE_PIC_W 72
+#define SAVE_PIC_H 76
+#define SAVE_INFO_X0 98
+#define SAVE_INFO_X1 224
+#define SAVE_PARTY_Y 151
+#define SAVE_BUTTON_Y 201
+#define SAVE_BUTTON_H 34
+
+static int StrLines(const u8 *str)
+{
+    int lines = 1;
+
+    for (u16 g; (g = NextGlyph(&str)) != 0xFFFF;)
+        if (g == 0xFFFE)
+            ++lines;
+    return lines;
+}
+
+/* A label plate: the column's plate, green when it is the answer the game
+ * expects, grey while it cannot be chosen. */
+static void DrawSavePlate(int x, int w, const u8 *label, bool8 chosen, bool8 pressed, bool8 enabled, u8 id)
+{
+    const PlateLook *look = !enabled ? &sLook.off : chosen ? &sLook.chosen : &sLook.plate;
+    u16 fg = !enabled ? sLook.offText : chosen ? TXT_WHITE : TXT_DARK;
+    u16 sh = !enabled ? sLook.offShadow : chosen ? sLook.chosenShadow : TXT_LIGHT;
+
+    DrawPlate(x, SAVE_BUTTON_Y, w, SAVE_BUTTON_H, look, 0, pressed && enabled);
+    DrawStrCentered(&sNormal, label, x + w / 2, SAVE_BUTTON_Y + 9 + (pressed && enabled), fg, sh);
+    if (enabled)
+        AddHit(x, SAVE_BUTTON_Y, w, SAVE_BUTTON_H, id);
+}
+
+static void DrawSaveFile(const ViewState *s)
+{
+    u8 text[32];
+    const PlateLook *p = &sLook.plate;
+    int px = SAVE_PIC_X, py = SAVE_PIC_Y, pw = SAVE_PIC_W, ph = SAVE_PIC_H, x0 = SAVE_INFO_X0, x1 = SAVE_INFO_X1;
+    int floorY = py + ph - 14, feetX = px + pw / 2, feetY = py + ph - 16;
+
+    DrawPlate(8, SAVE_FILE_Y, 224, 138, p, 0, FALSE);
+
+    /* The picture's socket, its floor and the trainer's shadow on it. */
+    FillRect(px + 1, py, pw - 2, ph, p->u);
+    FillRect(px, py + 1, pw, ph - 2, p->u);
+    FillRect(px + 1, py + 1, pw - 2, ph - 2, p->t);
+    FillRect(px + 1, floorY, pw - 2, 13, sLook.section[SECTION_BALL]);
+    FillRect(px + 1, floorY, pw - 2, 1, p->u);
+    for (int y = -3; y <= 3; ++y)
+        for (int x = -22; x <= 22; ++x)
+            if (49 * x * x + 1936 * y * y < 23716)
+                Put(feetX + x, feetY + y, p->u);
+    if (sRes.trainerPic[s->gender])
+        DrawSprite(sRes.trainerPic[s->gender], 8, 8, px + 4, py + 2, sRes.trainerPicPal[s->gender].c);
+
+    /* Name and ID, a rule, then where, the Pokédex and the time. */
+    DrawStr(&sNormal, s->name, x0, 58, TXT_DARK, TXT_LIGHT);
+    StringCopy(StringCopy(text, gText_TrainerCardIDNo), Number(s->id, 5, STR_CONV_MODE_LEADING_ZEROS));
+    DrawStrRight(&sNormal, text, x1, 58, TXT_DARK, TXT_LIGHT);
+    FillRect(x0, 74, x1 - x0, 1, p->s);
+    if (s->mapsec != MAPSEC_NONE)
+    {
+        GetMapName(text, s->mapsec, 0);
+        DrawStr(&sNormal, text, x0, 76, TXT_BLUE, TXT_LBLUE);
+    }
+    if (s->hasDex)
+    {
+        DrawStr(&sNormal, gText_TrainerCardPokedex, x0, 92, TXT_DARK, TXT_LIGHT);
+        DrawStrRight(&sNormal, Number(s->dex, 3, STR_CONV_MODE_LEFT_ALIGN), x1, 92, TXT_DARK, TXT_LIGHT);
+    }
+    DrawStr(&sNormal, gText_TrainerCardTime, x0, 108, TXT_DARK, TXT_LIGHT);
+    {
+        int colon = StrWidth(&sNormal, gText_Colon2), x = x1 - (colon + 12);
+
+        DrawStrRight(&sNormal, Number(s->hours, 3, STR_CONV_MODE_LEFT_ALIGN), x, 108, TXT_DARK, TXT_LIGHT);
+        DrawStr(&sNormal, gText_Colon2, x, 108, TXT_DARK, TXT_LIGHT);
+        DrawStr(&sNormal, Number(s->minutes, 2, STR_CONV_MODE_LEADING_ZEROS), x + colon, 108, TXT_DARK, TXT_LIGHT);
+    }
+
+    /* The badges: won ones as the card has them, the rest as sockets. */
+    if (sRes.badgeTiles)
+    {
+        Pal socket;
+
+        for (int i = 0; i < 16; ++i)
+            socket.c[i] = p->s;
+        for (int i = 0; i < NUM_BADGES; ++i)
+        {
+            const u16 *pal = (s->badges & (1 << i)) ? sRes.badgePal.c : socket.c;
+            int x = x0 - 2 + i * 16, y = 124;
+
+            DrawTile(sRes.badgeTiles + (2 * i) * 32, x, y, pal, FALSE, FALSE);
+            DrawTile(sRes.badgeTiles + (2 * i + 1) * 32, x + 8, y, pal, FALSE, FALSE);
+            DrawTile(sRes.badgeTiles + (2 * i + 16) * 32, x, y + 8, pal, FALSE, FALSE);
+            DrawTile(sRes.badgeTiles + (2 * i + 17) * 32, x + 8, y + 8, pal, FALSE, FALSE);
+        }
+    }
+
+    /* The party, under a rule: each icon on a little floor; an empty place
+     * is a dot. */
+    FillRect(16, SAVE_PARTY_Y - 5, 208, 1, p->s);
+    for (int i = 0; i < PARTY_SIZE; ++i)
+    {
+        const MonView *mon = &s->party[i];
+        int x = 18 + i * 34, y = SAVE_PARTY_Y;
+
+        FillRect(x + 3, y + 26, 26, 3, p->t);
+        if (mon->species)
+        {
+            const u8 *tiles = MonIcon(mon->iconSpecies, mon->deoxys);
+            u8 pal = gMonIconPaletteIndices[mon->iconSpecies];
+
+            if (tiles && pal < 3)
+                DrawSprite(tiles, 4, 4, x, y - 2, sRes.monIconPal[pal].c);
+        }
+        else
+        {
+            for (int dy = -5; dy <= 5; ++dy)
+                for (int dx = -5; dx <= 5; ++dx)
+                    if (dx * dx + dy * dy <= 25)
+                        Put(x + 16 + dx, y + 15 + dy, p->s);
+        }
+    }
+}
+
+static void DrawSave(const ViewState *s)
+{
+    int lines = StrLines(s->text), ht = lines * 2 > 4 ? lines * 2 : 4;
+
+    DrawSaveFile(s);
+    if (s->saveStep == SAVE_DONE)
+        DrawSavePlate(64, 112, Ascii(CTR_TEXT("OK", "VALE", "OK", "OK", "OK")), TRUE, s->pressed == HIT_OK, TRUE, HIT_OK);
+    else
+    {
+        DrawSavePlate(10, 106, gText_Yes, TRUE, s->pressed == HIT_YES, s->canSave, HIT_YES);
+        DrawSavePlate(124, 106, gText_No, FALSE, s->pressed == HIT_NO, TRUE, HIT_NO);
+    }
+    /* The question last: a long one (another file's warning) covers the
+     * file rather than being cut. */
+    DrawWindowFrame(s->frame, SAVE_MSG_X, SAVE_MSG_Y, CW / 8 - 2, ht, TXT_WHITE);
+    DrawStr(&sNormal, s->text, SAVE_MSG_X + 4, SAVE_MSG_Y + 1 + (ht * 8 - 2 - lines * 16) / 2, TXT_DARK, TXT_LIGHT);
 }
 
 /*
@@ -4539,19 +4595,21 @@ static void DrawOptionCell(const ViewState *s, int row, const u8 *name, bool8 vo
 
 /* An extra's cell: its name, and its value between the arrows, or for an
  * action its one text without them. */
-static void DrawExtraCell(const ViewState *s, int row, const CtrExtra *extra)
+static void DrawExtraCell(const ViewState *s, int row, const CtrExtra *extra, bool8 voxel)
 {
-    bool8 on = s->pressed == HIT_OPTION + row || s->pressed == HIT_OPTION + HIT_OPTION_BACK + row;
+    bool8 live = ExtraLive(extra, voxel);
+    bool8 on = live && (s->pressed == HIT_OPTION + row || s->pressed == HIT_OPTION + HIT_OPTION_BACK + row);
     const char *value = extra->values ? extra->values[extra->count ? s->extras[row] : 0] : "";
     bool8 arrows = extra->count != 0 || extra->step != NULL;
     int x, y;
 
     OptionCell(row, &x, &y);
-    DrawCellPlate(x, y, Ascii(extra->name), extra->text ? extra->text() : Ascii(value), TRUE, on, arrows);
-    if (arrows)
+    DrawCellPlate(x, y, Ascii(extra->name), extra->text ? extra->text() : Ascii(value), live, on, arrows);
+    if (arrows && live)
         AddHit(x, y, OPT_CELL_W / 2, OPT_CELL_H, HIT_OPTION + HIT_OPTION_BACK + row);
-    AddHit(x + (arrows ? OPT_CELL_W / 2 : 0), y, arrows ? OPT_CELL_W / 2 : OPT_CELL_W, OPT_CELL_H,
-           HIT_OPTION + row);
+    if (live)
+        AddHit(x + (arrows ? OPT_CELL_W / 2 : 0), y, arrows ? OPT_CELL_W / 2 : OPT_CELL_W, OPT_CELL_H,
+               HIT_OPTION + row);
     if (s->optFocus == row)
         DrawRing(x, y, OPT_CELL_W, OPT_CELL_H, s->blink);
 }
@@ -4621,7 +4679,7 @@ static void OptionNames(const u8 *names[OPTION_ROWS])
     const u8 *const table[OPTION_ROWS] = {
         gText_TextSpeed, gText_BattleScene, gText_BattleStyle, gText_Sound,
         gText_ButtonMode, gText_Frame, Ascii(CTR_TEXT("SHOW FPS", "MOSTRAR FPS", "AFFICH. FPS", "MOSTRA FPS", "MOSTRAR FPS")), Ascii("VOXEL 3D"),
-        Ascii(CTR_TEXT("3D ANGLE", "ANGULO 3D", "ANGLE 3D", "ANGOLO 3D", "ÂNGULO 3D")), Ascii(CTR_TEXT("3D ZOOM", "ZOOM 3D", "ZOOM 3D", "ZOOM 3D", "ZOOM 3D")),
+        Ascii(CTR_TEXT("3D ANGLE", "ÁNGULO 3D", "ANGLE 3D", "ANGOLO 3D", "ÂNGULO 3D")), Ascii(CTR_TEXT("3D ZOOM", "ZOOM 3D", "ZOOM 3D", "ZOOM 3D", "ZOOM 3D")),
         Ascii(CTR_TEXT("3D BLUR", "DESENFOQUE 3D", "FLOU 3D", "SFOC. 3D", "DESFOQUE 3D")), Ascii(CTR_TEXT("3D BATTLE", "COMBATE 3D", "COMBAT 3D", "BATTAGLIA 3D", "BATALHA 3D"))};
 
     memcpy(names, table, sizeof(table));
@@ -4646,7 +4704,7 @@ static void DrawOptions(const ViewState *s)
             const CtrExtra *extra = PageExtra(s->optPage, row);
 
             if (extra)
-                DrawExtraCell(s, row, extra);
+                DrawExtraCell(s, row, extra, voxel);
         }
         return;
     }
@@ -5424,8 +5482,6 @@ static void WarmView(ViewState *v, u8 battler)
     v->safari = (gBattleTypeFlags & BATTLE_TYPE_SAFARI) != 0;
     v->quickBall = v->safari ? ITEM_NONE : CtrBattle_QuickBallItem();
     v->pressed = HIT_NONE;
-    v->summary = -1;
-    v->partyCursor = -1;
     if (v->safari)
         v->safariBalls = gNumSafariBalls;
     if (v->quickBall != ITEM_NONE)
@@ -5770,6 +5826,7 @@ static bool8 OptionCellArgs(unsigned page, unsigned row, const u8 options[OPTION
     else
     {
         const CtrExtra *extra = PageExtra(page, row);
+        bool8 voxel = OPTION_SHOWN > OPT_VOXEL && options[OPT_VOXEL];
 
         if (!extra)
             return FALSE;
@@ -5783,7 +5840,7 @@ static bool8 OptionCellArgs(unsigned page, unsigned row, const u8 options[OPTION
 
             c->value = Ascii(extra->values ? extra->values[extra->count ? shown : 0] : "");
         }
-        c->live = TRUE;
+        c->live = ExtraLive(extra, voxel);
         c->arrows = extra->count != 0 || extra->step != NULL;
     }
     OptionCell(row, &c->x, &c->y);
@@ -6293,12 +6350,22 @@ static bool8 DirtyRect(const ViewState *now, const ViewState *shown, Rect *r)
         probe.clockRate = shown->clockRate;
         probe.clockPhase = shown->clockPhase;
         probe.clockMinute = shown->clockMinute;
+        /* The Repel's steps and the name plate pressed touch that plate alone. */
+        probe.repelShown = shown->repelShown;
+        probe.repelSteps = shown->repelSteps;
+        if ((now->pressed == HIT_MAP_INFO && shown->pressed == HIT_NONE)
+         || (now->pressed == HIT_NONE && shown->pressed == HIT_MAP_INFO))
+            probe.pressed = shown->pressed;
         if (memcmp(&probe, shown, sizeof(probe)) != 0)
             return FALSE;
-        r->x0 = NAME_X;
-        r->y0 = NAME_Y;
-        r->x1 = NAME_X + NAME_W;
-        r->y1 = NAME_Y + NAME_H;
+        RectInit(r);
+        if (now->repelShown != shown->repelShown || now->repelSteps != shown->repelSteps
+         || now->pressed != shown->pressed)
+            RectAdd(r, NAME_X, NAME_Y, NAME_X + NAME_W, NAME_Y + NAME_H);
+        if (now->clockShown != shown->clockShown || now->clockValid != shown->clockValid
+         || now->clockRate != shown->clockRate || now->clockPhase != shown->clockPhase
+         || now->clockMinute != shown->clockMinute || r->x0 >= r->x1)
+            RectAdd(r, CLOCK_X, CLOCK_Y, CLOCK_X + CLOCK_W, CLOCK_Y + CLOCK_H);
         return TRUE;
     }
 
@@ -6409,30 +6476,25 @@ static void RenderPart(const ViewState *s, int x0, int y0, int x1, int y1)
 }
 
 /* ------------------------------------------------------------------------ */
-/* Pressing buttons for the player, in the hidden menus and in battle       */
+/* Pressing buttons for the player: one press, or a START entry             */
 /* ------------------------------------------------------------------------ */
 
 enum
 {
     PLAN_NONE,
     PLAN_PRESS,      /* one press of `keys` */
-    PLAN_KEYS,       /* `keys`, then A */
     PLAN_START,      /* open start menu entry `target` */
 };
 
 typedef struct
 {
-    u8 kind, steps, wait, cols, tries, maxWait;
+    u8 kind, steps, wait, tries;
     bool8 release;
     s16 target;
     u16 keys;
 } Plan;
 
 static Plan sPlan;
-/* What follows the current plan: opening the party menu on a mon... Each
- * step waits for the game to reach the screen it needs. */
-static Plan sQueue[2];
-static u8 sQueued;
 static u16 sInjected;
 
 static Plan MakePlan(u8 kind, s16 target)
@@ -6442,14 +6504,12 @@ static Plan MakePlan(u8 kind, s16 target)
     memset(&p, 0, sizeof(p));
     p.kind = kind;
     p.target = target;
-    p.maxWait = 45;
     return p;
 }
 
 static void StartPlan(u8 kind, s16 target)
 {
     sPlan = MakePlan(kind, target);
-    sQueued = 0;
 }
 
 /* One press of keys, as the player's own: the column's Y is SELECT. */
@@ -6459,33 +6519,9 @@ static void PressOnce(u16 keys)
     sPlan.keys = keys;
 }
 
-#if 0 /* only the old party menu queued plans or pressed keys */
-static void QueuePlan(Plan p)
-{
-    /* The screen it waits for is behind a fade and a menu setup. */
-    p.maxWait = 150;
-    if (sQueued < ARRAY_COUNT(sQueue))
-        sQueue[sQueued++] = p;
-}
-
-static void Press(u16 keys)
-{
-    StartPlan(PLAN_PRESS, 0);
-    sPlan.keys = keys;
-}
-
-#endif
-
 static void FinishPlan(void)
 {
-    if (sQueued)
-    {
-        sPlan = sQueue[0];
-        sQueue[0] = sQueue[1];
-        --sQueued;
-    }
-    else
-        sPlan.kind = PLAN_NONE;
+    sPlan.kind = PLAN_NONE;
 }
 
 static void CancelPlan(void)
@@ -6493,23 +6529,6 @@ static void CancelPlan(void)
     if (sPlan.kind == PLAN_START)
         CtrStartMenu_Request(START_NONE);
     sPlan.kind = PLAN_NONE;
-    sQueued = 0;
-}
-
-/* Where the game's cursor is, or FALSE while that menu is not taking input. */
-static bool8 PlanCursor(s16 *cursor)
-{
-    /* The game's party menu takes touch itself now (party_menu.c): no plan
-     * walks a cursor. */
-    (void)cursor;
-    return FALSE;
-}
-
-static u16 PlanStep(s16 cur, s16 target)
-{
-    (void)cur;
-    (void)target;
-    return 0;
 }
 
 /* START with a request pending opens that entry (see start_menu.c). */
@@ -6538,9 +6557,6 @@ static void RunStartPlan(void)
 
 static void RunPlan(void)
 {
-    s16 cur;
-
-    sInjected = 0;
     if (sPlan.kind == PLAN_NONE)
         return;
     /* The player's own buttons always win; not those the column holds back
@@ -6563,37 +6579,10 @@ static void RunPlan(void)
         FinishPlan();
         sPlan.release = TRUE;
         return;
-    case PLAN_KEYS:
-        sInjected = sPlan.keys;
-        sPlan = MakePlan(PLAN_PRESS, 0);
-        sPlan.keys = A_BUTTON;
-        sPlan.release = TRUE;
-        return;
     case PLAN_START:
         RunStartPlan();
         return;
     }
-    if (!PlanCursor(&cur))
-    {
-        if (++sPlan.wait > sPlan.maxWait)
-            CancelPlan();
-        return;
-    }
-    if (++sPlan.steps > 24)
-    {
-        CancelPlan();
-        return;
-    }
-    if (cur == sPlan.target)
-    {
-        sInjected = A_BUTTON;
-        FinishPlan();
-        /* The next step must not see this press as its own. */
-        sPlan.release = TRUE;
-        return;
-    }
-    sInjected = PlanStep(cur, sPlan.target);
-    sPlan.release = TRUE;
 }
 
 uint16_t CtrBottom_InjectedKeys(void)
@@ -6648,8 +6637,19 @@ static struct
 #define NAV_OPTION_Y 72
 #define NAV_OPTION_W 88
 
+/* Stops what is under way. A NAV_LEAVE given up - a key held, the PokéNav not
+ * closing, or another plan for it - drops the screen chosen from the column:
+ * that one is not to open later, when the player closes the PokéNav. */
+static void NavStop(void)
+{
+    if (sNav.kind == NAV_LEAVE)
+        sScreen = SCR_MAP;
+    sNav.kind = NAV_NONE;
+}
+
 static void NavStart(u8 kind, s16 target, u16 finish)
 {
+    NavStop();
     memset(&sNav, 0, sizeof(sNav));
     sNav.kind = kind;
     sNav.target = target;
@@ -6765,7 +6765,7 @@ static void RunNav(u8 mode)
      * chose another screen from it and started this NAV_LEAVE. */
     if (CtrBottom_FilterKeys(CtrInput_Get()->held) & CTR_KEY_GAME)
     {
-        sNav.kind = NAV_NONE;
+        NavStop();
         return;
     }
     /* A press only registers as new after a frame with the key up. */
@@ -6788,13 +6788,13 @@ static void RunNav(u8 mode)
     {
         /* Waiting for the PokéNav to take input, or a move to end. */
         if (++sNav.wait > 240)
-            sNav.kind = NAV_NONE;
+            NavStop();
         return;
     }
     if (done && sNav.kind != NAV_LEAVE)
         sNav.kind = NAV_NONE;
     if (++sNav.steps > 64)
-        sNav.kind = NAV_NONE;
+        NavStop();
     sInjected = keys;
     sNav.release = TRUE;
     sNav.wait = 0;
@@ -7010,89 +7010,15 @@ static void OpenSave(void)
     StringExpandPlaceholders(sSaveMessage, gText_ConfirmSave);
 }
 
-#if 0 /* The old party menu's buttons; the game's own takes touch itself. */
-/* A game menu entry: SUMMARY is shown here, the rest runs in the game. */
-static void ChooseMenuEntry(u8 index)
+/* A column screen chosen while one of the game's is on show, for when the
+ * area is the bottom screen's again. sScreen may still be SAVE from before
+ * that screen opened: SAVE opens on its question all the same. */
+static void LeaveForScreen(u8 screen)
 {
-    if (sShown.mode == MODE_PARTY_MENU && index < sShown.menuCount && sShown.menuNames[index] == gText_Summary5)
-    {
-        sSummary = gPartyMenu.slotId;
-        Press(B_BUTTON); /* close the submenu; the summary is drawn here */
-        return;
-    }
-    StartPlan(PLAN_MENU, index);
-    sPlan.cols = sShown.menuCols;
+    if (screen == SCR_SAVE)
+        OpenSave();
+    sScreen = screen;
 }
-
-static void Answer(u8 id)
-{
-    if (id == HIT_YES)
-    {
-        /* Some questions default to NO: go up to YES first. */
-        StartPlan(PLAN_KEYS, 0);
-        sPlan.keys = DPAD_UP;
-    }
-    else if (id == HIT_NO || id == HIT_CANCEL)
-        Press(B_BUTTON);
-    else if (id == HIT_OK || id == HIT_PANEL)
-        Press(A_BUTTON);
-    else if (id == HIT_UP)
-        Press(DPAD_UP);
-    else if (id == HIT_DOWN)
-        Press(DPAD_DOWN);
-}
-
-static void ActivateSummary(u8 id)
-{
-    if (id == HIT_BACK)
-        sSummary = -1;
-    else if (id == HIT_PREV || id == HIT_NEXT)
-    {
-        for (int n = 0; n < PARTY_SIZE; ++n)
-        {
-            sSummary = (sSummary + (id == HIT_NEXT ? 1 : PARTY_SIZE - 1)) % PARTY_SIZE;
-            if (GetMonData(&gPlayerParty[sSummary], MON_DATA_SPECIES) != SPECIES_NONE
-             && !GetMonData(&gPlayerParty[sSummary], MON_DATA_IS_EGG))
-                break;
-        }
-    }
-}
-
-static void ActivatePokemon(u8 id, u8 mode)
-{
-    if (sSummary >= 0)
-    {
-        ActivateSummary(id);
-        return;
-    }
-    if (id >= HIT_SLOT && id < HIT_SLOT + PARTY_SIZE)
-    {
-        u8 slot = id - HIT_SLOT;
-
-        sPartyTapped = slot;
-        if (mode == MODE_PARTY_MENU)
-        {
-            if (PartyMenuReady())
-                StartPlan(PLAN_PARTY, slot);
-        }
-        else if (FieldIdle() && CtrStartMenu_Available())
-        {
-            /* The party menu, hidden, on this mon, with its menu open. */
-            BeginSession(FALSE);
-            StartPlan(PLAN_START, START_POKEMON);
-            QueuePlan(MakePlan(PLAN_PARTY, slot));
-        }
-        return;
-    }
-    if (mode != MODE_PARTY_MENU)
-        return;
-    if (id >= HIT_MENU && id < HIT_MENU + MAX_MENU_ITEMS)
-        ChooseMenuEntry(id - HIT_MENU);
-    else
-        Answer(id);
-}
-
-#endif
 
 static void ShowOptionSub(u8 page, u8 sub)
 {
@@ -7130,7 +7056,7 @@ static void ActivateOption(u8 id)
     {
         const CtrExtra *extra = PageExtra(sOptPage, row);
 
-        if (extra)
+        if (extra && ExtraLive(extra, CtrSettings_Voxel()))
         {
             /* An action (no values, no stepper) has no left arrow and no
              * back half to touch: LEFT must not run it. */
@@ -7206,6 +7132,25 @@ static void ActivateOption(u8 id)
     PlaySE(SE_SELECT);
 }
 
+/* Touches use the displayed snapshot and only act on enabled controls. */
+static void MapExtrasTap(u8 id)
+{
+    if (id == HIT_MAP_INFO && sShown.encOn)
+    {
+        sEncView = !sShown.encView;
+        sEncPage = 0;
+        sPickMapsec = MAPSEC_NONE;
+        PlaySE(SE_SELECT);
+    }
+    else if (id == HIT_MAP_PAGE && sShown.encView && sShown.encPages > 1)
+    {
+        sEncPage = (sShown.encPage + 1) % sShown.encPages;
+        PlaySE(SE_SELECT);
+    }
+    else if (id == HIT_CLOCK_NOTICE && sShown.clockNotice)
+        sClockNoticeSerial = CtrClockStore_LoadSerial();
+}
+
 /*
  * The game's bag, party menu or Pokédex for BAG, POKéMON or POKéDEX, opened from the field as the
  * start menu opens it. Chosen while another screen was up - the Pokédex, the
@@ -7251,8 +7196,7 @@ static void Activate(u8 id, u8 mode)
 {
     if (id == HIT_NONE)
         return;
-    CtrLog_Write(CTR_LOG_INPUT, "bottom screen: tap %02x (mode %u screen %u panel %u)", id, mode, sShown.screen,
-                 sShown.panel);
+    CtrLog_Write(CTR_LOG_INPUT, "bottom screen: tap %02x (mode %u screen %u)", id, mode, sShown.screen);
     if (mode >= MODE_BATTLE_INFO)
     {
         /* The controller waiting for it takes it on its next frame. */
@@ -7288,8 +7232,9 @@ static void Activate(u8 id, u8 mode)
                 NavPress(B_BUTTON);
             else
             {
-                sScreen = screen;
+                /* First: NavStart drops the screen of a leave under way. */
                 NavStart(NAV_LEAVE, 0, 0);
+                LeaveForScreen(screen);
             }
             return;
         }
@@ -7298,7 +7243,7 @@ static void Activate(u8 id, u8 mode)
         if (mode == MODE_BAG_MENU)
         {
             if (CtrBag_Close() && screen != SCR_BAG)
-                sScreen = screen;
+                LeaveForScreen(screen);
             return;
         }
         /* The Pokédex's is its B; any other leaves it for that screen, B
@@ -7308,7 +7253,7 @@ static void Activate(u8 id, u8 mode)
             if (screen == SCR_POKEDEX)
                 CtrPokedex_Close(FALSE);
             else if (CtrPokedex_Close(TRUE))
-                sScreen = screen;
+                LeaveForScreen(screen);
             return;
         }
         /* The game's party menu on show: its own button is B, as the bag's
@@ -7318,7 +7263,7 @@ static void Activate(u8 id, u8 mode)
             if (screen == SCR_POKEMON)
                 CtrParty_Close(FALSE);
             else if (CtrParty_Close(TRUE))
-                sScreen = screen;
+                LeaveForScreen(screen);
             return;
         }
         if (mode != MODE_FIELD)
@@ -7353,6 +7298,8 @@ static void Activate(u8 id, u8 mode)
     case SCR_MAP:
         if (id == HIT_MAP)
             PickMapCell(sTouch.lastX, sTouch.lastY);
+        else
+            MapExtrasTap(id);
         break;
     case SCR_SAVE:
         if (id == HIT_YES && FieldIdle())
@@ -7380,6 +7327,18 @@ static void Activate(u8 id, u8 mode)
         break;
     }
 }
+
+#ifdef CTR_TEST_SWOOP
+/* Azahar aid (3ds_game_full.c): the OPTIONS screen opened on the bottom,
+ * then VOXEL 3D tapped there, as the player does it (bottom redraws between). */
+void CtrBottom_TestSwoop(unsigned step)
+{
+    if (step == 0)
+        sScreen = SCR_OPTION;
+    else
+        Activate(HIT_OPTION + 7, MODE_FIELD); /* the row the player taps (port.log: tap c7) */
+}
+#endif
 
 /* Returns the id to show as pressed. */
 static u8 ProcessTouch(u8 mode)
@@ -7615,9 +7574,12 @@ static u8 OptionStep(u8 from, int dir)
 
     if (!FixedOptions())
     {
-        int to = from + dir;
+        const CtrExtra *extra;
 
-        return to >= 0 && PageExtra(sOptPage, to) ? to : from;
+        for (int i = from + dir; i >= 0 && (extra = PageExtra(sOptPage, i)) != NULL; i += dir)
+            if (ExtraLive(extra, voxel))
+                return i;
+        return from;
     }
 
     for (int i = from + dir; i >= 0 && i < OPTION_ROWS; i += dir)
@@ -7705,8 +7667,17 @@ static void OptionKeys(u16 down)
     }
     else if (down & DPAD_LEFT)
         ActivateOption(HIT_OPTION + HIT_OPTION_BACK + sOptFocus);
-    else if (down & (DPAD_RIGHT | A_BUTTON))
+    else if (down & A_BUTTON)
         ActivateOption(HIT_OPTION + sOptFocus);
+    else if (down & DPAD_RIGHT)
+    {
+        /* RIGHT steps a value. An action (HOENN DEX FULL, GIVE...) has no
+         * value to step and cannot be undone: A alone runs it, as a tap. */
+        const CtrExtra *extra = FixedOptions() ? NULL : PageExtra(sOptPage, sOptFocus);
+
+        if (!extra || extra->count || extra->step)
+            ActivateOption(HIT_OPTION + sOptFocus);
+    }
 }
 
 static void SaveKeys(u8 mode, u16 down)
@@ -7816,6 +7787,10 @@ void CtrBottom_Init(void)
  * open: the top keeps the world, fade included, until the field is back. */
 void CtrBottom_KeepWorld(void)
 {
+    /* Only CtrBottom_Frame lets the top go again, and without the bottom
+     * screen's resources it never runs: the world would stay frozen. */
+    if (!sRes.ready)
+        return;
     BeginSession(FALSE);
     sSession.awaitMenu = TRUE;
     CtrVideo_HoldTop(TRUE);
@@ -7835,6 +7810,8 @@ static bool8 MapCursorOnlyMoved(const ViewState *now, const ViewState *shown)
     if (now->screen != SCR_MAP || now->mode == MODE_OFF || now->mode >= MODE_BATTLE_INFO
      || now->inBattle || now->bagView == BAG_VIEW_WHOLE
      || now->mapsec == MAPSEC_NONE || shown->mapsec == MAPSEC_NONE
+     /* The wild list has no marks to move; the clock banner lies over them. */
+     || now->encView || shown->encView || now->clockNotice || shown->clockNotice
      || (now->cursorX == shown->cursorX && now->cursorY == shown->cursorY
          && now->mapsec == shown->mapsec))
         return FALSE;
@@ -7842,6 +7819,10 @@ static bool8 MapCursorOnlyMoved(const ViewState *now, const ViewState *shown)
     moved.cursorX = shown->cursorX;
     moved.cursorY = shown->cursorY;
     moved.mapsec = shown->mapsec;
+    /* A step that moves the mark also takes one off a Repel: MoveMapCursor
+     * redraws the name plate for it. */
+    moved.repelShown = shown->repelShown;
+    moved.repelSteps = shown->repelSteps;
     return memcmp(&moved, shown, sizeof(moved)) == 0;
 }
 
@@ -7885,14 +7866,14 @@ static bool8 MoveMapCursor(const ViewState *from, const ViewState *to)
     DrawMapMarks(to);
     /* Crossing a region changes only the label below the map. Restore and
      * redraw that plate instead of the map and the column. */
-    if (to->mapsec != from->mapsec && to->pickMapsec == MAPSEC_NONE)
+    if ((to->mapsec != from->mapsec && to->pickMapsec == MAPSEC_NONE)
+     || to->repelShown != from->repelShown || to->repelSteps != from->repelSteps)
     {
         for (int x = NAME_X; x < NAME_X + NAME_W; ++x)
             memcpy(sCanvas + x * H + (H - (NAME_Y + NAME_H)), sCache[CACHE_MAP] + x * H + (H - (NAME_Y + NAME_H)),
                    NAME_H * sizeof(u16));
         ResolveFonts();
         DrawRegionName(to);
-        DrawMapClock(to);
         CtrBottom_BlitRect(sCanvas, NAME_X, NAME_Y, NAME_X + NAME_W, NAME_Y + NAME_H);
     }
     for (int k = 0; k < 2; ++k)
@@ -8033,6 +8014,43 @@ static void BottomProfile(u32 frame, u8 mode, const uint64_t ticks[3], unsigned 
     sLabelHits = sLabelMisses = 0;
 }
 
+/*
+ * The game's soft reset (CtrGame_SoftReset) puts back the game's data, not
+ * the port's: what the bottom screen knows of the game it was in goes too.
+ * Until the field is reached again it is the title's (MODE_OFF), not a field
+ * screen whose OPTIONS and CHEATS would write into the save being loaded.
+ */
+void CtrBottom_SoftReset(void)
+{
+    sInGame = FALSE;
+    memset(&sSession, 0, sizeof(sSession));
+    memset(&sPlan, 0, sizeof(sPlan));
+    sInjected = 0;
+    memset(&sNav, 0, sizeof(sNav));
+    memset(&sTouch, 0, sizeof(sTouch));
+    sFocus = FOCUS_NONE;
+    sInside = INSIDE_NONE;
+    sSwallow = FALSE;
+    sScreen = SCR_MAP;
+    sOptPage = CTR_EXTRAS_OPTIONS;
+    sOptSub = 0;
+    sOptFocus = OPT_TEXT_SPEED;
+    sPickMapsec = MAPSEC_NONE;
+    sEncView = FALSE;
+    sEncPage = 0;
+    sSaveStep = SAVE_ASK;
+    sAsk.kind = sAsked.kind = ASK_NONE;
+    sBattleTap = HIT_NONE;
+    sMoveCancel = sQuickBallTap = sQuickBallFocus = FALSE;
+    sIntro.phase = INTRO_NONE;
+    sIntro.defer = FALSE;
+    sMapCache.valid = FALSE;
+    /* A session's hold, or one CtrBottom_KeepWorld took this very frame. */
+    CtrVideo_HoldTop(FALSE);
+    sShown.mode = 0xFF;
+    sForceRedraw = TRUE;
+}
+
 void CtrBottom_Frame(void)
 {
     static u32 frames;
@@ -8044,6 +8062,9 @@ void CtrBottom_Frame(void)
     if (!sRes.ready)
         return;
     ++frames;
+    /* Last frame's press is over, also on the frames the battle's entrance
+     * skips RunPlan and RunNav: a press left in would stay held through it. */
+    sInjected = 0;
     ticks[0] = CtrPlatform_Ticks();
     sAsked = sAsk;
     sAsk.kind = ASK_NONE;

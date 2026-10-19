@@ -7,6 +7,8 @@
 #include "global.h"
 #include "3ds_locale.h"
 #include "3ds_extras.h"
+#include "3ds_randomizer.h"
+#include "3ds_nuzlocke_ui.h"
 #include "3ds_platform.h"
 #include "3ds_daynight.h"
 #include "event_data.h"
@@ -20,10 +22,19 @@
 #include "constants/items.h"
 #include "constants/songs.h"
 
-const char *const gCtrExtrasOffOn[2] = {CTR_TEXT("OFF", "NO", "NON", "NO", "NENHUM"), CTR_TEXT("ON", "SI", "OUI", "SI", "SIM")};
+const char *const gCtrExtrasOffOn[2] = {CTR_TEXT("OFF", "NO", "NON", "NO", "NENHUM"), CTR_TEXT("ON", "SÍ", "OUI", "SÌ", "SIM")};
 
 static const char *const sDayNight[] = {CTR_TEXT("OFF", "NO", "NON", "NO", "NENHUM"), "AUTO"};
 static const char *const sClockSpeeds[] = {"1X", "6X", "12X", "24X", "60X", "120X"};
+/* SYNC CLOCK: the local clock and 1X again, bonus berry time kept; on disk
+ * with the next in-game save, like any other progress. */
+static const char *const sClockSync[] = {CTR_TEXT("SAVE TO KEEP", "GUARDA PARA FIJAR", "SAUVER P. GARDER", "SALVA PER TENERE", "SALVE P/ MANTER")};
+
+static void SyncClock(void)
+{
+    PlaySE(CtrDayNight_SyncToConsole() ? SE_SUCCESS : SE_FAILURE);
+}
+
 static const char *const sTimedEncounters[] = {CTR_TEXT("ORIGINAL", "ORIGINAL", "ORIGINAL", "ORIGINALE", "ORIGINAL"),
                                                CTR_TEXT("TIMED", "POR HORARIO", "PAR HORAIRE", "PER ORARIO", "POR HORÁRIO")};
 
@@ -32,9 +43,13 @@ static const char *const sEncounterRate[] = {CTR_TEXT("NORMAL", "NORMAL", "NORMA
 static const char *const sShinyOdds[] = {"1/8192", "1/4096", "1/1024", "1/256", "1/64", CTR_TEXT("ALWAYS", "SIEMPRE", "TOUJOURS", "SEMPRE", "SEMPRE")};
 /* The voxel world per eye with the 3D slider (3ds_video.c): AUTO is on a
  * New 3DS only (the second pass costs an Old 3DS the frame), and how deep
- * the slider's full travel goes, in percent of the renderer's depth. */
-static const char *const sVoxelStereo[] = {CTR_TEXT("AUTO", "AUTO", "AUTO", "AUTO", "AUTO"), CTR_TEXT("ON", "SI", "OUI", "SI", "SIM"), CTR_TEXT("OFF", "NO", "NON", "NO", "NENHUM")};
+ * the slider's full travel goes, in percent of the renderer's depth. Read
+ * only with the voxel overworld on: a build without it has no cells for
+ * them, and with it off they are greyed (CtrExtras_NeedsVoxel). */
+#if CTR_VOXEL_ENABLED
+static const char *const sVoxelStereo[] = {CTR_TEXT("AUTO", "AUTO", "AUTO", "AUTO", "AUTO"), CTR_TEXT("ON", "SÍ", "OUI", "SÌ", "SIM"), CTR_TEXT("OFF", "NO", "NON", "NO", "NENHUM")};
 static const char *const sVoxelDepths[] = {"25%", "50%", "75%", "100%", "125%", "150%", "200%"};
+#endif
 /*
  * Pokedex (CHEATS): the Hoenn Pokedex complete, the National Pokedex
  * unlocked, or complete (and unlocked): every Pokemon seen and caught. OPTIONS
@@ -73,7 +88,7 @@ static const char *const sDexDone[] = {CTR_TEXT("TAP TO SET", "TOCA PARA ACTIVAR
  * the bag (OPTIONS is only open in the field). The item steps through the
  * pocket's items in the game's order, skipping unused ids.
  */
-static const char *const sGivePockets[] = {CTR_TEXT("ITEMS", "OBJETOS", "OBJETS", "OGGETTI", "ITENS"), CTR_TEXT("POKE BALLS", "POKé BALLS", "POKÉ BALLS", "POKé BALL", "POKé BOLAS"), CTR_TEXT("TMS & HMS", "MT Y MO", "CT ET CS", "MT E MN", "MTs E MOs"), CTR_TEXT("BERRIES", "BAYAS", "BAIES", "BACCHE", "FRUTAS"), CTR_TEXT("KEY ITEMS", "OBJ. CLAVE", "OBJ. RARES", "STRUMENTI", "ITENS CHAVE")};
+static const char *const sGivePockets[] = {CTR_TEXT("ITEMS", "OBJETOS", "OBJETS", "OGGETTI", "ITENS"), CTR_TEXT("POKE BALLS", "POKé BALLS", "POKÉ BALLS", "POKé BALL", "POKé BOLAS"), CTR_TEXT("TMS & HMS", "MT Y MO", "CT ET CS", "MT E MN", "MTs E MOs"), CTR_TEXT("BERRIES", "BAYAS", "BAIES", "BACCHE", "FRUTAS"), CTR_TEXT("KEY ITEMS", "OBJ. CLAVE", "OBJ. RARES", "STRUM. BASE", "ITENS CHAVE")};
 static const char *const sGiveCounts[] = {"1", "5", "10", "50", "99"};
 static const u8 sGiveCountValues[] = {1, 5, 10, 50, 99};
 
@@ -167,7 +182,7 @@ static void GiveBack(void)
 }
 
 /*
- * Fast-forward's SPEED (1x to 4x; settings.txt speed=, ZR/ZL on a New 3DS):
+ * Fast-forward's SPEED (1x, 1.5x, 2x, 3x, 4x; settings.txt speed=, ZR/ZL on a New 3DS):
  * with the tabs, a cell of ENHANCEMENTS rather than a seventh row of
  * SETTINGS.
  */
@@ -178,20 +193,29 @@ static void SpeedStep(int direction)
 
 static const u8 *SpeedText(void)
 {
-    static u8 text[4];
+    static u8 text[6];
+    int halves = CtrSettings_SpeedHalves();
+    u8 *end = text;
 
-    text[0] = CHAR_0 + CtrSettings_Speed();
-    text[1] = CHAR_x;
-    text[2] = EOS;
+    *end++ = CHAR_0 + halves / 2;
+    if (halves & 1)
+    {
+        *end++ = CHAR_PERIOD;
+        *end++ = CHAR_5;
+    }
+    *end++ = CHAR_x;
+    *end = EOS;
     return text;
 }
 
 const CtrExtra gCtrExtras[] =
 {
     /* Features add their lines here. */
+#if CTR_VOXEL_ENABLED
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_OPTIONS, 1), CTR_TEXT("3D WORLD", "MUNDO 3D", "MONDE 3D", "MONDO 3D", "MUNDO 3D"), "voxel_stereo", 3, 0, sVoxelStereo, NULL, NULL, NULL},
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_OPTIONS, 1), CTR_TEXT("3D DEPTH", "PROFUNDIDAD 3D", "PROFONDEUR 3D", "PROFOND. 3D", "PROFUNDIDADE 3D"), "voxel_depth", 7, 3, sVoxelDepths, NULL, NULL, NULL},
-    {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("SPEED", "VELOC. JUEGO", "VITESSE", "VELOCITA", "VELOCIDADE"), "speed", 0, 0, NULL, NULL, SpeedStep, SpeedText},
+#endif
+    {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("SPEED", "VELOC. JUEGO", "VITESSE", "VELOCITÀ", "VELOCIDADE"), "speed", 0, 0, NULL, NULL, SpeedStep, SpeedText},
     /* The game and the music keep real time on a slow frame; the sound
      * engine mixes on the DSP's clock (3ds_platform.c, 3ds_audio.c). */
     {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("REAL-TIME PACING", "RITMO REAL", "RYTHME RÉEL", "RITMO REALE", "RITMO REAL"), "audio_clock", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
@@ -199,19 +223,19 @@ const CtrExtra gCtrExtras[] =
     {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("PARTY EXP SHARE", "EXP TODO EQUIPO", "MULTI EXP.", "CONDIV. ESP.", "EXP. PARA EQUIPE"), "exp_share", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("TRADE EVO LV. 40", "EVOL. INTERC. N40", "ÉVOL. NIV. 40", "SCAMBIO LIV. 40", "EVO. TROCA NV. 40"), "trade_evo", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("HMS WITHOUT MOVE", "MO SIN APRENDER", "CS SANS CAP.", "MN SENZA MOSSA", "MOS SEM GOLPE"), "field_hms", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
-    {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("VISIBLE WILD", "SALVAJES VISIBLES", "SAUVAGES", "SELVATICI", "SELVAGEM VISÍVEL"), "visible_wild", 4, 0, sVisibleWild, NULL, NULL, NULL},
+    {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("VISIBLE WILD", "SALVAJES VISIBLES", "SAUV. VISIBLES", "SELV. VISIBILI", "SELVAGEM VISÍVEL"), "visible_wild", 4, 0, sVisibleWild, NULL, NULL, NULL},
     {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("IVS AND EVS", "IV Y EV", "IV ET EV", "IV ED EV", "IVS E EVS"), "ivs_evs", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("REPEL PROMPT", "AVISO REPELENTE", "RAPPEL REPOUSSE", "AVVISO REPELL.", "AVISO REPELENTE"), "repel_prompt", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("INFINITE TMS", "MT INFINITAS", "CT INFINIES", "MT INFINITE", "MTS INFINITAS"), "infinite_tms", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("RUN INDOORS", "CORRER DENTRO", "COURSE INTÉR.", "CORRI DENTRO", "CORRER DENTRO"), "run_indoors", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     /* Moves physical or special by their own category, as from Gen IV on
      * (pokemon.c, MoveSplitEnabled). */
-    {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("PHYS/SPEC SPLIT", "FISICO / ESPECIAL", "PHYS./SPÉC.", "FIS./SPEC.", "FÍS./ESP."), "move_split", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("PHYS/SPEC SPLIT", "FÍSICO / ESPECIAL", "PHYS./SPÉC.", "FIS./SPEC.", "FÍS./ESP."), "move_split", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_CHEATS, CTR_TEXT("WILD ENCOUNTERS", "ENC. SALVAJES", "RENCONTRES", "INCONTRI", "ENCONTROS SELV."), "encounter_rate", 5, 0, sEncounterRate, NULL, NULL, NULL},
     {CTR_EXTRAS_CHEATS, CTR_TEXT("SHINY ODDS", "PROB. VARIOCOLOR", "CHROMATIQUES", "PROB. SHINY", "CHANCE SHINY"), "shiny_odds", 6, 0, sShinyOdds, NULL, NULL, NULL},
-    {CTR_EXTRAS_CHEATS, CTR_TEXT("ALWAYS CATCH", "CAPTURA SEGURA", "CAPTURE SÛRE", "PRESA SICURA", "CAPTURA GARANTIDA"), "always_catch", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    {CTR_EXTRAS_CHEATS, CTR_TEXT("ALWAYS CATCH", "CAPTURA SEGURA", "CAPTURE SÛRE", "CATTURA SICURA", "CAPTURA GARANTIDA"), "always_catch", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_CHEATS, CTR_TEXT("INSTANT VICTORY", "VICTORIA INSTANT.", "VICTOIRE IMM.", "VITT. IMM.", "VITÓRIA IMEDIATA"), "instant_victory", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
-    {CTR_EXTRAS_CHEATS, CTR_TEXT("FAST EGGS", "HUEVOS RAPIDOS", "OEUFS RAPIDES", "UOVA VELOCI", "OVOS RÁPIDOS"), "fast_eggs", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    {CTR_EXTRAS_CHEATS, CTR_TEXT("FAST EGGS", "HUEVOS RÁPIDOS", "OEUFS RAPIDES", "UOVA VELOCI", "OVOS RÁPIDOS"), "fast_eggs", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_CHEATS, CTR_TEXT("INFINITE MONEY", "DINERO INFINITO", "ARGENT INFINI", "SOLDI INFINITI", "DINHEIRO INFINITO"), "infinite_money", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_CHEATS, CTR_TEXT("HOENN DEX FULL", "DEX HOENN LLENA", "DEX HOENN PLEIN", "DEX HOENN PIENO", "DEX HOENN COMPL."), "dex_hoenn", 0, 0, sDexDone, CompleteHoennDex, NULL, NULL},
     {CTR_EXTRAS_CHEATS, CTR_TEXT("NATIONAL DEX ON", "DEX NACIONAL ACT.", "DEX NAT. ACTIF", "DEX NAZ. ATTIVO", "ATIVAR DEX NAC."), "dex_national_on", 0, 0, sDexDone, UnlockNationalDex, NULL, NULL},
@@ -225,13 +249,17 @@ const CtrExtra gCtrExtras[] =
     /* The clock (3ds_daynight.c): outdoor light by the hour, its speed, the
      * wild Pokémon of the hour (3ds_encounters.c) and the bottom screen's
      * clock. ENHANCEMENTS is full, twelve cells a screen: its second. */
-    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("DAY / NIGHT", "DIA / NOCHE", "JOUR / NUIT", "GIORNO / NOTTE", "DIA / NOITE"), "day_night", 2, 0, sDayNight, NULL, NULL, NULL},
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("DAY / NIGHT", "DÍA / NOCHE", "JOUR / NUIT", "GIORNO / NOTTE", "DIA / NOITE"), "day_night", 2, 0, sDayNight, NULL, NULL, NULL},
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("CLOCK SPEED", "VELOC. RELOJ", "VITESSE HORLOGE", "VELOC. OROLOGIO", "VELOC. RELÓGIO"), "clock_speed", CTR_DAYNIGHT_SPEED_COUNT, 0, sClockSpeeds, NULL, NULL, NULL},
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("SYNC CLOCK", "SINCR. RELOJ", "SYNCHRO HORLOGE", "SINCR. OROLOGIO", "SINCR. RELÓGIO"), "clock_sync", 0, 0, sClockSync, SyncClock, NULL, NULL},
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("WILD POKEMON", "POKéMON SALV.", "POKÉMON SAUV.", "POKéMON SELV.", "POKéMON SELV."), "timed_encounters", 2, 0, sTimedEncounters, NULL, NULL, NULL},
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("SHOW CLOCK", "VER RELOJ", "VOIR HORLOGE", "MOSTRA OROLOGIO", "MOSTRAR RELÓGIO"), "show_clock", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     /* The lead Pokémon walking behind the player, on HGSS's sprites from the
      * data pack (src/follower_mon.c). */
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("FOLLOWER", "ACOMPAÑANTE", "COMPAGNON", "COMPAGNO", "COMPANHEIRO"), "follower", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+#include "3ds_nuzlocke_extras.inc"
+#include "3ds_randomizer_extras.inc"
+    #include "3ds_field_qol_extras.inc"
     {0},
 };
 
@@ -266,6 +294,16 @@ int CtrExtras_Get(const char *key)
         if (strcmp(gCtrExtras[i].key, key) == 0)
             return CtrExtras_Value(&gCtrExtras[i]);
     return 0;
+}
+
+bool CtrExtras_NeedsVoxel(const CtrExtra *extra)
+{
+#if CTR_VOXEL_ENABLED
+    return extra->values == sVoxelStereo || extra->values == sVoxelDepths;
+#else
+    (void)extra;
+    return false;
+#endif
 }
 
 bool CtrExtras_PageUsed(unsigned page)

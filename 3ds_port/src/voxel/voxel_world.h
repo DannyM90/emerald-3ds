@@ -94,9 +94,17 @@ bool VoxelWorld_UsesTreeSprites(const VoxelMapInstance *inst);
 /* The metatile the 2D game tiles outside the map, or -1 if there is none.
  * Without it the view ends in the clear colour past the last map. */
 int VoxelWorld_BorderMetatile(int worldX, int worldY);
+/* True where that metatile is water: it lies flush with the map's own water,
+ * not stood up as the belt (VoxelMesh_EmitBorder). */
+bool VoxelWorld_BorderIsWater(int worldX, int worldY);
 VoxelVisualShape VoxelWorld_ClassifyTile(int worldX, int worldY);
 
 void VoxelWorld_GetMapDimensions(int *width, int *height);
+/* Whether the map joins others at its edges, walked across with no warp. */
+bool VoxelWorld_MapIsConnected(void);
+/* The edges of the current map (instance 0) where the camera stops, chosen
+ * map by map (GetMapClosedEdges, field_camera.c; CTR_FIELD_EDGE_*). */
+unsigned VoxelWorld_ClosedEdges(void);
 void VoxelWorld_GetPlayerWorldCoords(float *worldX, float *worldZ);
 void VoxelWorld_GetLocation(int *mapGroup, int *mapNum);
 /* Small renderer-facing classification of the original field weather state. */
@@ -171,6 +179,5 @@ typedef struct {
 } VoxelTileLoad;
 bool Voxel_LoadTilesStep(const void *tileset, uint8_t *dest, uint32_t destSize,
                          VoxelTileLoad *load, unsigned bytes);
-bool Voxel_LoadTiles(const void *tileset, uint8_t *dest, uint32_t destSize);
 
 #endif

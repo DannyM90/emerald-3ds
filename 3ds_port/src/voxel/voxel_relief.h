@@ -57,7 +57,9 @@ bool VoxelRelief_IsSlope(const int16_t *grid);
 
 /* The 25 depths (pixels) the cell's points are moved south by: its heights
  * again, (u, h, v + h), the drawing seen at 45 degrees. NULL when the cell
- * is not lifted. */
+ * is not lifted; all zero on a level map (bit 15 of its width in the file),
+ * whose heights lift it straight up as a base does - Route 108's sea, leaning
+ * a level from Route 107's to Slateport's with no row moved south. */
 const int16_t *VoxelRelief_Depth(const VoxelMapInstance *inst, int x, int y);
 
 /* Height in tiles over the base at the centre of a cell (0 when not lifted). */
@@ -72,6 +74,14 @@ float VoxelRelief_LiftAt(float worldX, float worldZ);
 
 /* Depth in tiles at a world position, interpolated on the lattice. */
 float VoxelRelief_ShiftAt(float worldX, float worldZ);
+
+/*
+ * A map's south seam ease (see voxel_relief.c): world z from `from` to `to`
+ * is drawn longer, and past `to` moved `add` tiles south, so the map's edge
+ * meets the next one's. False (and z unchanged) for a map with none.
+ */
+bool VoxelRelief_Stretch(const VoxelMapInstance *inst, float *from, float *to, float *add);
+float VoxelRelief_StretchZ(const VoxelMapInstance *inst, float z);
 
 /*
  * A drawn map's surface as it stands on its base, for the sun (the lighting's
@@ -102,6 +112,12 @@ float VoxelRelief_DrawnTop(const VoxelMapInstance *inst);
  */
 #define VOXEL_RELIEF_NO_VARIANT 0xFFFF
 #define VOXEL_RELIEF_GOES_ON (2u << 8)
+/* With VOXEL_RELIEF_GOES_ON_FACE too, that flank is a corner cut along its
+ * rock (a band's head at the end of a rim): it goes on whole, drawn as the
+ * band's side face, the metatile in `wall` (which is then no cliff). Cut, it
+ * left a gap beside the corner that a camera steeper than the drawing saw
+ * the ground below through. */
+#define VOXEL_RELIEF_GOES_ON_FACE (32u << 8)
 /*
  * `wall` (-1: none) says the cell has cliffs: wherever its west, east or
  * south edge stands over its neighbour's - a tile of rock reaching its own
