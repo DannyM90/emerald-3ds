@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Soft reset is now L+R+START+SELECT, as in the 3DS games, instead of the
+  GBA's A+B+START+SELECT.
+
 - Pokédex on the top screen: while the Pokédex is open on the bottom
   screen, the top shows the device itself - the red shell, lens and lights,
   a screen window - with the Pokémon of the info page, or under the list's

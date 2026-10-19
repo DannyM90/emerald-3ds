@@ -113,4 +113,8 @@ void Port_SetAudioDebugEx(u16 tag, u16 a, u16 b, u16 c, u16 d);
 void Port_SetAssetDebug(u16 tag, u16 a, u16 b, u16 c);
 void Port_SetAssetDebugEx(u16 tag, u16 a, u16 b, u16 c, u16 d);
 
+/* The soft reset: L+R+START+SELECT, as in the 3DS games, in place of the
+ * GBA's A+B+START+SELECT (src/main.c, patch 0080; 3ds_game_full.c). */
+#define CTR_SOFT_RESET_KEYS (L_BUTTON | R_BUTTON | START_BUTTON | SELECT_BUTTON)
+
 #endif
