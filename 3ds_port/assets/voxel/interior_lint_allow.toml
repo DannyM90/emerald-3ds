@@ -86,3 +86,9 @@ bleed = "the figure and its pedestal are one stone, drawn in the same greens: th
 
 [allow.museum_2f_statue_e]
 bleed = "the figure and its pedestal are one stone, drawn in the same greens: the figure's own, not the pedestal's top"
+
+[allow.lanettes_house_desks_e]
+stripes = "a desk a single row deep: its only rows to dress its sides with are its top's edge, the keyboards' white and grey over a checker of two yellows (its front's edge carries its legs' lines, and is all but black)"
+
+[allow.day_care_pc]
+stripes = "the Centers' computer, drawn alike: its only columns to dress its sides with are its casing's edge, the screen's white over grey down it"

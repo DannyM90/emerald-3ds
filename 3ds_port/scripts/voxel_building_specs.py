@@ -3821,6 +3821,141 @@ def trainer_fan_club():
     ]
 
 
+
+# Lanette's house on Route 114: the lab's tileset, and the lab's bookcases,
+# desks, computers, books and boxes stand in it as they are (reuse_pieces);
+# what is its own is its shell, two yellow boxes and the desks of two of
+# the lab's computers.
+
+LANETTE_WALL_SIDE = (64, 0, 80, 32)
+
+
+def lanettes_house():
+    return [
+        # two boxes of the lab's yellow
+        piece("box_e", [(112, 82, 127, 96)], 6, leave=LAB_SHADOW + LAB_FLOOR),
+        piece("box_sw", [(16, 114, 31, 128)], 6, leave=LAB_SHADOW + LAB_FLOOR),
+        # the two computers east of the middle are the lab's; their desks
+        # are a single row, the lab's rails beside each computer
+        piece("desks_e", [(96, 64, 128, 78), (96, 52, 98, 64), (110, 52, 114, 64),
+                          (126, 52, 128, 64)], 8, leave=LAB_SHADOW, back=60),
+        piece("wall", [(0, 0, 176, 32)], 32, fill=16, foot=32, side=LANETTE_WALL_SIDE),
+        piece("side_w", [], 32, side=LANETTE_WALL_SIDE, walls=[((0, 128), (0, 32))]),
+        piece("side_e", [], 32, side=LANETTE_WALL_SIDE, walls=[((176, 32), (176, 128))]),
+    ]
+
+
+
+# The Pokemon Day Care on Route 117: the counter, an L from the wall round
+# the keeper's floor, its east end cut on the slant; two crates against the
+# wall, the computer as the Centers' (back to the wall, its foot a little
+# into the room); a table on the grass, two plants, and the fence along the
+# south edge with its post up the west side, the room seen between its
+# rails. The stools stand on cells the player walks on and stay drawn.
+
+DAY_CARE_FLOOR = ("6283e6", "7b9cff", "4a6ad5", "4162a4", "838383", "8b8b8b")
+DAY_CARE_GRASS = ("a4c562", "bde673", "6aa439")
+DAY_CARE_PAINT = ("bdd5ee", "9cacde", "dee6ee", "ffffff")
+DAY_CARE_WALL = DAY_CARE_PAINT + ("e6c56a", "d5a44a", "a48341")
+DAY_CARE_WALL_SIDE = (132, 0, 148, 32)
+
+
+def day_care():
+    return [
+        piece("plant_n", [(0, 82, 16, 111)], 28, leave=DAY_CARE_FLOOR, card=True),
+        piece("plant_s", [(0, 114, 16, 143)], 28, leave=DAY_CARE_FLOOR, card=True),
+        piece("table", [(160, 82, 192, 111)], 5, leave=DAY_CARE_GRASS, solid=True,
+              side=(164, 84, 188, 100)),
+        piece("fence", [(96, 128, 192, 144)], 15, through=True,
+              leave=DAY_CARE_FLOOR + DAY_CARE_GRASS),
+        piece("gatepost", [(96, 112, 105, 128)], 15, leave=DAY_CARE_FLOOR),
+        piece("pc", [(160, 8, 176, 40)], 24, leave=DAY_CARE_WALL, back=32),
+        # the crates' rims are the wall's wood: only its paint is left
+        piece("crate_w", [(80, 23, 96, 48)], 7, leave=DAY_CARE_PAINT, against=32),
+        piece("crate_e", [(96, 22, 112, 48)], 7, leave=DAY_CARE_PAINT, against=32),
+        piece("counter", [(0, 44, 80, 63), (64, 24, 80, 44)], 6, leave=DAY_CARE_FLOOR,
+              against=32,
+              plan=[(0, 50), (64, 50), (64, 32), (80, 32), (80, 56), (73, 63), (0, 63)]),
+        piece("wall", [(0, 0, 192, 32)], 32, fill=16, foot=32, side=DAY_CARE_WALL_SIDE),
+        piece("side_w", [], 32, side=DAY_CARE_WALL_SIDE, walls=[((0, 144), (0, 32))]),
+        piece("side_e", [], 32, side=DAY_CARE_WALL_SIDE, walls=[((192, 32), (192, 144))]),
+    ]
+
+
+
+# The Seashore House on Route 109: its ten low tables in three rows, the two
+# drinks fridges and the machine with its dome against the slatted back
+# wall, the swim rings painted on it. The bin beside the machine stands on a
+# cell the player walks on and stays drawn.
+
+SEASHORE_FLOOR = ("c5cd94", "e6e6b4", "f6f6cd", "7bc5b4", "52ac94", "b4deff", "b4b48b")
+SEASHORE_WALL = ("e6c562", "ffe67b", "bd9c4a", "83838b", "7bc5b4")
+SEASHORE_WALL_SIDE = (48, 0, 58, 32)
+
+
+def seashore_tables():
+    """The tables, two cells or three wide, a cell deep, in rows 4, 6 and 8."""
+    out = []
+    for row, y in (("n", 64), ("m", 96), ("s", 128)):
+        spans = [("w", 0, 32), ("e", 208, 240)]
+        if row != "s":
+            spans[1:1] = [("cw", 48, 96), ("ce", 128, 176)]
+        for col, x0, x1 in spans:
+            out.append(piece("table_%s%s" % (row, col), [(x0, y, x1, y + 17)], 8,
+                             leave=SEASHORE_FLOOR, solid=True))
+    return out
+
+
+def seashore_house():
+    return seashore_tables() + [
+        piece("machine", [(112, 16, 128, 44)], 24, back=32, leave=SEASHORE_WALL + SEASHORE_FLOOR),
+        piece("fridge_w", [(16, 14, 48, 46)], 21, back=32, leave=SEASHORE_WALL + SEASHORE_FLOOR),
+        piece("fridge_e", [(192, 14, 224, 46)], 21, back=32, leave=SEASHORE_WALL + SEASHORE_FLOOR),
+        piece("wall", [(0, 0, 240, 32)], 32, fill=16, foot=32, side=SEASHORE_WALL_SIDE),
+        piece("side_w", [], 32, side=SEASHORE_WALL_SIDE, walls=[((0, 160), (0, 32))]),
+        piece("side_e", [], 32, side=SEASHORE_WALL_SIDE, walls=[((240, 32), (240, 160))]),
+    ]
+
+
+
+# Devon Corporation's lobby, 1F: its front wall in three stretches, and
+# behind it two recesses, each with its own back wall and side walls (their
+# tops the orange strips down the drawing): the reception's, with its desk
+# across the front and a glass case in each back corner, and the stairs',
+# the stairs up painted on its back wall. Every wall 28 px, its top 4 px.
+
+DEVON_FLOOR = ("cd837b", "deaca4", "bd6252")
+DEVON_WALL = ("835a31", "e69c62", "6a7b41", "839473", "9c9c9c", "acb494")
+DEVON_WALL_SIDE = (0, 52, 12, 80)
+
+
+def devon_corp_1f():
+    side = DEVON_WALL_SIDE
+    return [
+        piece("case_w", [(48, 22, 64, 48)], 26, round="lathe", leave=DEVON_FLOOR + DEVON_WALL),
+        piece("case_e", [(128, 22, 144, 48)], 26, round="lathe", leave=DEVON_FLOOR + DEVON_WALL),
+        piece("desk", [(48, 62, 128, 80)], 8, leave=DEVON_FLOOR, solid=True),
+        # the recesses' side walls, down from their back walls to the front
+        piece("wall_rww", [(44, 0, 48, 80)], 28, fill=16, foot=80, side=side,
+              walls=[((48, 80), (48, 32))]),
+        piece("wall_rwe", [(144, 0, 148, 80)], 28, fill=16, foot=80, side=side,
+              walls=[((144, 32), (144, 80))]),
+        piece("wall_rew", [(204, 0, 208, 80)], 28, fill=16, foot=80, side=side,
+              walls=[((208, 80), (208, 32))]),
+        piece("wall_ree", [(256, 0, 260, 80)], 28, fill=16, foot=80, side=side,
+              walls=[((256, 32), (256, 80))]),
+        # the recesses' back walls
+        piece("wall_rw", [(48, 0, 144, 32)], 28, fill=16, foot=32, side=side),
+        piece("wall_re", [(208, 0, 256, 32)], 28, fill=16, foot=32, side=side),
+        # the front wall
+        piece("wall_w", [(0, 48, 44, 80)], 28, fill=16, foot=80, side=side),
+        piece("wall_c", [(148, 48, 204, 80)], 28, fill=16, foot=80, side=side),
+        piece("wall_e", [(260, 48, 304, 80)], 28, fill=16, foot=80, side=side),
+        piece("side_w", [], 28, side=side, walls=[((0, 144), (0, 80))]),
+        piece("side_e", [], 28, side=side, walls=[((304, 80), (304, 144))]),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5488,6 +5623,30 @@ SPECS = [
         "name": "trainer_fan_club",
         "interior": {"layout": "LAYOUT_LILYCOVE_CITY_POKEMON_TRAINER_FAN_CLUB", "ground": [0x223],
                      "pieces": own_shell(trainer_fan_club())},
+    },
+    {
+        # Lanette's house, Route 114
+        "name": "lanettes_house",
+        "interior": {"layout": "LAYOUT_ROUTE114_LANETTES_HOUSE", "ground": [0x202],
+                     "pieces": own_shell(lanettes_house())},
+    },
+    {
+        # the Pokemon Day Care, Route 117
+        "name": "day_care",
+        "interior": {"layout": "LAYOUT_ROUTE117_POKEMON_DAY_CARE", "ground": [0x201],
+                     "pieces": own_shell(day_care())},
+    },
+    {
+        # the Seashore House, Route 109
+        "name": "seashore_house",
+        "interior": {"layout": "LAYOUT_ROUTE109_SEASHORE_HOUSE", "ground": [0x225],
+                     "pieces": own_shell(seashore_house())},
+    },
+    {
+        # Devon Corporation, 1F
+        "name": "devon_corp_1f",
+        "interior": {"layout": "LAYOUT_RUSTBORO_CITY_DEVON_CORP_1F", "ground": [0x380],
+                     "pieces": own_shell(devon_corp_1f())},
     },
 ] + [
     {
