@@ -104,7 +104,7 @@ typedef uint8_t u8; typedef uint16_t u16; typedef bool bool8;
 #define HIT_CLOCK_NOTICE 0x93
 #define LABEL_FG(x) (x)
 #define LABEL_SH(x) (x)
-#define CTR_TEXT(english, spanish, french, italian) spanish
+#define CTR_TEXT(english, spanish, french, italian, portuguese) spanish
 #define CTR_TIME_MORNING 0
 #define CTR_TIME_NIGHT 2
 #define TXT_WHITE 5

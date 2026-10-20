@@ -20,6 +20,15 @@
   part of such an edge, the camera follows the player in front of it. Every
   other map keeps the camera on the player as before.
 
+- Brazilian Portuguese, by @carlosmozart (pull request #60): the whole game in
+  Portuguese over your own English ROM, as a build option (`tools/bootstrap.py
+  --make --port-lang pt_br`, docs/PORTUGUESE.md): every text of the game from
+  `tools/locales/pt_br` with Brazil's official names, the port's interface,
+  ã/õ in every font, and the graphics with words redrawn by the port from your
+  own files (icons, summary titles, POKéDEX and POKéNAV menus, contest titles,
+  the title logo). Translation by Carlos Mozart (AllGenWiki). Its patches are
+  0057-0066.
+
 ## 0.4.0 — 2026-10-16
 
 - The project is now called Emerald 3DS, by Zallax: new name on the HOME

@@ -3452,7 +3452,7 @@ enum { PLATE_NORMAL, PLATE_CHOSEN, PLATE_PRESSED, PLATE_OFF };
 static void DrawColumnButton(const ViewState *s, int i, u8 state)
 {
     const u8 *labels[SCR_COUNT] = {
-        Ascii(CTR_TEXT("MAP", "MAPA", "CARTE", "MAPPA")), gText_MenuPokemon, gText_MenuBag, s->name, gText_MenuPokedex, gText_MenuPokenav,
+        Ascii(CTR_TEXT("MAP", "MAPA", "CARTE", "MAPPA", "MAPA")), gText_MenuPokemon, gText_MenuBag, s->name, gText_MenuPokedex, gText_MenuPokenav,
         gText_MenuSave, gText_MenuOption,
     };
     const Icon *icon = &sRes.column[i];
@@ -3752,9 +3752,9 @@ static void BuildMapCache(void)
 
 static void DrawNameSide(const ViewState *s, bool8 picked)
 {
-    static const char *const wild = CTR_TEXT("WILD", "SALVAJES", "SAUVAGES", "SELVATICI");
-    static const char *const map = CTR_TEXT("MAP", "MAPA", "CARTE", "MAPPA");
-    static const char *const repel = CTR_TEXT("REPEL", "REPEL.", "REPOUS.", "REPELL.");
+    static const char *const wild = CTR_TEXT("WILD", "SALVAJES", "SAUVAGES", "SELVATICI", "SELVAGENS");
+    static const char *const map = CTR_TEXT("MAP", "MAPA", "CARTE", "MAPPA", "MAPA");
+    static const char *const repel = CTR_TEXT("REPEL", "REPEL.", "REPOUS.", "REPELL.", "REPEL.");
     char text[24];
     int x0 = NAME_SIDE_X, x1 = NAME_X + NAME_W - 4, y0 = NAME_Y + 2, y1 = NAME_Y + NAME_H - 3;
     int mid = (y0 + y1) / 2;
@@ -3809,15 +3809,15 @@ static const u8 *EncName(const EncRow *row)
 static void DrawEncounters(const ViewState *s)
 {
     static const char *const methods[ENC_METHODS] = {
-        CTR_TEXT("GRASS", "HIERBA", "HERBES", "ERBA"), CTR_TEXT("SURFING", "SURF", "SURF", "SURF"),
-        CTR_TEXT("ROCK SMASH", "GOLPE ROCA", "ÉCLATE-ROC", "SPACCAROCCIA"),
-        CTR_TEXT("OLD ROD", "CAÑA VIEJA", "CANNE", "AMO VECCHIO"),
-        CTR_TEXT("GOOD ROD", "CAÑA BUENA", "SUPER CANNE", "AMO BUONO"),
-        CTR_TEXT("SUPER ROD", "SUPERCAÑA", "MÉGA CANNE", "SUPERAMO"),
+        CTR_TEXT("GRASS", "HIERBA", "HERBES", "ERBA", "GRAMA"), CTR_TEXT("SURFING", "SURF", "SURF", "SURF", "SURF"),
+        CTR_TEXT("ROCK SMASH", "GOLPE ROCA", "ÉCLATE-ROC", "SPACCAROCCIA", "QUEBRA-ROCHA"),
+        CTR_TEXT("OLD ROD", "CAÑA VIEJA", "CANNE", "AMO VECCHIO", "VARA VELHA"),
+        CTR_TEXT("GOOD ROD", "CAÑA BUENA", "SUPER CANNE", "AMO BUONO", "VARA BOA"),
+        CTR_TEXT("SUPER ROD", "SUPERCAÑA", "MÉGA CANNE", "SUPERAMO", "SUPER VARA"),
     };
     static const char *const none = CTR_TEXT("NO ENCOUNTER TABLE", "SIN TABLA DE ENCUENTROS", "AUCUNE TABLE ICI",
-                                             "NESSUNA TABELLA");
-    static const char *const level = CTR_TEXT("LV", "NV", "N", "LV");
+                                             "NESSUNA TABELLA", "SEM TABELA DE ENCONTROS");
+    static const char *const level = CTR_TEXT("LV", "NV", "N", "LV", "NV");
     char text[24];
     int saved[4];
 
@@ -3865,9 +3865,9 @@ static void DrawEncounters(const ViewState *s)
 static void DrawClockNotice(const ViewState *s)
 {
     static const char *const first = CTR_TEXT("SAVED CLOCK NOT RESTORED", "RELOJ GUARDADO NO RESTAURADO",
-                                              "HORLOGE SAUVÉE NON RESTAURÉE", "OROLOGIO NON RIPRISTINATO");
+                                              "HORLOGE SAUVÉE NON RESTAURÉE", "OROLOGIO NON RIPRISTINATO", "RELÓGIO SALVO NÃO RESTAURADO");
     static const char *const second = CTR_TEXT("USING 3DS CLOCK - TAP TO HIDE", "USANDO RELOJ 3DS - TOCA AQUÍ",
-                                               "HORLOGE 3DS UTILISÉE - TOUCHER", "OROLOGIO 3DS IN USO - TOCCA");
+                                               "HORLOGE 3DS UTILISÉE - TOUCHER", "OROLOGIO 3DS IN USO - TOCCA", "USANDO RELÓGIO 3DS - TOQUE AQUI");
 
     DrawPlate(NOTICE_X, NOTICE_Y, NOTICE_W, NOTICE_H, &sLook.chosen, 0, s->pressed == HIT_CLOCK_NOTICE);
     DrawStrIn(&sSmall, Ascii(first), NOTICE_X + 2, NOTICE_X + NOTICE_W - 2, NOTICE_Y + 2, NOTICE_Y + 15,
@@ -3879,8 +3879,8 @@ static void DrawClockNotice(const ViewState *s)
 static void DrawMapClock(const ViewState *s)
 {
     static const char *const phases[] = {
-        CTR_TEXT("MORNING", "MAÑANA", "MATIN", "MATTINA"), CTR_TEXT("DAY", "DÍA", "JOUR", "GIORNO"),
-        CTR_TEXT("EVENING", "TARDE", "SOIR", "SERA"), CTR_TEXT("NIGHT", "NOCHE", "NUIT", "NOTTE")
+        CTR_TEXT("MORNING", "MAÑANA", "MATIN", "MATTINA", "MANHÃ"), CTR_TEXT("DAY", "DÍA", "JOUR", "GIORNO", "DIA"),
+        CTR_TEXT("EVENING", "TARDE", "SOIR", "SERA", "TARDE"), CTR_TEXT("NIGHT", "NOCHE", "NUIT", "NOTTE", "NOITE")
     };
     char time[8], speed[8];
     int top = CLOCK_Y, bottom = CLOCK_Y + CLOCK_H;
@@ -4367,7 +4367,7 @@ static void DrawSave(const ViewState *s)
 
     DrawSaveFile(s);
     if (s->saveStep == SAVE_DONE)
-        DrawSavePlate(64, 112, Ascii(CTR_TEXT("OK", "VALE", "OK", "OK")), TRUE, s->pressed == HIT_OK, TRUE, HIT_OK);
+        DrawSavePlate(64, 112, Ascii(CTR_TEXT("OK", "VALE", "OK", "OK", "OK")), TRUE, s->pressed == HIT_OK, TRUE, HIT_OK);
     else
     {
         DrawSavePlate(10, 106, gText_Yes, TRUE, s->pressed == HIT_YES, s->canSave, HIT_YES);
@@ -4617,7 +4617,7 @@ static void DrawExtraCell(const ViewState *s, int row, const CtrExtra *extra, bo
 /* The tabs: SETTINGS (the options) and each page that has extras. */
 static void DrawOptionTabs(const ViewState *s)
 {
-    static const char *const names[CTR_EXTRAS_PAGES] = {CTR_TEXT("SETTINGS", "AJUSTES", "RÉGLAGES", "OPZIONI"), CTR_TEXT("ENHANCEMENTS", "MEJORAS", "AMÉLIOR.", "MIGLIORIE"), CTR_TEXT("CHEATS", "TRUCOS", "ASTUCES", "TRUCCHI")};
+    static const char *const names[CTR_EXTRAS_PAGES] = {CTR_TEXT("SETTINGS", "AJUSTES", "RÉGLAGES", "OPZIONI", "OPÇÕES"), CTR_TEXT("ENHANCEMENTS", "MEJORAS", "AMÉLIOR.", "MIGLIORIE", "MELHORIAS"), CTR_TEXT("CHEATS", "TRUCOS", "ASTUCES", "TRUCCHI", "TRAPAÇAS")};
     u8 pages[CTR_EXTRAS_PAGES], count = 0;
     int capTop, capBottom, cap, widths[CTR_EXTRAS_PAGES], need = 0, x = 4;
     bool8 fit = TRUE;
@@ -4678,9 +4678,9 @@ static void OptionNames(const u8 *names[OPTION_ROWS])
 {
     const u8 *const table[OPTION_ROWS] = {
         gText_TextSpeed, gText_BattleScene, gText_BattleStyle, gText_Sound,
-        gText_ButtonMode, gText_Frame, Ascii(CTR_TEXT("SHOW FPS", "MOSTRAR FPS", "AFFICH. FPS", "MOSTRA FPS")), Ascii("VOXEL 3D"),
-        Ascii(CTR_TEXT("3D ANGLE", "ÁNGULO 3D", "ANGLE 3D", "ANGOLO 3D")), Ascii(CTR_TEXT("3D ZOOM", "ZOOM 3D", "ZOOM 3D", "ZOOM 3D")),
-        Ascii(CTR_TEXT("3D BLUR", "DESENFOQUE 3D", "FLOU 3D", "SFOC. 3D")), Ascii(CTR_TEXT("3D BATTLE", "COMBATE 3D", "COMBAT 3D", "BATTAGLIA 3D"))};
+        gText_ButtonMode, gText_Frame, Ascii(CTR_TEXT("SHOW FPS", "MOSTRAR FPS", "AFFICH. FPS", "MOSTRA FPS", "MOSTRAR FPS")), Ascii("VOXEL 3D"),
+        Ascii(CTR_TEXT("3D ANGLE", "ÁNGULO 3D", "ANGLE 3D", "ANGOLO 3D", "ÂNGULO 3D")), Ascii(CTR_TEXT("3D ZOOM", "ZOOM 3D", "ZOOM 3D", "ZOOM 3D", "ZOOM 3D")),
+        Ascii(CTR_TEXT("3D BLUR", "DESENFOQUE 3D", "FLOU 3D", "SFOC. 3D", "DESFOQUE 3D")), Ascii(CTR_TEXT("3D BATTLE", "COMBATE 3D", "COMBAT 3D", "BATTAGLIA 3D", "BATALHA 3D"))};
 
     memcpy(names, table, sizeof(table));
 }
@@ -5374,11 +5374,11 @@ static void MoveBody(const ViewState *s, int i)
     PpColours(s->moves4.currentPp[i], s->moves4.maxPp[i], &fg, &sh);
     DrawStrRight(&sNormal, text, x + MOVE_W - 12, oy + 32, fg, sh);
     {
-        int tx = DrawStr(&sSmall, Ascii(CTR_TEXT("POW ", "POT. ", "PUISS. ", "POT. ")), x + 12, oy + 56, TXT_DARK, TXT_LIGHT);
+        int tx = DrawStr(&sSmall, Ascii(CTR_TEXT("POW ", "POT. ", "PUISS. ", "POT. ", "POD. ")), x + 12, oy + 56, TXT_DARK, TXT_LIGHT);
 
         DrawStr(&sSmall, data->power > 1 ? Number(data->power, 3, STR_CONV_MODE_LEFT_ALIGN) : Ascii("---"), tx,
                 oy + 56, TXT_DARK, TXT_LIGHT);
-        StringCopy(text, Ascii(CTR_TEXT("ACC ", "PREC. ", "PRÉC. ", "PREC. ")));
+        StringCopy(text, Ascii(CTR_TEXT("ACC ", "PREC. ", "PRÉC. ", "PREC. ", "PREC. ")));
         StringAppend(text, data->accuracy ? Number(data->accuracy, 3, STR_CONV_MODE_LEFT_ALIGN) : Ascii("---"));
         DrawStrRight(&sSmall, text, x + MOVE_W - 12, oy + 56, TXT_DARK, TXT_LIGHT);
     }

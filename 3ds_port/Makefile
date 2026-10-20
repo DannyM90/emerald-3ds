@@ -44,7 +44,7 @@ HOSTCC ?= gcc
 ROOT := ..
 SCRIPTS := ../tools/port_common
 EXESUFFIX := $(if $(filter Windows_NT,$(OS)),.exe,)
-SOURCES := src/main_3ds.c src/3ds_log.c src/3ds_platform.c src/3ds_input.c src/3ds_input_decode.c src/3ds_fs.c src/3ds_audio.c
+SOURCES := src/main_3ds.c src/3ds_log.c src/3ds_platform.c src/3ds_input.c src/3ds_input_decode.c src/3ds_fs.c src/3ds_audio.c src/3ds_icons_ptbr.c
 SOURCES += src/3ds_data.c src/3ds_pak.c src/3ds_settings.c src/3ds_prof.c src/3ds_gpumem.c src/3ds_scenario.c
 SOURCES += src/3ds_video.c src/3ds_video_decode.c src/3ds_bottom_screen.c
 # The Pokédex on the top screen (include/3ds_dex_top.h).
@@ -110,6 +110,18 @@ endif
 endif
 CPPFLAGS += -DCTR_SHOW_FPS=$(SHOW_FPS)
 GAMEFLAGS += -DCTR_SHOW_FPS=$(SHOW_FPS)
+# The port's own interface: en follows the game's language, pt_br shows it in
+# Brazilian Portuguese over the English game (include/3ds_locale.h).
+PORT_LANG ?= en
+ifeq ($(PORT_LANG),pt_br)
+CTR_LANG_PT_BR := 1
+else ifeq ($(PORT_LANG),en)
+CTR_LANG_PT_BR := 0
+else
+$(error PORT_LANG must be en or pt_br)
+endif
+CPPFLAGS += -DCTR_LANG_PT_BR=$(CTR_LANG_PT_BR)
+GAMEFLAGS += -DCTR_LANG_PT_BR=$(CTR_LANG_PT_BR)
 CPPFLAGS += -DCTR_DATA_BACKEND=$(DATA_BACKEND)
 # Legacy code has existing warnings; platform code remains -Werror.
 GAMECFLAGS := $(filter-out -Werror,$(CFLAGS)) -fsigned-char -fno-strict-aliasing
