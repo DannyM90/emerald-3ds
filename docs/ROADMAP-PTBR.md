@@ -235,7 +235,9 @@ Ordem sugerida, do que o jogador vê mais para o que vê menos:
       (10/10).
 - [x] Gráficos com palavras, vistos no 3DS em 10/10: o APERTE START da
       tela de título, o logo VERSÃO ESMERALDA (desenho próprio, reto,
-      aprovado no 3DS em 12/10), os
+      aprovado no 3DS em 12/10; desde 20/10 montado com as letras do logo
+      inglês do jogador, ESMERALDA em arco como no EDICIÓN ESMERALDA
+      espanhol, `tools/logo_ptbr.py`), os
       títulos e os ícones de tipo do resumo (10/10) e as categorias de
       concurso (ESTILO, BELEZA, FOFURA, ESPERT., FORÇA, 11/10). Desde 11/10
       o patch `0066` leva ao port toda folha que o jogo descomprime.
