@@ -29,13 +29,6 @@
   the title logo). Translation by Carlos Mozart (AllGenWiki). Its patches are
   0057-0066.
 
-- Portuguese title logo: VERSÃO over ESMERALDA in the letters of your own
-  English logo, ESMERALDA on an arc with each letter turned with it, laid
-  out as the Spanish game's EDICIÓN ESMERALDA. Only measures are kept in the
-  repository; the port builds it when the logo is loaded
-  (`tools/logo_ptbr.py` previews it, `make verify-logo-ptbr` checks both
-  agree).
-
 ## 0.4.0 — 2026-10-16
 
 - The project is now called Emerald 3DS, by Zallax: new name on the HOME
