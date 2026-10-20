@@ -58,7 +58,8 @@ u16 Platform_GetKeyInput(void)
         && (held & (START_BUTTON | SELECT_BUTTON)) != (START_BUTTON | SELECT_BUTTON))
     {
         static uint64_t sSteppedAt = ~0ull;
-        bool lIsA = gSaveBlock2Ptr->optionsButtonMode == OPTIONS_BUTTON_MODE_L_EQUALS_A;
+        /* NULL from a soft reset until the intro sets it. */
+        bool lIsA = gSaveBlock2Ptr != NULL && gSaveBlock2Ptr->optionsButtonMode == OPTIONS_BUTTON_MODE_L_EQUALS_A;
         uint64_t frame = CtrPlatform_FrameCount();
 
         if (frame != sSteppedAt)

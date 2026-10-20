@@ -205,6 +205,10 @@ void CtrGame_SoftReset(void)
     CtrAudio_UnlockSound();
     ++sResets;
     CtrPlatform_ReportMemory("at soft reset");
+    /* Out of the battle scene: the game's variables are back to boot (the
+     * save block pointers NULL until the intro sets them), and the key read
+     * below must not take the battle speed's keys, which read the save. */
+    CtrPlatform_SetBattleScene(false);
     WaitForResetKeysUp();
     longjmp(sAgbMainEntry, 1);
 }
