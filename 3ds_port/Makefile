@@ -305,6 +305,11 @@ verify-field-fade-hold:
 verify-voxel-overlay-depth:
 	"$(PYTHON)" tests/voxel_overlay_depth_test.py --cc "$(HOSTCC)"
 
+.PHONY: verify-logo-ptbr
+verify: verify-logo-ptbr
+verify-logo-ptbr:
+	"$(PYTHON)" tests/logo_ptbr_test.py --cc "$(HOSTCC)"
+
 .PHONY: verify-rng-seeding
 verify: verify-rng-seeding
 verify-rng-seeding:
