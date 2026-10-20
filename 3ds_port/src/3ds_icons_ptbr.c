@@ -795,118 +795,63 @@ static const struct GameLabel sHoennMapHeaders[] = {
 
 /*
  * The title screen's logo (graphics/title_screen/emerald_version.8bpp, two
- * 64x32 sprites of 8bpp tiles, one byte a pixel): VERSÃO over ESMERALDA,
- * drawn here in the original's palette (white letters, grey shading, a near
- * black outline and a dark one around it), straight.
- * tools/logo_ptbr.py draws the same into a PNG, as a preview.
+ * 64x32 sprites of 8bpp tiles, one byte a pixel), whole: one hex digit a
+ * pixel, an index into the English logo's palette (0 is clear). ESMERALDA is
+ * the Spanish game's EDICIÓN ESMERALDA logo's, as it draws it; VERSÃO stands
+ * where EDICIÓN does, in its style (E and O are EDICIÓN's, R and A
+ * ESMERALDA's at its size, V and S the English logo's), with a tilde in its
+ * accent's place. Unlike the rest of this file, these are a game's pixels.
+ * tools/logo_ptbr.py writes this table into a PNG, as a preview.
  */
-static const char *const sLogoBig[][12] = {
-    {".########.", "##########", "###.......", "###.......", "#########.", "#########.", "###.......", "###.......", "###.......", "##########", "##########", ".########."}, /* E */
-    {".########.", "##########", "###.....##", "###.......", "#########.", ".#########", ".......###", ".......###", "##.....###", "##########", ".########.", ".........."}, /* S */
-    {".##....##.", "####..####", "##########", "##########", "###.##.###", "###....###", "###....###", "###....###", "###....###", "###....###", "###....###", ".##....##."}, /* M */
-    {".########.", "##########", "###....###", "###....###", "###....###", "#########.", "#########.", "###.#####.", "###...####", "###....###", "###....###", ".##....##."}, /* R */
-    {"..######..", ".########.", "###....###", "###....###", "###....###", "##########", "##########", "###....###", "###....###", "###....###", "###....###", ".##....##."}, /* A */
-    {".##.......", "###.......", "###.......", "###.......", "###.......", "###.......", "###.......", "###.......", "###.......", "##########", "##########", ".########."}, /* L */
-    {".#######..", "#########.", "###...####", "###....###", "###....###", "###....###", "###....###", "###....###", "###...####", "#########.", "########..", ".........."}, /* D */
-};
-static const char *const sLogoSmall[][10] = {
-    {"###..###", "###..###", "###..###", "###..###", "###..###", ".######.", ".######.", "..####..", "..####..", "...##..."}, /* V */
-    {"########", "########", "###.....", "###.....", "#######.", "#######.", "###.....", "###.....", "########", "########"}, /* E */
-    {"#######.", "########", "###..###", "###..###", "########", "#######.", "###.###.", "###..###", "###..###", "###..###"}, /* R */
-    {".#######", "########", "###.....", "#######.", ".#######", "......##", "......##", "########", "########", ".######."}, /* S */
-    {"..##..#.", ".#..##..", "........", ".######.", "###..###", "###..###", "########", "########", "###..###", "###..###"}, /* Ã */
-    {".######.", "########", "###..###", "###..###", "###..###", "###..###", "###..###", "###..###", "########", ".######."}, /* O */
-};
-
 #define LOGO_W 128
 #define LOGO_H 32
 
-static int LogoWidth(const char *text, int big)
-{
-    int w = 0;
-    for (; *text; text++)
-        w += (big ? 10 : 8) + 1;
-    return w - 1;
-}
-
-static int LogoGlyph(char ch, int big)
-{
-    const char *order = big ? "ESMRALD" : "VERS@O";
-    const char *at = strchr(order, ch);
-    return at != NULL ? (int)(at - order) : 0;
-}
-
-/* Marks the text's pixels in mask, centred, its top on row y0. */
-static void LogoText(unsigned char mask[LOGO_H][LOGO_W], const char *text, int big, int y0)
-{
-    int x = (LOGO_W - LogoWidth(text, big)) / 2;
-    int w = big ? 10 : 8, h = big ? 12 : 10;
-
-    for (; *text; text++)
-    {
-        int g = LogoGlyph(*text, big), c, r;
-        for (c = 0; c < w; c++)
-        {
-            int col = x + c;
-            for (r = 0; r < h; r++)
-            {
-                const char *row = big ? sLogoBig[g][r] : sLogoSmall[g][r];
-                int y = y0 + r;
-                if (row[c] == '#' && col >= 0 && col < LOGO_W && y >= 0 && y < LOGO_H)
-                    mask[y][col] = 1;
-            }
-        }
-        x += w + 1;
-    }
-}
-
-static int LogoNear(unsigned char mask[LOGO_H][LOGO_W], int x, int y, int n)
-{
-    int dx, dy;
-    for (dy = -n; dy <= n; dy++)
-        for (dx = -n; dx <= n; dx++)
-            if (abs(dx) + abs(dy) <= n + (n > 1) && y + dy >= 0 && y + dy < LOGO_H && x + dx >= 0
-             && x + dx < LOGO_W && mask[y + dy][x + dx])
-                return 1;
-    return 0;
-}
+static const char sLogo[LOGO_H][LOGO_W + 1] = {
+    "00000000000000000000000000000000000000000000000000000000000000444444400000000000000000000000000000000000000000000000000000000000",
+    "000000000000000000000000000000000000000000000000000000000000044ff44f400000000000000000000000000000000000000000000000000000000000",
+    "00000000000000000000000000000000000000000000000000000000000004f44ff4400000000000000000000000000000000000000000000000000000000000",
+    "00000000000000000000000000000074444444444444444444444444444444444444444444444000000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000007d74443d444dd44433333d4444daaa4444a1d44443ff344400000000000000000000000000000000044400000000000000",
+    "000000000000000000000000000000743a4df343fffa44ffffffd441f3334444fff4443ff3ff4400000000000000000000000000000000000044040000000000",
+    "00000000000000000000000000000004af4dfa4ff31444ff3d3fa44ffa44444afff144f344af1400000000000000000000000000000000000000400000000000",
+    "000000000000000000000000000000041fa1f443ff3a44fff3f3d443ff33444ffdf344f3441f1400000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000473ff344aff31443ffff14444d1ff34af31f3443f3aff4400000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000074ff3441ff1a443f31ffd44a11ffa4ffffffd44ffff14400000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000074afa441ffffd433a4a334d3fffa44ffd43fa444dd444400000000000000000000000000000000000000000000000000",
+    "0000000000000000000000000000000004441d4444444444444444444444444444444444444dd400000000000000000000000000000000000000000000000000",
+    "000000000000000000000000000000004444444e4eedd1aae4a33333a1440004d1dde40044444440000000000000000000000000000000000000000000000000",
+    "000000000000000000000000044444444ed13deeefffffffd4ffffffff3e404efffffe404eadde40004444000000000000000000000000000000000000000000",
+    "00000000000000000000000047edd1e443fff344efffff3fd4ffff3ffff1404afffff1404dfff3400777e7444000000000000000000000000000000000000000",
+    "0000000000000000044444474effffa44fffffe4effffdee443fff4dfffa44effffff34441fff1400eaffa1d7440000000000000000000000000000000000000",
+    "000000000000000444d1a3144efffffeefffff144ffff3ffd4ffffa3fff144afff1fffee4afffd400effffff3d44000000000000000000000000000000000000",
+    "0000000000444444eaffff344efffff1dffffff443ffffffd43fffffff144efffaefff1443fffd4047ffffffffa4400044444000000000000000000000000000",
+    "000000044447deee3fff33144effffffaff3fffd43fffadde43ffffff3e441fffadfffa44ffffe4041fff3affff1400471de4440000000000000000000000000",
+    "00000444ed3ff14dfff1eee44efffafffffdfffa4afffa11143fff1fff34effffffffffeefff34744afff14dfff344441fffad44000000000000000000000000",
+    "00004edafffffa41fffffffa4efff1affff4afffeafffffffe3fffeafffaaffffffffffdeffff1dee3fffe44ffff47e1fffffa44000000000000000000000000",
+    "0000443ffffade4dffffffffaefff1efff341fffd1ffffff3ea3334e33a333ffd441fffa1fffffffdffff44dfff344dffffff344000000000000000000000000",
+    "0000441fff3d1fe413f33fff3efff14aff14ef3adedde777774447777744444e4444d1a1affffff31ffff33ffffa4effffaff344000000000000000000000000",
+    "000004efffffff144ee4dfffaefffa4e3ae44444444444444444444444444444400444444eed1a3aaffffffffffe43fff11ff374000000000000000000000000",
+    "00000443fffffae4ef33ffffee3ade44444444444400000000000000000000000000000444444744ed1afffff3e43ffffe1fff74000000000000000000000000",
+    "0000004dffffeea1efffff3e4444444444000000000000000000000000000000000000000000044444444edde44affffffffff74000000000000000000000000",
+    "0000004effffffffd33a1d444440000000000000000000000000000000000000000000000000000000044444e4eafff33fffffe4000000000000000000000000",
+    "00000044affffff3e4444444000000000000000000000000000000000000000000000000000000000000000044444d144d3fffe4000000000000000000000000",
+    "00000004dfff31e444440000000000000000000000000000000000000000000000000000000000000000000000044444741fffd4000000000000000000000000",
+    "00000004e31e444400000000000000000000000000000000000000000000000000000000000000000000000000000000444e13d4000000000000000000000000",
+    "00000004444440000000000000000000000000000000000000000000000000000000000000000000000000000000000000444444000000000000000000000000",
+    "00000000774000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004470000000000000000000000000",
+};
 
 static void DrawLogo(unsigned char *data)
 {
-    static unsigned char img[LOGO_H][LOGO_W], mask[LOGO_H][LOGO_W];
-    int pass, x, y;
+    int x, y;
 
-    memset(img, 0, sizeof(img));
-    for (pass = 0; pass < 2; pass++)
-    {
-        memset(mask, 0, sizeof(mask));
-        if (pass == 0)
-            LogoText(mask, "ESMERALDA", 1, 16);
-        else
-            LogoText(mask, "VERS@O", 0, 3);
-        for (y = 0; y < LOGO_H; y++)
-            for (x = 0; x < LOGO_W; x++)
-            {
-                int near1 = LogoNear(mask, x, y, 1), near2 = LogoNear(mask, x, y, 2);
-                if (near2 && !near1)
-                    img[y][x] = 0xE;
-                if (near1 && !mask[y][x])
-                    img[y][x] = 0x4;
-                if (mask[y][x])
-                {
-                    /* White, the stroke's bottom row grey, its right edge light grey. */
-                    if (y + 1 < LOGO_H && !mask[y + 1][x])
-                        img[y][x] = 0x8;
-                    else if (x + 1 < LOGO_W && !mask[y][x + 1])
-                        img[y][x] = 0xC;
-                    else
-                        img[y][x] = 0xF;
-                }
-            }
-    }
     for (y = 0; y < LOGO_H; y++)
         for (x = 0; x < LOGO_W; x++)
-            data[((x / 64) * 32 + (y / 8) * 8 + (x % 64) / 8) * 64 + (y % 8) * 8 + x % 8] = img[y][x];
+        {
+            char c = sLogo[y][x];
+            data[((x / 64) * 32 + (y / 8) * 8 + (x % 64) / 8) * 64 + (y % 8) * 8 + x % 8]
+                = (unsigned char)(c <= '9' ? c - '0' : c - 'a' + 10);
+        }
 }
 
 /*
