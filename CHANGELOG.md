@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Double battles: the bottom screen's target menu and the second mon's move
+  menu are made ready while the turn plays out, with the action menu and the
+  first mon's moves. Built when they first came up, they dropped an Old
+  3DS's frame rate sharply the first time a target, or the second mon's
+  move, was chosen. The second mon's moves have pictures of their own, so
+  warming them no longer throws out the first mon's.
+
 - Voxel world: a map whose layout its script swaps is drawn with the swapped
   one. The Mirage Tower no longer stands in 3D on the days the game hides it,
   or after it falls, and it no longer shows from Mauville or Routes 112 and
