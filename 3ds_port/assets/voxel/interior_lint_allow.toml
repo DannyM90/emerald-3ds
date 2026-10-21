@@ -173,3 +173,15 @@ backdrop = "the ice cave's rock: its foot runs on past its blocked cells into th
 
 [allow.sootopolis_gym_b1f_walls_9_10]
 backdrop = "the ice cave's rock: its foot runs on past its blocked cells into the walkable ones below it, over the snow there, in the same blues (no piece takes those)"
+
+[allow.frontier_pyramid_lobby_pillar_w]
+under = "the column is drawn in the floor's own stone colours, its bands and its base inside its outline: it is the column, not the floor under it"
+
+[allow.frontier_pyramid_lobby_pillar_e]
+under = "the column is drawn in the floor's own stone colours, its bands and its base inside its outline: it is the column, not the floor under it"
+
+[allow.frontier_factory_lobby_bin_15]
+under = "its body is drawn in the floor's own grey, inside its rim: it is the bin, not the floor under it"
+
+[allow.frontier_factory_lobby_bin_17]
+under = "its body is drawn in the floor's own grey, inside its rim: it is the bin, not the floor under it"
