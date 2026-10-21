@@ -4794,6 +4794,205 @@ def sootopolis_gym_b1f():
                        leave=("acdee6", "d5eeee", "ffffff", "000000"))
 
 
+
+# The Battle Frontier. Scott's house and the lounges: their back walls and
+# side walls; their plants are the Center's and the lounges' television
+# House2's, found again (reuse_pieces). Their front corners, black in the
+# drawing, are floor in the round.
+
+
+# The Battle Frontier's lobbies: (layout, width, height, the back wall's
+# foot, floor). Their doors are painted on the back wall, as the rooms'
+# doors are: the receptionist walks the player into them.
+FRONTIER_LOBBIES = {
+    "arena": ("LAYOUT_BATTLE_FRONTIER_BATTLE_ARENA_LOBBY", 256, 208, 48, 0x202),
+    "dome": ("LAYOUT_BATTLE_FRONTIER_BATTLE_DOME_LOBBY", 368, 272, 80, 0x340),
+    "factory": ("LAYOUT_BATTLE_FRONTIER_BATTLE_FACTORY_LOBBY", 304, 192, 80, 0x201),
+    "palace": ("LAYOUT_BATTLE_FRONTIER_BATTLE_PALACE_LOBBY", 400, 192, 80, 0x201),
+    "pike": ("LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_LOBBY", 176, 208, 64, 0x2c2),
+    "pyramid": ("LAYOUT_BATTLE_FRONTIER_BATTLE_PYRAMID_LOBBY", 240, 288, 80, 0x20b),
+    "tower": ("LAYOUT_BATTLE_FRONTIER_BATTLE_TOWER_LOBBY", 400, 160, 32, 0x200),
+}
+
+
+def frontier_lobby(name):
+    _, w, h, foot, _ = FRONTIER_LOBBIES[name]
+    return FRONTIER_LOBBY_PIECES.get(name, list)() + room_shell(
+        w, h, foot, side=FRONTIER_LOBBY_SIDES.get(name))
+
+
+# the Battle Tower's: five counters along the back, a glass terminal on
+# four of them; a low yellow divider runs from the wall to each terminal,
+# and to the fifth counter's east end, as tall as the counters.
+def frontier_tower_lobby():
+    pieces = []
+    for c in (4, 8, 12, 16):
+        x = c * 16
+        pieces += [piece("divider_%d" % c, [(x, 22, x + 16, 68)], 10),
+                   piece("terminal_%d" % c, [(x, 68, x + 16, 96)], 18),
+                   piece("counter_%d_e" % c, [(x + 16, 76, x + 32, 96)], 10)]
+        if c > 4:
+            pieces.append(piece("counter_%d_w" % c, [(x - 16, 76, x, 96)], 10))
+    return pieces + [piece("divider_20", [(320, 22, 336, 96)], 10),
+                     piece("counter_20_w", [(304, 76, 320, 96)], 10)]
+
+
+# the Battle Dome's: an L of counter each side, its arm running back, and
+# a counter between it and the middle, 6 px tall; on each a terminal, or
+# the results monitor, and red ropes on posts between them
+DOME_FLOOR = ("8bcdac", "9ceecd", "7bac8b")
+# the west arm's top, the row its outline starts on in each column from
+# x 32 (slanting down to the west, its corners rounded)
+DOME_ARM_TOP = [134, 132, 130, 128, 126, 124, 122, 120, 114, 113] + [112] * 12 + [113, 114]
+
+
+def dome_counter_arm():
+    """The west counter's plan: the arm's back stepped column by column
+    along its drawn outline (a slanted edge is a face the GBA's camera
+    would see beside the top), then the bar to the terminal."""
+    plan = [(32, 176)]
+    for i, top in enumerate(DOME_ARM_TOP):
+        for pt in ((32 + i, top + 6), (33 + i, top + 6)):
+            if len(plan) > 1 and plan[-1][1] == pt[1] == plan[-2][1]:
+                plan[-1] = pt     # along a run of the same row
+            elif pt != plan[-1]:
+                plan.append(pt)
+    return plan + [(56, 166), (64, 166), (64, 176)]
+
+
+def frontier_dome_lobby():
+    def ropes(name, x0, y0, y1):
+        return piece(name, [(x0, y0, x0 + 32, y1)], y1 - y0, card=True, leave=DOME_FLOOR)
+    return [
+        piece("terminal_w", [(64, 148, 80, 176)], 22),
+        piece("terminal_red", [(112, 148, 128, 176)], 22),
+        piece("monitor", [(232, 144, 264, 176)], 24),
+        piece("terminal_e", [(288, 148, 304, 176)], 22),
+        piece("counter_w", [(32, 112, 64, 176)], 6, leave=DOME_FLOOR, plan=dome_counter_arm()),
+        piece("counter_e", [(304, 112, 336, 176)], 6, leave=DOME_FLOOR,
+              plan=[(368 - x, z) for x, z in reversed(dome_counter_arm())]),
+        piece("counter_mid_w1", [(96, 148, 112, 176)], 6, leave=DOME_FLOOR),
+        piece("counter_mid_w2", [(128, 148, 144, 176)], 6, leave=DOME_FLOOR),
+        piece("counter_mid_e1", [(224, 148, 232, 176)], 6, leave=DOME_FLOOR),
+        piece("counter_mid_e2", [(264, 148, 272, 176)], 6, leave=DOME_FLOOR),
+        ropes("ropes_w", 0, 158, 176),
+        ropes("ropes_mw1", 144, 126, 144),
+        ropes("ropes_mw2", 144, 158, 176),
+        ropes("ropes_me1", 192, 126, 144),
+        ropes("ropes_me2", 192, 158, 176),
+        ropes("ropes_e", 336, 158, 176),
+    ]
+
+
+# the Battle Factory's: as the Tower's, a divider 10 px tall from the wall
+# to a terminal or to a counter's end, the counters round them; and two
+# bins by the door. Its back wall stands to row 5, its base band and the
+# doorways into the back painted on it.
+def frontier_factory_lobby():
+    return [
+        piece("divider_2", [(32, 72, 48, 100)], 10),
+        piece("terminal_2", [(32, 100, 48, 128)], 18),
+        piece("counter_3", [(48, 108, 64, 128)], 10),
+        piece("counter_5", [(80, 108, 112, 128)], 10),
+        piece("divider_7", [(112, 72, 128, 128)], 10),
+        piece("divider_11", [(176, 72, 192, 128)], 10),
+        piece("counter_12", [(192, 108, 224, 128)], 10),
+        piece("counter_15", [(240, 108, 256, 128)], 10),
+        piece("divider_16", [(256, 72, 272, 100)], 10),
+        piece("terminal_16", [(256, 100, 272, 128)], 18),
+        piece("bin_15", [(240, 166, 256, 192)], 16),
+        piece("bin_17", [(272, 166, 288, 192)], 16),
+    ]
+
+
+# the Battle Palace's: two low white tables each side of the receptionist,
+# on gold legs, and a glass terminal on a post in front of them
+PALACE_FLOOR = ("a46283", "bd8ba4", "944162")
+
+
+def frontier_palace_lobby():
+    out = []
+    for side, dx in (("w", 0), ("e", 224)):
+        out += [
+            piece("terminal_" + side, [(32 + dx, 108, 48 + dx, 136)], 28, card=True,
+                  leave=PALACE_FLOOR),
+            piece("table_%s1" % side, [(32 + dx, 80, 56 + dx, 118)], 6, leave=PALACE_FLOOR),
+            piece("table_%s2" % side, [(56 + dx, 96, 80 + dx, 118)], 6, leave=PALACE_FLOOR),
+            piece("table_%s3" % side, [(96 + dx, 96, 120 + dx, 118)], 6, leave=PALACE_FLOOR),
+            piece("table_%s4" % side, [(120 + dx, 80, 144 + dx, 118)], 6, leave=PALACE_FLOOR),
+        ]
+    return out
+
+
+# the Battle Pike's: fourteen copper pillars, a gold ball on each, 21 px
+# tall on their cells - those at the side walls too - and a glass terminal
+# on a post before the curtain
+PIKE_CURTAIN = ("c50000", "ff0000", "7b3100", "523131", "ff9462")
+PIKE_FLOOR = ("7b6a31", "a48b31", "cdac31")
+
+
+def frontier_pike_lobby():
+    cells = [(3, 4), (7, 4), (4, 5), (6, 5), (1, 7), (9, 7), (0, 8), (3, 8), (7, 8), (10, 8),
+             (1, 10), (9, 10), (3, 12), (7, 12)]
+    return [piece("terminal", [(128, 44, 144, 72)], 28, card=True,
+                  leave=PIKE_CURTAIN + PIKE_FLOOR)] + [
+        piece("pillar_%d_%d" % (x, y), [(x * 16, y * 16 - 15, x * 16 + 16, y * 16 + 16)], 21)
+        for (x, y) in cells]
+
+
+# the Battle Arena's: its tatami, the staff's floor, raised by no more
+# than its edge, stays drawn; the results television in its cabinet, the
+# plants on stands, the terminal and the shelf down the east side stand
+def frontier_arena_lobby():
+    return [
+        piece("terminal", [(80, 128, 96, 160)], 24),
+        piece("television", [(0, 92, 48, 128)], 28),
+        piece("plant_12", [(192, 96, 208, 128)], 24),
+        piece("plant_14", [(224, 96, 240, 128)], 24),
+        piece("plant_sw", [(0, 160, 16, 192)], 24),
+        piece("shelf_e", [(240, 96, 256, 208)], 16),
+    ]
+
+
+# the Battle Pyramid's: the columns either side and the braziers stand
+# before the back wall, its statues, the models of the pyramid and the
+# square into it painted on it (it stands to row 5); its glass terminal is
+# the Pike's, found again. The terrace and its stairs, rows 8 to 12, are a
+# level below the room's floor the console's floor does not have: they
+# stay drawn
+def frontier_pyramid_lobby():
+    return [
+        piece("pillar_w", [(32, 0, 48, 104)], 80),
+        piece("pillar_e", [(192, 0, 208, 104)], 80),
+        piece("brazier_w", [(64, 72, 80, 96)], 20),
+        piece("brazier_e", [(160, 72, 176, 96)], 20),
+    ]
+
+
+FRONTIER_LOBBY_PIECES = {
+    "arena": frontier_arena_lobby,
+    "dome": frontier_dome_lobby,
+    "factory": frontier_factory_lobby,
+    "palace": frontier_palace_lobby,
+    "pike": frontier_pike_lobby,
+    "pyramid": frontier_pyramid_lobby,
+    "tower": frontier_tower_lobby,
+}
+# the stretch of each back wall that dresses its side walls: one with
+# nothing standing before it, as tall as the wall
+FRONTIER_LOBBY_SIDES = {
+    "factory": (96, 0, 112, 80),
+    "palace": (128, 0, 144, 80),
+    "tower": (112, 0, 128, 32),
+}
+
+
+def front_corners(w, h):
+    """A room's two bottom corner cells the GBA leaves black, as `open`."""
+    return [[(0, h - 16), (16, h - 16), (16, h), (0, h)],
+            [(w - 16, h - 16), (w, h - 16), (w, h), (w - 16, h)]]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -6672,6 +6871,61 @@ SPECS = [
         "name": "sootopolis_gym_b1f",
         "interior": {"layout": "LAYOUT_SOOTOPOLIS_CITY_GYM_B1F", "ground": [0x211],
                      "pieces": own_shell(sootopolis_gym_b1f())},
+    },
+    {
+        "name": "scotts_house",
+        "interior": {"layout": "LAYOUT_BATTLE_FRONTIER_SCOTTS_HOUSE", "ground": [0x3c9],
+                     "pieces": own_shell(room_shell(96, 128)),
+                     "open": front_corners(96, 128)},
+    },
+    {
+        # the lounges: two and seven of them
+        "name": "frontier_lounge1",
+        "interior": {"layout": "LAYOUT_BATTLE_FRONTIER_LOUNGE1", "ground": [0x3c8],
+                     "pieces": own_shell(room_shell(208, 128)),
+                     "open": front_corners(208, 128)},
+    },
+    {
+        "name": "frontier_lounge2",
+        "interior": {"layout": "LAYOUT_BATTLE_FRONTIER_LOUNGE2", "ground": [0x3c8],
+                     "pieces": own_shell(room_shell(144, 160)),
+                     "open": front_corners(144, 160)},
+    },
+    {
+        # the Battle Frontier's lobbies
+        "name": "frontier_arena_lobby",
+        "interior": {"layout": FRONTIER_LOBBIES["arena"][0], "ground": [FRONTIER_LOBBIES["arena"][4]],
+                     "pieces": own_shell(frontier_lobby("arena"))},
+    },
+    {
+        "name": "frontier_dome_lobby",
+        "interior": {"layout": FRONTIER_LOBBIES["dome"][0], "ground": [FRONTIER_LOBBIES["dome"][4]],
+                     "pieces": own_shell(frontier_lobby("dome"))},
+    },
+    {
+        "name": "frontier_factory_lobby",
+        "interior": {"layout": FRONTIER_LOBBIES["factory"][0], "ground": [FRONTIER_LOBBIES["factory"][4]],
+                     "pieces": own_shell(frontier_lobby("factory"))},
+    },
+    {
+        "name": "frontier_palace_lobby",
+        "interior": {"layout": FRONTIER_LOBBIES["palace"][0], "ground": [FRONTIER_LOBBIES["palace"][4]],
+                     "pieces": own_shell(frontier_lobby("palace"))},
+    },
+    {
+        "name": "frontier_pike_lobby",
+        "interior": {"layout": FRONTIER_LOBBIES["pike"][0], "ground": [FRONTIER_LOBBIES["pike"][4]],
+                     "pieces": own_shell(frontier_lobby("pike"))},
+    },
+    {
+        "name": "frontier_pyramid_lobby",
+        "interior": {"layout": FRONTIER_LOBBIES["pyramid"][0], "ground": [FRONTIER_LOBBIES["pyramid"][4]],
+                     "pieces": own_shell(frontier_lobby("pyramid"))},
+    },
+    {
+        "name": "frontier_tower_lobby",
+        "interior": {"layout": FRONTIER_LOBBIES["tower"][0], "ground": [FRONTIER_LOBBIES["tower"][4]],
+                     "pieces": own_shell(frontier_lobby("tower"))},
     },
     {
         "name": "treasure_house",
