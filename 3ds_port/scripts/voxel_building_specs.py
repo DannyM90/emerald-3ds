@@ -4397,6 +4397,41 @@ def mauville_game_corner():
     ]
 
 
+
+# Mossdeep's Game Corner and Sootopolis's Mystery Events House. Much of
+# their furniture already stands through reuse_pieces (House1's and House2's
+# plants, chairs and television, the chest and case from Mr. Briney's house,
+# the Battle Tent's machine); their own are below.
+
+MOSSDEEP_GC_FLOOR = ("eecda4", "d5b473", "bda462", "7b839c")
+EVENTS_FLOOR = ("8b8b8b", "b4b4a4", "73738b")
+
+
+def mossdeep_game_corner_1f():
+    """The counter, a U from the back wall on short legs (its arms' planks
+    run back to the wall, the bar's across, the yellow gate in its middle),
+    the four posts against the wall either side of the doorway, and the two
+    glass tables; the chairs round them stand on cells the player walks on
+    and stay drawn."""
+    fl = MOSSDEEP_GC_FLOOR
+    posts = [piece("post_%d" % x, [(x, 15, x + 6, 34)], 16, leave=fl, against=31)
+             for x in (57, 73, 98, 114)]
+    tables = [piece("table_%s" % k, [(x, 93, x + 32, 128)], 8, leave=fl, solid=True)
+              for k, x in (("w", 32), ("e", 112))]
+    return posts + tables + [
+        piece("counter", [(32, 21, 48, 45), (128, 21, 144, 45), (32, 45, 144, 62)], 6,
+              leave=fl, against=31,
+              plan=[(32, 31), (48, 31), (48, 51), (128, 51), (128, 31), (144, 31), (144, 62),
+                    (32, 62)]),
+    ] + room_shell(192, 160, foot=31)
+
+
+def mystery_events_house_1f():
+    return [
+        piece("table", [(114, 64, 142, 91)], 4, leave=EVENTS_FLOOR, solid=True),
+    ] + room_shell(176, 128)
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -6180,6 +6215,35 @@ SPECS = [
         "name": "game_corner_room",
         "interior": {"layout": "LAYOUT_MAUVILLE_CITY_GAME_CORNER", "ground": [0x202],
                      "pieces": own_shell(mauville_game_corner())},
+    },
+    {
+        "name": "mossdeep_game_corner_1f",
+        "interior": {"layout": "LAYOUT_MOSSDEEP_CITY_GAME_CORNER_1F", "ground": [0x20a],
+                     "pieces": own_shell(mossdeep_game_corner_1f())},
+    },
+    {
+        "name": "mossdeep_game_corner_b1f",
+        "interior": {"layout": "LAYOUT_MOSSDEEP_CITY_GAME_CORNER_B1F", "ground": [0x223],
+                     "pieces": own_shell(room_shell(192, 144, foot=31))},
+    },
+    {
+        "name": "mystery_events_house_1f",
+        "interior": {"layout": "LAYOUT_SOOTOPOLIS_CITY_MYSTERY_EVENTS_HOUSE_1F",
+                     "ground": [0x235], "pieces": own_shell(mystery_events_house_1f())},
+    },
+    {
+        # while a Frontier trainer is visiting, the map's script opens the
+        # stairs down (setmaplayoutindex): the plants stand either side of
+        # them, not in front. Its back wall is drawn round the open stairs,
+        # so it is its own; the rest is 1F's, found again
+        "name": "mystery_events_house_1f_open",
+        "interior": {"layout": "LAYOUT_SOOTOPOLIS_CITY_MYSTERY_EVENTS_HOUSE_1F_STAIRS_UNBLOCKED",
+                     "ground": [0x235], "pieces": own_shell(room_shell(176, 128))},
+    },
+    {
+        "name": "mystery_events_house_b1f",
+        "interior": {"layout": "LAYOUT_SOOTOPOLIS_CITY_MYSTERY_EVENTS_HOUSE_B1F",
+                     "ground": [0x235], "pieces": own_shell(room_shell(192, 144, foot=31))},
     },
     {
         "name": "treasure_house",
