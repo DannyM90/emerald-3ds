@@ -3501,11 +3501,16 @@ def contest_lobby():
         # drawing leaves the wall), the
         # receptionists' floor between them; 10 px tall, its
         # front the green lip and the white panels. The bow on the east arm's
-        # front corner is its own paint; the row under its front, its shadow
-        piece("counter", [(176, 25, 192, 62), (288, 25, 304, 62), (176, 44, 304, 62)], 10,
-              leave=LOBBY_FLOOR + LOBBY_CURTAIN,
-              plan=[(176, 36.2), (177.2, 35), (190.8, 35), (192, 36.2), (192, 54), (288, 54),
-                    (288, 36.2), (289.2, 35), (302.8, 35), (304, 36.2), (304, 63), (176, 63)]),
+        # front corner is its own paint; the row under its front, its shadow.
+        # In three: the lobby's script opens and closes the flaps beside the
+        # arms (cells 12,2-3 and 17,2-3, setmetatile), so they stay drawn - a
+        # piece's rectangle would lay them in its model, shut
+        piece("counter_w", [(176, 25, 192, 62)], 10, leave=LOBBY_FLOOR + LOBBY_CURTAIN,
+              plan=[(176, 36.2), (177.2, 35), (190.8, 35), (192, 36.2), (192, 63), (176, 63)]),
+        piece("counter", [(208, 44, 272, 62)], 10, leave=LOBBY_FLOOR + LOBBY_CURTAIN,
+              plan=[(208, 54), (272, 54), (272, 63), (208, 63)]),
+        piece("counter_e", [(288, 25, 304, 62)], 10, leave=LOBBY_FLOOR + LOBBY_CURTAIN,
+              plan=[(288, 36.2), (289.2, 35), (302.8, 35), (304, 36.2), (304, 63), (288, 63)]),
         piece("terminal", [(304, 8, 320, 39)], 24, back=32),
         # the back wall, its two doorways painted on its face as Lavaridge's
         # Center's door to the spring is
@@ -4409,7 +4414,8 @@ EVENTS_FLOOR = ("8b8b8b", "b4b4a4", "73738b")
 
 def mossdeep_game_corner_1f():
     """The counter, a U from the back wall on short legs (its arms' planks
-    run back to the wall, the bar's across, the yellow gate in its middle),
+    run back to the wall, the bar's across), in two round the yellow gate in
+    its middle,
     the four posts against the wall either side of the doorway, and the two
     glass tables; the chairs round them stand on cells the player walks on
     and stay drawn."""
@@ -4419,10 +4425,13 @@ def mossdeep_game_corner_1f():
     tables = [piece("table_%s" % k, [(x, 93, x + 32, 128)], 8, leave=fl, solid=True)
               for k, x in (("w", 32), ("e", 112))]
     return posts + tables + [
-        piece("counter", [(32, 21, 48, 45), (128, 21, 144, 45), (32, 45, 144, 62)], 6,
-              leave=fl, against=31,
-              plan=[(32, 31), (48, 31), (48, 51), (128, 51), (128, 31), (144, 31), (144, 62),
-                    (32, 62)]),
+        # in two, round its gate (5,2-3), which the cable club's scripts open
+        # for link play (EventScript_OpenMossdeepGameCornerBarrier): it stays
+        # drawn, so it opens - a piece's rectangle would lay it in its model
+        piece("counter_w", [(32, 21, 48, 45), (32, 45, 80, 62)], 6, leave=fl, against=31,
+              plan=[(32, 31), (48, 31), (48, 51), (80, 51), (80, 62), (32, 62)]),
+        piece("counter_e", [(128, 21, 144, 45), (96, 45, 144, 62)], 6, leave=fl, against=31,
+              plan=[(96, 51), (128, 51), (128, 31), (144, 31), (144, 62), (96, 62)]),
     ] + room_shell(192, 160, foot=31)
 
 
@@ -4439,9 +4448,10 @@ def mystery_events_house_1f():
 # entry corridor. data/scripts/elite_four.inc opens the door and switches
 # the spotlights off after the battle, and closes the entry door behind the
 # player (setmetatile): a model keeps the drawing it was built from, so
-# those cells stay drawn - the back wall stands on row 2's top edge, the
-# spotlights lying at its foot, a lintel over the door, and the front wall
-# runs in two stretches, a lintel over the corridor.
+# the spotlights and the entry door stay drawn - the back wall stands on row
+# 2's top edge, the spotlights lying at its foot, and the front wall runs in
+# two stretches, its top over the corridor drawn. The door is painted on the
+# back wall (see below).
 
 E4_WALL_SIDE = (32, 16, 48, 32)
 
@@ -4453,12 +4463,19 @@ def elite_four_room(floor):
     return [
         piece("pillar_w", [(0, 68, 26, 147)], 69, leave=floor),
         piece("pillar_e", [(182, 68, 208, 147)], 69, leave=floor),
-        piece("wall", [(0, 0, 96, 32), (112, 0, 208, 32), (96, 0, 112, 16)], 32, fill=16,
-              foot=32, side=side),
-        piece("front", [(0, 172, 80, 224), (128, 172, 208, 224), (80, 172, 128, 192)], 32,
-              fill=16, foot=224, side=side),
-        piece("side_w", [], 32, side=side, walls=[((0, 204), (0, 32))]),
-        piece("side_e", [], 32, side=side, walls=[((208, 32), (208, 204))]),
+        # the door painted on the back wall, as the rooms' doors are: a
+        # doorway cut through it shows, from the console's camera, the wall's
+        # own drawing lying on the floor behind it; so the door stays shut
+        # when elite_four.inc opens it. The front wall in two stretches, its
+        # top over the corridor drawn, and the side walls from the spotlights'
+        # row on: a piece's rectangle lays every cell in it in its model, and
+        # the spotlights and the entry door stay drawn to change. Named as
+        # walls, the room's own (own_shell)
+        piece("wall", [(0, 0, 208, 32)], 32, fill=16, foot=32, side=side),
+        piece("wall_front_w", [(0, 172, 80, 224)], 32, fill=16, foot=224),
+        piece("wall_front_e", [(128, 172, 208, 224)], 32, fill=16, foot=224),
+        piece("side_w", [], 32, side=side, walls=[((0, 204), (0, 48))]),
+        piece("side_e", [], 32, side=side, walls=[((208, 48), (208, 204))]),
     ]
 
 
