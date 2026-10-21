@@ -109,3 +109,20 @@ foreign = "a railing running down the dock is drawn as its top line alone: its l
 stripes = "its sides are its bars, grey between the floor and the water: a railing's make, not a barcode"
 copied = "its sides are the back railing's bars, upright lines as its own front's: the same railing"
 foreign = "a railing running down the dock is drawn as its top line alone: its long sides carry the back railing's bars (HARBOR_BARS), as Rustboro's railings' flanks carry the row's"
+
+[allow.shipyard_1f_model_ship]
+floating = "it stands on the desk, which runs back to the wall under it; the grey strip of the desk's top under its keel is outside both outlines, so no piece owns the row below its foot"
+
+[allow.shipyard_2f_rail_n]
+foreign = "its ends show the bars and the workshop below between them as its front does (through): the balcony seen through a railing, not a fin"
+
+[allow.shipyard_2f_rail_s]
+foreign = "its ends show the bars and the workshop below between them as its front does (through): the balcony seen through a railing, not a fin"
+
+[allow.shipyard_2f_rail_e]
+copied = "its sides are the back railing's bars, upright lines as its own front's: the same railing"
+foreign = "a railing running down the balcony is drawn as its top line alone: its long sides carry the back railing's bars (HARBOR_BARS), as the Harbor's and Rustboro's railings' flanks do"
+
+[allow.shipyard_2f_rail_w]
+copied = "its sides are the back railing's bars, upright lines as its own front's: the same railing"
+foreign = "a railing running down the balcony is drawn as its top line alone: its long sides carry the back railing's bars (HARBOR_BARS), as the Harbor's and Rustboro's railings' flanks do"

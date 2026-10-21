@@ -4075,6 +4075,92 @@ def harbor():
     ]
 
 
+
+# Stern's Shipyard 1F: the office west of its partition (the stairs up
+# painted on the back wall), the workshop east of it - the board stacks in
+# its corners, the girder towers, the enclosure round the submarine.
+
+SHIPYARD_FLOOR = ("739c8b", "62627b", "628b83", "8bb4ac", "a4cdbd", "9c8b94", "acb494", "839473",
+                  "6a7b41", "dedec5")
+SHIPYARD_WALL = ("dedede", "ffffff", "8b94a4", "6a7b7b")
+SHIPYARD_WALL_SIDE = (64, 0, 80, 32)
+
+
+def shipyard_1f():
+    fl = SHIPYARD_FLOOR
+    side = SHIPYARD_WALL_SIDE
+    return [
+        # the submarine in its glass capsule, its nose out in front
+        piece("sub_nose", [(192, 136, 224, 157)], 12, leave=fl),
+        piece("capsule", [(176, 72, 240, 136)], 40, leave=fl),
+        # the robot arm and its console, before the enclosure's wall
+        piece("robot", [(144, 72, 176, 120)], 24, leave=fl),
+        piece("girder_n", [(112, 64, 128, 112)], 44, leave=fl),
+        # the enclosure's wall and the pillar at its east end
+        piece("pillar_e", [(240, 56, 256, 99)], 29, leave=fl),
+        piece("wall_enc", [(112, 60, 240, 96)], 27, fill=16, foot=96, side=side),
+        # along the back wall: the three consoles and a pilaster
+        piece("consoles", [(128, 16, 176, 40)], 17, back=32, leave=fl, side=(129, 17, 143, 21)),
+        piece("pilaster", [(192, 0, 208, 35)], 35, back=32, leave=fl),
+        # the workshop's girder towers and board stacks
+        piece("girder_w", [(160, 144, 176, 207)], 59, leave=fl),
+        piece("girder_e", [(224, 160, 240, 207)], 43, leave=fl),
+        piece("boards_sw", [(112, 176, 160, 240)], 32, leave=fl),
+        piece("boards_se", [(288, 176, 336, 225)], 32, leave=fl),
+        piece("boards_ne", [(304, 48, 336, 113)], 40, leave=fl),
+        # the office
+        piece("table", [(64, 96, 96, 128)], 6, leave=fl, solid=True),
+        # the desks with their computers, their sides their tops' lavender
+        piece("desk_n", [(0, 66, 32, 97)], 10, leave=fl, solid=True, side=(18, 78, 30, 88)),
+        piece("desk_m", [(0, 114, 32, 145)], 10, leave=fl, solid=True, side=(18, 126, 30, 136)),
+        piece("desk_s", [(0, 162, 32, 193)], 10, leave=fl, solid=True, side=(18, 174, 30, 184)),
+        # the model ship on the desk, with the grey strip of the desk's top
+        # it stands on (outside the desk's outline, which closes its front)
+        piece("model_ship", [(3, 24, 30, 38)], 10, base=8, leave=SHIPYARD_WALL[2:]),
+        # the desk the model ship is on, back to the wall under the ship
+        piece("desk_ship", [(0, 37, 32, 48)], 8, back=32),
+        # the partition between office and workshop, its door between its
+        # two runs; the south one runs on past the map's edge
+        piece("partition_n", [(96, 0, 112, 146)], 28, fill=16, foot=146, side=side, against=32,
+              walls=[((96, 32), (96, 146)), ((112, 146), (112, 32))]),
+        piece("partition_s", [(96, 169, 112, 240)], 28, fill=16, foot=268, side=side,
+              walls=[((96, 197), (96, 268)), ((112, 268), (112, 197))]),
+        piece("wall", [(0, 0, 336, 32)], 32, fill=16, foot=32, side=side),
+        piece("side_w", [], 32, side=side, walls=[((0, 240), (0, 32))]),
+        piece("side_e", [], 32, side=side, walls=[((336, 32), (336, 240))]),
+    ]
+
+
+
+# Stern's Shipyard 2F: offices round a balcony over the workshop. 1F's desks
+# with their computers, its blueprint tables, its pilasters and the Harbor's
+# railing stand in it as they are (reuse_pieces); its own are the plain
+# desks, the bin, and the railing round the balcony, the workshop seen
+# through it. Inside the railing the floor below is drawn - 1F's girder
+# and submarine among it: the room's `pit`, where nothing found again
+# stands.
+
+SHIPYARD_PIT = [(136, 96, 248, 192)]
+
+
+def shipyard_2f():
+    side = SHIPYARD_WALL_SIDE
+    fl = SHIPYARD_FLOOR
+    desk = lambda name, x, y: piece(name, [(x, y + 10, x + 32, y + 33)], 10, leave=fl,  # noqa: E731
+                                    solid=True, side=(x + 18, y + 14, x + 30, y + 24))
+    return [
+        piece("bin", [(113, 176, 127, 192)], 15, round="lathe", leave=fl),
+        desk("desk_nw", 0, 64), desk("desk_m", 32, 112), desk("desk_s", 32, 160),
+        piece("rail_s", [(128, 192, 256, 208)], 15, through=True, leave=fl),
+        piece("rail_e", [(248, 96, 256, 192)], 15, through=True, leave=fl, side=HARBOR_BARS),
+        piece("rail_w", [(128, 160, 136, 192)], 15, through=True, leave=fl, side=HARBOR_BARS),
+        piece("rail_n", [(128, 80, 256, 96)], 15, through=True, leave=fl),
+        piece("wall", [(0, 0, 272, 32)], 32, fill=16, foot=32, side=side),
+        piece("side_w", [], 32, side=side, walls=[((0, 240), (0, 32))]),
+        piece("side_e", [], 32, side=side, walls=[((272, 32), (272, 240))]),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5800,6 +5886,17 @@ SPECS = [
         "name": "harbor",
         "interior": {"layout": "LAYOUT_HARBOR", "ground": [0x202],
                      "pieces": own_shell(harbor())},
+    },
+    {
+        # Stern's Shipyard, Slateport, 1F
+        "name": "shipyard_1f",
+        "interior": {"layout": "LAYOUT_SLATEPORT_CITY_STERNS_SHIPYARD_1F", "ground": [0x229],
+                     "pieces": own_shell(shipyard_1f())},
+    },
+    {
+        "name": "shipyard_2f",
+        "interior": {"layout": "LAYOUT_SLATEPORT_CITY_STERNS_SHIPYARD_2F", "ground": [0x202],
+                     "pieces": own_shell(shipyard_2f()), "pit": SHIPYARD_PIT},
     },
 ] + [
     {
