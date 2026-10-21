@@ -155,3 +155,21 @@ foreign = "a railing running down the boarding gap is drawn as its top line alon
 
 [allow.bike_shop_shelf]
 under = "its bottom shelf is drawn in the floor's own greys (acbdac, 83948b): the shelf's, inside its outline"
+
+[allow.sootopolis_gym_1f_walls_4_0]
+under = "the crystal fountain's basin has a white rim, as the ice is white: inside the basin's outline (the dark line under it), the fountain's"
+
+[allow.sootopolis_gym_1f_walls_11_0]
+under = "the crystal fountain's basin has a white rim, as the ice is white: inside the basin's outline (the dark line under it), the fountain's"
+
+[allow.sootopolis_gym_b1f_walls_2_4]
+backdrop = "the ice cave's rock: its foot runs on past its blocked cells into the walkable ones below it, over the snow there, in the same blues (no piece takes those)"
+
+[allow.sootopolis_gym_b1f_walls_4_10]
+backdrop = "the ice cave's rock: its foot runs on past its blocked cells into the walkable ones below it, over the snow there, in the same blues (no piece takes those)"
+
+[allow.sootopolis_gym_b1f_walls_6_15]
+backdrop = "the ice cave's rock: its foot runs on past its blocked cells into the walkable ones below it, over the snow there, in the same blues (no piece takes those)"
+
+[allow.sootopolis_gym_b1f_walls_9_10]
+backdrop = "the ice cave's rock: its foot runs on past its blocked cells into the walkable ones below it, over the snow there, in the same blues (no piece takes those)"

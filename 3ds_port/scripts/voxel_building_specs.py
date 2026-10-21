@@ -4543,6 +4543,240 @@ def hall_of_fame():
     ]
 
 
+
+# Mauville's gym: the corridor's two walls running down from the back wall
+# into the wall blocks they turn into, the block further down the east side,
+# and the back wall. The beams' puzzle stays drawn: MauvilleGymPressSwitch and
+# MauvilleGymSetDefaultBarriers switch its beams, its switches and some of
+# its coils' tiles (setmetatile), and every coil is left drawn so that they
+# look alike. So do the leader's dais, a step the floor can't take, and the
+# entrance hall's rims round the dark, drawn as their tops alone.
+
+MAUVILLE_GYM_SIDE = (0, 120, 16, 142)
+
+
+def mauville_gym():
+    side = MAUVILLE_GYM_SIDE
+    return [
+        # each corridor wall and the block it turns into cut between columns:
+        # a piece's rectangle takes the beams' cells within it
+        piece("wall_w", [(40, 0, 48, 144)], 24, side=side),
+        piece("block_w", [(0, 112, 40, 144)], 24, side=side),
+        piece("wall_e", [(112, 0, 120, 128)], 24, side=side),
+        piece("block_e", [(120, 96, 160, 128)], 24, side=side),
+        piece("block_se", [(112, 200, 160, 240)], 24, side=side),
+        piece("wall", [(48, 0, 112, 31)], 31, fill=16, foot=31, side=side),
+        # in two, round the switch at (0, 15): a wall's rectangle would lay
+        # the switch in its model, and MauvilleGymPressSwitch presses it
+        piece("side_w", [], 24, side=side, walls=[((0, 239), (0, 144))]),
+        piece("side_w2", [], 24, side=side, walls=[((0, 272), (0, 256))]),
+        piece("side_e", [], 24, side=side, walls=[((160, 128), (160, 200))]),
+        piece("side_e2", [], 24, side=side, walls=[((160, 240), (160, 272))]),
+        piece("side_sw", [], 24, side=side, walls=[((32, 336), (32, 272))]),
+        piece("side_se", [], 24, side=side, walls=[((128, 272), (128, 336))]),
+    ]
+
+
+
+# Mossdeep's gym: islands in the dark, joined by the warp pads. Each
+# island's walls stand from their cells, 24 px tall - their 8-px tops, the
+# long strips of the walls running back between them and their panelled
+# faces - a piece to each rectangle of them (run_rects), and the coloured
+# boxes on the floor and the
+# leader's sofa stand. The arrows and switches stay drawn: the gym's scripts
+# turn them (setmetatile), and they lie on the floor anyway.
+
+MOSSDEEP_GYM_FLOOR = ("9c9cac", "bdb4c5", "ded5de", "000000")
+
+
+def cells_rects(cells):
+    """16-px cells (x, y) as rectangles in pixels."""
+    return [(x * 16, y * 16, x * 16 + 16, y * 16 + 16) for (x, y) in cells]
+
+
+def cell_runs(*runs):
+    """Cells from (x, y0, y1) runs, y1 inclusive."""
+    return [(x, y) for (x, y0, y1) in runs for y in range(y0, y1 + 1)]
+
+
+def run_rects(runs):
+    """(x, y0, y1) runs of cells, y1 inclusive, as rectangles of pixels:
+    neighbouring columns with the same run in one. Every cell inside a
+    piece's rectangle that no piece takes is laid with the piece (the floor
+    cells between two walls, a bridge, a floor arrow, stood up with it), so a
+    wall of several runs stands as one piece per rectangle; cut only between
+    columns or at a gap of floor, no drawn run is split."""
+    rows = {}
+    for (x, y0, y1) in runs:
+        rows.setdefault((y0, y1), []).append(x)
+    out = []
+    for (y0, y1), xs in sorted(rows.items()):
+        xs.sort()
+        start = prev = xs[0]
+        for x in xs[1:] + [None]:
+            if x is None or x != prev + 1:
+                out.append((start * 16, y0 * 16, (prev + 1) * 16, (y1 + 1) * 16))
+                start = x
+            if x is not None:
+                prev = x
+    return sorted(out)
+
+
+def runs_of(cells):
+    """Cells as (x, y0, y1) runs down each column, y1 inclusive."""
+    out = []
+    for x in sorted({cx for (cx, _) in cells}):
+        ys = sorted(cy for (cx, cy) in cells if cx == x)
+        start = prev = ys[0]
+        for y in ys[1:] + [None]:
+            if y is None or y != prev + 1:
+                out.append((x, start, prev))
+                start = y
+            if y is not None:
+                prev = y
+    return out
+
+
+def rect_pieces(prefix, runs, height, side=None, **kw):
+    """A piece for each of run_rects(runs), named by its corner. A run a
+    single cell tall stands 4 px lower than its cell, or it would be all
+    front and no top; `side`, if given, is a function of the rectangle."""
+    return [piece("%s_%d_%d" % (prefix, x0 // 16, y0 // 16), [(x0, y0, x1, y1)],
+                  min(height, y1 - y0 - 4), side=side and side(x0, y0, x1, y1), **kw)
+            for (x0, y0, x1, y1) in run_rects(runs)]
+
+
+def mossdeep_gym():
+    fl = MOSSDEEP_GYM_FLOOR
+    islands = {
+        "nw": cell_runs((4, 2, 3), (5, 1, 3), (6, 2, 2), (7, 1, 3), (8, 2, 3), (9, 2, 7),
+                        (10, 1, 7), (11, 1, 2), (12, 1, 4)),
+        "ne": cell_runs((21, 4, 5), (22, 4, 6), (23, 5, 6), (24, 5, 6), (25, 5, 6)),
+        "w": cell_runs((1, 18, 20), (2, 18, 19), (3, 18, 19), (4, 18, 19), (5, 18, 19),
+                       (6, 16, 19), (7, 16, 17), (8, 16, 17), (9, 16, 17)),
+        "sw": cell_runs((1, 27, 28), (2, 26, 28), (3, 26, 27), (4, 26, 28), (5, 27, 28),
+                        (6, 27, 30), (7, 28, 29), (8, 28, 31), (9, 30, 31)),
+        "s": cell_runs((11, 31, 32), (12, 30, 32), (13, 30, 31)),
+        "se": cell_runs((15, 32, 33), (16, 32, 33), (17, 32, 33), (18, 32, 33), (19, 32, 33),
+                        (20, 31, 33), (21, 30, 32), (22, 29, 31), (23, 29, 30)),
+        "e": cell_runs((20, 20, 23), (21, 20, 21), (22, 18, 21), (23, 19, 19), (24, 18, 21),
+                       (25, 20, 21)),
+    }
+    pieces = []
+    for k, cells in islands.items():
+        pieces += rect_pieces("walls_" + k, runs_of(cells), 24, leave=fl)
+    boxes = [piece("box_%d_%d" % c, cells_rects([c]), 8, leave=fl, solid=True)
+             for c in ((5, 7), (8, 7), (8, 8), (3, 21), (7, 19), (9, 19))]
+    sofa = piece("sofa", cells_rects([(22, 7), (23, 7), (24, 7), (25, 7), (22, 8), (25, 8)]),
+                 12, leave=fl)
+    return pieces + boxes + [sofa]
+
+
+
+# Fortree's gym: a wood of round trees on a grass floor, the rotating gates
+# between them (sprites, src/rotating_gate.c: no tile of the floor changes).
+# The trees stand as hedges 16 px tall, each column's run of them its top
+# and the last tree's trunk its front, a piece to each rectangle of them
+# (run_rects). The three rails across the east side stand 4 px; the leader's dais
+# is a step the floor can't take and stays drawn; the small trees along the
+# back wall are painted on it.
+
+FORTREE_GYM_FLOOR = ("b4bd5a", "dede8b", "f6f6bd")
+FORTREE_GYM_TREES = [
+    [(0, 2, 23), (1, 2, 5), (1, 11, 23)],
+    [(2, 9, 16), (2, 22, 23), (3, 3, 7), (3, 9, 16), (3, 18, 18), (3, 23, 23)],
+    [(4, 6, 7), (4, 9, 13), (5, 10, 15), (5, 19, 21)],
+    [(6, 2, 3), (6, 5, 6), (6, 11, 15), (6, 17, 17), (6, 19, 21), (7, 2, 3), (7, 5, 6),
+     (7, 11, 11), (7, 19, 20)],
+    [(8, 2, 3), (8, 5, 8), (8, 11, 11), (8, 13, 13), (8, 17, 20), (8, 23, 23), (9, 2, 3),
+     (9, 5, 7), (9, 15, 20), (9, 23, 23)],
+    [(10, 2, 2), (10, 5, 8), (10, 11, 21), (10, 23, 23), (11, 2, 2), (11, 5, 20), (11, 23, 23)],
+    [(12, 2, 2), (12, 5, 20), (12, 23, 23)],
+    [(18, 4, 23), (19, 2, 23)],
+]
+
+# each piece of trees' sides: a plain patch of its own mid or light green
+FORTREE_GYM_TREE_SIDES = {
+    (0, 2): (5, 45, 11, 49), (1, 2): (21, 45, 27, 49), (1, 11): (21, 181, 27, 185),
+    (2, 9): (37, 149, 43, 153), (2, 22): (37, 357, 43, 361), (3, 3): (49, 116, 53, 120),
+    (3, 18): (50, 290, 54, 293), (3, 23): (49, 372, 53, 376), (4, 6): (69, 101, 75, 105),
+    (4, 9): (69, 149, 75, 153), (5, 10): (85, 165, 91, 169), (5, 19): (101, 325, 107, 329),
+    (6, 2): (101, 37, 107, 41), (6, 5): (97, 84, 101, 88), (6, 11): (101, 176, 107, 180),
+    (6, 17): (98, 274, 102, 277), (7, 11): (113, 180, 117, 184), (7, 19): (113, 324, 117, 328),
+    (8, 5): (133, 101, 139, 105), (8, 13): (130, 210, 134, 213), (8, 17): (129, 324, 133, 328),
+    (8, 23): (133, 373, 139, 377), (9, 5): (149, 101, 155, 105), (9, 15): (145, 324, 149, 328),
+    (10, 2): (161, 36, 165, 40), (10, 5): (165, 101, 171, 105), (10, 11): (165, 181, 171, 185),
+    (11, 5): (181, 101, 187, 105), (18, 4): (293, 77, 299, 81), (19, 2): (309, 61, 315, 65),
+}
+
+
+def fortree_gym():
+    fl = FORTREE_GYM_FLOOR
+    # the trees' shadow on the grass (blue-grey) is the floor's
+    trees = rect_pieces("trees", [r for runs in FORTREE_GYM_TREES for r in runs], 16,
+                        leave=fl + ("7b839c",), solid=True,
+                        side=lambda x0, y0, x1, y1: FORTREE_GYM_TREE_SIDES[(x0 // 16, y0 // 16)])
+    rails = [piece("rail_%d" % y, [(208, y * 16, 288, y * 16 + 16)], 4, leave=fl, solid=True)
+             for y in (6, 12, 17)]
+    return trees + rails + [
+        piece("wall", [(0, 0, 320, 32)], 32, fill=16, foot=32, side=(32, 0, 48, 32)),
+    ]
+
+
+
+# Sootopolis's gym. 1F: three tiers of ice, each ringed by its wall - their
+# light tops and lilac faces, the crystal fountains at the back with the
+# back wall - a piece to each rectangle of them (run_rects), and the
+# rocks on the ice. The ice cracks under the player
+# (SetSootopolisGymCrackedIceMetatiles) and the script lays the stairs in the
+# walls' gaps (setmetatile): both lie on the floor, and stay drawn, as do the
+# two holes in it. B1F: the ice cave's rock walls, the same way. The floor's
+# white is the walls' tops' too: only its blues are left round them.
+
+SOOTOPOLIS_GYM_ICE = ("5abdd5", "83cdde", "acdee6", "d5eeee")
+SOOTOPOLIS_GYM_1F_WALLS = [
+    [(0, 0, 25), (1, 0, 11), (1, 18, 20), (2, 0, 11), (2, 18, 20)],
+    [(3, 0, 1), (3, 4, 5), (3, 10, 15), (3, 18, 25), (4, 0, 2), (4, 4, 5), (4, 10, 15),
+     (4, 18, 25), (5, 0, 2), (5, 4, 5), (5, 10, 11), (5, 15, 21)],
+    [(6, 0, 1), (6, 4, 5), (6, 10, 11), (6, 15, 21), (7, 0, 1), (7, 4, 5), (7, 10, 11),
+     (7, 15, 16), (7, 20, 21), (8, 0, 1)],
+    [(9, 0, 1), (9, 4, 5), (9, 10, 11), (9, 15, 16), (9, 20, 21), (10, 0, 1), (10, 4, 5),
+     (10, 10, 11), (10, 15, 21), (11, 0, 2), (11, 4, 5), (11, 10, 11), (11, 15, 21)],
+    [(12, 0, 2), (12, 4, 5), (12, 10, 15), (12, 18, 25), (13, 0, 1), (13, 4, 5), (13, 10, 15),
+     (13, 18, 25), (14, 0, 11), (14, 18, 20)],
+    [(15, 0, 11), (15, 18, 20), (16, 2, 3), (16, 9, 11), (16, 14, 15), (16, 18, 20)],
+]
+SOOTOPOLIS_GYM_ROCKS = [(4, 8), (6, 13), (7, 8), (9, 7), (9, 19), (10, 13), (11, 9), (12, 7)]
+SOOTOPOLIS_GYM_B1F_WALLS = [
+    [(0, 4, 11), (0, 14, 16), (0, 18, 20), (1, 4, 11), (1, 14, 16), (1, 18, 20), (2, 4, 5),
+     (2, 10, 16), (2, 18, 20)],
+    [(3, 4, 5), (3, 10, 16), (3, 18, 25), (4, 4, 5), (4, 10, 11), (4, 15, 25), (5, 4, 5),
+     (5, 10, 11), (5, 15, 16), (5, 19, 21)],
+    [(6, 4, 5), (6, 10, 11), (6, 15, 21), (7, 4, 5), (7, 10, 11), (7, 15, 16), (7, 20, 21),
+     (8, 4, 5)],
+    [(9, 4, 5), (9, 10, 11), (9, 15, 16), (9, 20, 21), (10, 4, 5), (10, 10, 11), (10, 15, 21),
+     (11, 4, 5), (11, 10, 11), (11, 15, 16), (11, 19, 20)],
+    [(12, 4, 5), (12, 10, 11), (12, 15, 25), (13, 4, 5), (13, 10, 16), (13, 18, 25),
+     (14, 4, 5), (14, 10, 16), (14, 18, 20)],
+    [(15, 4, 11), (15, 14, 16), (15, 18, 20), (16, 4, 11), (16, 14, 16), (16, 18, 20)],
+]
+
+
+def sootopolis_gym_1f():
+    ice = SOOTOPOLIS_GYM_ICE
+    walls = rect_pieces("walls", [r for runs in SOOTOPOLIS_GYM_1F_WALLS for r in runs], 16,
+                        leave=ice)
+    rocks = [piece("rock_%d_%d" % c, cells_rects([c]), 10, leave=ice)
+             for c in SOOTOPOLIS_GYM_ROCKS]
+    return walls + rocks
+
+
+def sootopolis_gym_b1f():
+    # the cave's snow, and the dark round its rock
+    return rect_pieces("walls", [r for runs in SOOTOPOLIS_GYM_B1F_WALLS for r in runs], 16,
+                       leave=("acdee6", "d5eeee", "ffffff", "000000"))
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -6396,6 +6630,31 @@ SPECS = [
         "name": "hall_of_fame",
         "interior": {"layout": "LAYOUT_EVER_GRANDE_CITY_HALL_OF_FAME", "ground": [0x2f6],
                      "pieces": own_shell(hall_of_fame())},
+    },
+    {
+        "name": "mauville_gym",
+        "interior": {"layout": "LAYOUT_MAUVILLE_CITY_GYM", "ground": [0x20a],
+                     "pieces": own_shell(mauville_gym())},
+    },
+    {
+        "name": "mossdeep_gym",
+        "interior": {"layout": "LAYOUT_MOSSDEEP_CITY_GYM", "ground": [0x20a],
+                     "pieces": own_shell(mossdeep_gym())},
+    },
+    {
+        "name": "fortree_gym",
+        "interior": {"layout": "LAYOUT_FORTREE_CITY_GYM", "ground": [0x202],
+                     "pieces": own_shell(fortree_gym())},
+    },
+    {
+        "name": "sootopolis_gym_1f",
+        "interior": {"layout": "LAYOUT_SOOTOPOLIS_CITY_GYM_1F", "ground": [0x20d],
+                     "pieces": own_shell(sootopolis_gym_1f())},
+    },
+    {
+        "name": "sootopolis_gym_b1f",
+        "interior": {"layout": "LAYOUT_SOOTOPOLIS_CITY_GYM_B1F", "ground": [0x211],
+                     "pieces": own_shell(sootopolis_gym_b1f())},
     },
     {
         "name": "treasure_house",
