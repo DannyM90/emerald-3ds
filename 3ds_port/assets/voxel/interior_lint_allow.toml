@@ -126,3 +126,32 @@ foreign = "a railing running down the balcony is drawn as its top line alone: it
 [allow.shipyard_2f_rail_w]
 copied = "its sides are the back railing's bars, upright lines as its own front's: the same railing"
 foreign = "a railing running down the balcony is drawn as its top line alone: its long sides carry the back railing's bars (HARBOR_BARS), as the Harbor's and Rustboro's railings' flanks do"
+
+[allow.cable_car_room_machine]
+under = "the machine is drawn in the station floor's own metal greys (8b94a4, acb4bd): its foot is the machine's, inside its outline"
+
+[allow.cable_car_room_rail_near_w]
+under = "a railing in the station floor's own metal greys (8b94a4, dedede): its base rail is the railing's, inside its outline, not the floor"
+
+[allow.cable_car_room_rail_near_e]
+under = "a railing in the station floor's own metal greys (8b94a4, dedede): its base rail is the railing's, inside its outline, not the floor"
+
+[allow.cable_car_room_rail_far_w]
+under = "a railing in the station floor's own metal greys (8b94a4, dedede): its base rail is the railing's, inside its outline, not the floor"
+
+[allow.cable_car_room_rail_far_e]
+under = "a railing in the station floor's own metal greys (8b94a4, dedede): its base rail is the railing's, inside its outline, not the floor"
+foreign = "its ends show the bars and the track between them as its front does (through): a railing seen through, not a fin"
+
+[allow.cable_car_room_rail_gap_w]
+under = "a railing in the station floor's own metal greys (8b94a4, dedede): its base rail is the railing's, inside its outline, not the floor"
+copied = "its sides are the Harbor's bars, a line across them as its own front's: the same railing"
+foreign = "a railing running down the boarding gap is drawn as its top line alone: its long sides carry the Harbor's bars (HARBOR_BARS), as the Harbor's railings' flanks do"
+
+[allow.cable_car_room_rail_gap_e]
+under = "a railing in the station floor's own metal greys (8b94a4, dedede): its base rail is the railing's, inside its outline, not the floor"
+copied = "its sides are the Harbor's bars, a line across them as its own front's: the same railing"
+foreign = "a railing running down the boarding gap is drawn as its top line alone: its long sides carry the Harbor's bars (HARBOR_BARS), as the Harbor's railings' flanks do"
+
+[allow.bike_shop_shelf]
+under = "its bottom shelf is drawn in the floor's own greys (acbdac, 83948b): the shelf's, inside its outline"
