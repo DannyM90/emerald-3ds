@@ -4161,6 +4161,242 @@ def shipyard_2f():
     ]
 
 
+
+def room_shell(w, h, foot=32, side=None, top=0):
+    """A room's shell: its back wall standing on `foot`, drawn from `top`,
+    and its side walls."""
+    side = side or (64, top, 80, foot)
+    return [
+        piece("wall", [(0, top, w, foot)], foot - top, fill=16, foot=foot, side=side),
+        piece("side_w", [], foot - top, side=side, walls=[((0, h), (0, foot))]),
+        piece("side_e", [], foot - top, side=side, walls=[((w, foot), (w, h))]),
+    ]
+
+
+
+# The Shop tileset's mint glass counters (Lavaridge's Herb Shop, the Seaside
+# Cycling Road's gates): 7 px, their arms to the wall's foot. The Herb Shop's
+# register is the Department Store's, found again (reuse_pieces).
+
+MINT_SHOP_FLOOR = ("e69c39", "f6c539", "f6e673", "cd8320", "ac5a20")
+
+
+def herb_shop():
+    return [
+        piece("counter", [(0, 44, 96, 63), (80, 28, 96, 44)], 7, leave=MINT_SHOP_FLOOR,
+              plan=[(0, 52), (80, 52), (80, 35), (96, 35), (96, 63), (0, 63)]),
+    ] + room_shell(176, 128)
+
+
+def cycling_gate():
+    return [
+        piece("counter", [(80, 28, 96, 63), (160, 28, 176, 63), (96, 44, 160, 63)], 7,
+              leave=MINT_SHOP_FLOOR,
+              plan=[(80, 35), (96, 35), (96, 51), (160, 51), (160, 35), (176, 35), (176, 63),
+                    (80, 63)]),
+    ] + room_shell(240, 96)
+
+
+def safari_rest_house():
+    return [
+        piece("table", [(49, 79, 79, 112)], 8, leave=("ded552", "bdb431", "8b8b8b"),
+              solid=True),
+    ] + room_shell(160, 144, foot=64, top=32)
+
+
+
+# The Weather Institute on Route 119: the lab's furniture stands in it as it
+# is (reuse_pieces) - desks, computers, chairs, plants; its own are its
+# partitions, white-topped walls 29 px tall: on 1F two running down from the
+# back wall, and one across the room, its doorway between two posts.
+
+INSTITUTE_SIDE = (176, 133, 192, 160)
+INSTITUTE_FLOOR = ("d5d5d5", "acacb4", "9c9ca4", "7b7b83")
+
+
+def institute_desk(name, x, y):
+    """A desk a column wide under one of the lab's computers (found again at
+    cell (x, y) // 16): the lab's desk, drawn shorter - its rails beside the
+    computer, its top back to 12 px into the computer's cell."""
+    return piece(name, [(x, y + 20, x + 16, y + 49), (x, y + 4, x + 2, y + 20),
+                        (x + 14, y + 4, x + 16, y + 20)], 8, leave=INSTITUTE_FLOOR, back=y + 12)
+
+
+def institute_1f():
+    side = INSTITUTE_SIDE
+    return [
+        piece("machine", [(4, 32, 28, 62)], 17, leave=INSTITUTE_FLOOR),
+        piece("bookcases", [(128, 16, 192, 48)], 20, leave=INSTITUTE_FLOOR, against=32),
+    ] + [institute_desk("desk_%d" % x, x, 64) for x in (176, 192, 256, 272)] + [
+        piece("partition_ww", [(48, 0, 64, 99)], 29, fill=16, foot=99, side=side, against=32,
+              walls=[((48, 32), (48, 99)), ((64, 99), (64, 32))]),
+        piece("partition_we", [(112, 0, 128, 99)], 29, fill=16, foot=99, side=side, against=32,
+              walls=[((112, 32), (112, 99)), ((128, 99), (128, 32))]),
+        piece("partition_post_w", [(48, 121, 64, 163)], 29, fill=16, foot=163, side=side,
+              walls=[((48, 134), (48, 163)), ((64, 163), (64, 134))]),
+        piece("partition_post_e", [(112, 121, 128, 163)], 29, fill=16, foot=163, side=side,
+              walls=[((112, 134), (112, 163)), ((128, 163), (128, 134))]),
+        piece("partition_s_w", [(0, 124, 48, 160)], 28, fill=16, foot=160, side=side),
+        piece("partition_s_e", [(128, 124, 320, 160)], 28, fill=16, foot=160, side=side),
+    ] + room_shell(320, 208)
+
+
+
+# 2F: the partition down its west side in two runs (the south one on past
+# the map's edge), desks under the two computers at its west end (the eight
+# in the middle stand on 1F's, found again), and the last of the bookcases
+# (the four before it are 1F's pairs, found again).
+
+def institute_2f():
+    side = INSTITUTE_SIDE
+    return [institute_desk("desk_16_%d" % y, 16, y) for y in (48, 128)] + [
+        # the last bookcase, single (the pairs before it are 1F's)
+        piece("bookcase_e", [(208, 16, 240, 48)], 20, leave=INSTITUTE_FLOOR, against=32),
+        piece("partition_n", [(64, 0, 80, 99)], 29, fill=16, foot=99, side=side, against=32,
+              walls=[((64, 32), (64, 99)), ((80, 99), (80, 32))]),
+        piece("partition_s", [(64, 112, 80, 176)], 29, fill=16, foot=205, side=side,
+              walls=[((64, 141), (64, 205)), ((80, 205), (80, 141))]),
+    ] + room_shell(320, 176)
+
+
+
+# The Safari Zone's entrance on Route 121: an L round a void. Its gate
+# counter is the Seaside Cycling Road's, its planters the Department
+# Store's, its plants the Center's, its chairs the store's rooftop's and the
+# machine the Battle Tent's (reuse_pieces); its own are the counter down its
+# east side, its two stubs either side of the clerk's floor, and its walls:
+# the back one, the sides, and one down the void's edge facing the corridor
+# (the void's south edge, a front wall the GBA never draws, stays open).
+
+def safari_entrance():
+    side = (64, 0, 80, 32)
+    return [
+        piece("counter_e", [(256, 104, 272, 191), (272, 104, 288, 127), (272, 168, 288, 191)], 7,
+              leave=MINT_SHOP_FLOOR,
+              plan=[(256, 111), (288, 111), (288, 127), (272, 127), (272, 175), (288, 175),
+                    (288, 191), (256, 191)]),
+        piece("wall", [(0, 0, 288, 32)], 32, fill=16, foot=32, side=side),
+        # the west wall stops a pixel short of the void: a wall answers for the
+        # cell its end reaches, and the void's first cell would lie on the
+        # floor as a black patch, the rest of the void open
+        piece("side_w", [], 32, side=side, walls=[((0, 95), (0, 32))]),
+        piece("side_void", [], 32, side=side, walls=[((192, 224), (192, 96))]),
+        piece("side_e", [], 32, side=side, walls=[((288, 32), (288, 224))]),
+    ]
+
+
+
+# The Cable Car Station (Route 112's and Mt. Chimney's): the back wall (its
+# pilasters the Shipyard's, found again), and over the track two railings
+# either side of the boarding gap - the far one along the track's back, the
+# near one along the platform's edge, the runs down the gap drawn as their
+# top line (the Harbor's bars on their sides) - the track seen through them;
+# the ticket machine (its bin the Shipyard's). The benches stand on cells
+# the player walks on and stay drawn.
+
+CABLE_SEE = ("d5d539", "62627b")
+
+
+def cable_car_station():
+    see = CABLE_SEE
+
+    def rail(name, shape, side=None):
+        return piece(name, shape, 15, through=True, leave=see, side=side)
+
+    return [
+        piece("machine", [(192, 112, 208, 144)], 16, leave=("d5d539",)),
+        rail("rail_gap_w", [(88, 88, 96, 120)], HARBOR_BARS),
+        rail("rail_gap_e", [(112, 88, 120, 120)], HARBOR_BARS),
+        rail("rail_near_w", [(0, 104, 88, 120)]),
+        rail("rail_near_e", [(120, 104, 208, 120)]),
+        rail("rail_far_w", [(0, 72, 96, 88)]),
+        rail("rail_far_e", [(112, 72, 208, 88)]),
+    ] + room_shell(208, 192)
+
+
+
+# Mauville's Bike Shop: the bicycles in their racks down both sides
+# (upright cards), the shelf in the corner, the counter (an L of wood, the
+# printer on its arm), the pillar down to the display stand, the two
+# stands, and the two desks against the back wall (the lab's red book found
+# again on each: they stand on the wall's foot, 8 px into the room, as the
+# Centers' computer). The wall is drawn 4 px down, the void above it.
+
+BIKE_FLOOR = ("acbdac", "83948b", "d5ded5", "cdcdcd")
+BIKE_WALL = ("eeeede", "cdcdb4", "acac8b", "947b6a", "000000")
+
+
+def bike_shop():
+    fl = BIKE_FLOOR
+    side = (60, 4, 76, 32)
+    bikes = [piece("bike_w%d" % k, [(0, y, 26, y + 16)], 16, card=True, leave=fl)
+             for k, y in enumerate((40, 56, 72, 88, 104, 120))]
+    # the east rack's: the last takes the rack's upright down to the wall's foot
+    bikes += [piece("bike_e%d" % k, [(162, y0, 192, y1)], y1 - y0, card=True, leave=fl)
+              for k, (y0, y1) in enumerate(((86, 104), (104, 120), (120, 144)))]
+    return bikes + [
+        piece("printer", [(32, 26, 48, 38)], 8, base=10, leave=BIKE_WALL),
+        piece("counter", [(32, 38, 48, 69), (48, 46, 80, 69)], 10, leave=fl,
+              plan=[(32, 48), (48, 48), (48, 56), (79, 56), (79, 57), (80, 57), (80, 69),
+                    (32, 69)]),
+        piece("box", [(80, 46, 96, 63)], 7, leave=fl),
+        piece("stand_w", [(96, 60, 128, 88)], 8, leave=fl),
+        piece("stand_e", [(160, 60, 192, 80)], 8, leave=fl),
+        piece("desk_w", [(112, 20, 144, 41)], 9, leave=fl + BIKE_WALL, solid=True, against=32),
+        piece("desk_e", [(160, 20, 192, 41)], 9, leave=fl + BIKE_WALL, solid=True, against=32),
+        # the shelf, its sides its top's grey
+        piece("shelf", [(0, 11, 32, 46)], 25, leave=fl, against=32, side=(4, 12, 28, 19)),
+        piece("partition", [(96, 4, 104, 60)], 28, fill=16, foot=88, side=side, against=32,
+              walls=[((96, 32), (96, 88)), ((104, 88), (104, 32))]),
+    ] + room_shell(192, 144, top=4, side=side)
+
+
+
+# Mauville's Game Corner: the two islands of slot machines, the two
+# roulette tables, the prize counter (a U round the clerk's floor, its arms'
+# backs slanting in, its rim behind it painted on the wall), the arcade
+# cabinets, the plants and the bins; the back wall a cell forward at its
+# east end. The benches stand on cells the player walks on and stay drawn.
+
+GAME_CORNER_FLOOR = ("d55231", "f65252", "a44a41", "ac625a")
+GAME_CORNER_WALL = ("31839c", "62accd", "bdcde6", "eee6f6", "cdcdc5", "7b7b8b", "ffffff")
+
+
+def mauville_game_corner():
+    fl = GAME_CORNER_FLOOR
+    side = (200, 0, 216, 32)
+    plants = [piece("plant_%d" % k, [(x, 20, x + 16, 47)], 27, card=True,
+                    leave=fl + GAME_CORNER_WALL) for k, x in enumerate((80, 96, 112))]
+    return plants + [
+        piece("bin_w", [(33, 30, 47, 48)], 17, round="lathe", leave=fl + GAME_CORNER_WALL),
+        piece("bin_e", [(337, 65, 351, 80)], 15, round="lathe", leave=fl),
+        piece("arcade", [(0, 18, 32, 48)], 14, leave=fl + GAME_CORNER_WALL, against=32,
+              side=(2, 19, 14, 26)),
+        # the islands' sides are their side rails' light grey
+        piece("slots_w", [(32, 80, 64, 160)], 10, leave=fl, solid=True,
+              side=(35, 93, 36, 100)),
+        piece("slots_e", [(112, 80, 144, 160)], 10, leave=fl, solid=True,
+              side=(115, 93, 116, 100)),
+        piece("roulette_w", [(224, 96, 256, 141)], 7, leave=fl, solid=True),
+        piece("roulette_e", [(288, 96, 320, 141)], 7, leave=fl, solid=True),
+        # the arms 15 px wide, their backs stepping in a pixel a row, the front
+        # corners cut on the slant (their lighter blue faces)
+        piece("counter", [(144, 27, 150, 28), (144, 28, 151, 29), (144, 29, 152, 30),
+                          (250, 27, 256, 28), (249, 28, 256, 29), (248, 29, 256, 30),
+                          (144, 30, 159, 73), (241, 30, 256, 73), (159, 45, 241, 73)], 13,
+              leave=fl,
+              plan=[(144, 40), (150, 40), (150, 41), (151, 41), (151, 42), (152, 42), (152, 43),
+                    (159, 43), (159, 58), (241, 58), (241, 43), (248, 43), (248, 42), (249, 42),
+                    (249, 41), (250, 41), (250, 40), (256, 40), (256, 65), (249, 72), (151, 72),
+                    (144, 65)]),
+        piece("wall_e", [(288, 0, 352, 48)], 30, fill=16, foot=48, side=side,
+              walls=[((288, 32), (288, 48))]),
+        piece("wall", [(0, 0, 288, 32)], 32, fill=16, foot=32, side=side),
+        piece("side_w", [], 32, side=side, walls=[((0, 176), (0, 32))]),
+        piece("side_e", [], 32, side=side, walls=[((352, 48), (352, 176))]),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5897,6 +6133,58 @@ SPECS = [
         "name": "shipyard_2f",
         "interior": {"layout": "LAYOUT_SLATEPORT_CITY_STERNS_SHIPYARD_2F", "ground": [0x202],
                      "pieces": own_shell(shipyard_2f()), "pit": SHIPYARD_PIT},
+    },
+    {
+        "name": "herb_shop",
+        "interior": {"layout": "LAYOUT_LAVARIDGE_TOWN_HERB_SHOP", "ground": [0x268],
+                     "pieces": own_shell(herb_shop())},
+    },
+    {
+        # the Seaside Cycling Road's entrances, south and north
+        "name": "cycling_gate_room",
+        "interior": {"layout": "LAYOUT_ROUTE110_SEASIDE_CYCLING_ROAD_ENTRANCE", "ground": [0x268],
+                     "pieces": own_shell(cycling_gate())},
+    },
+    {
+        "name": "safari_rest_house",
+        "interior": {"layout": "LAYOUT_SAFARI_ZONE_REST_HOUSE", "ground": [0x223],
+                     "pieces": own_shell(safari_rest_house())},
+    },
+    {
+        "name": "institute_1f",
+        "interior": {"layout": "LAYOUT_ROUTE119_WEATHER_INSTITUTE_1F", "ground": [0x252],
+                     "pieces": own_shell(institute_1f())},
+    },
+    {
+        "name": "institute_2f",
+        "interior": {"layout": "LAYOUT_ROUTE119_WEATHER_INSTITUTE_2F", "ground": [0x252],
+                     "pieces": own_shell(institute_2f())},
+    },
+    {
+        "name": "safari_entrance",
+        "interior": {"layout": "LAYOUT_ROUTE121_SAFARI_ZONE_ENTRANCE", "ground": [0x268],
+                     "pieces": own_shell(safari_entrance())},
+    },
+    {
+        # the Cable Car Station, Route 112's and Mt. Chimney's
+        "name": "cable_car_room",
+        "interior": {"layout": "LAYOUT_CABLE_CAR_STATION", "ground": [0x2f0],
+                     "pieces": own_shell(cable_car_station())},
+    },
+    {
+        "name": "bike_shop",
+        "interior": {"layout": "LAYOUT_MAUVILLE_CITY_BIKE_SHOP", "ground": [0x23f],
+                     "pieces": own_shell(bike_shop())},
+    },
+    {
+        "name": "game_corner_room",
+        "interior": {"layout": "LAYOUT_MAUVILLE_CITY_GAME_CORNER", "ground": [0x202],
+                     "pieces": own_shell(mauville_game_corner())},
+    },
+    {
+        "name": "treasure_house",
+        "interior": {"layout": "LAYOUT_ROUTE124_DIVING_TREASURE_HUNTERS_HOUSE", "ground": [0x223],
+                     "pieces": own_shell(room_shell(160, 144))},
     },
 ] + [
     {
