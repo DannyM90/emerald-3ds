@@ -4432,6 +4432,117 @@ def mystery_events_house_1f():
     ] + room_shell(176, 128)
 
 
+
+# The Pokémon League. The Elite Four's four rooms share one plan: a back
+# wall with the door to the next room, ten spotlights along its foot, a
+# pillar standing out from each side wall, and a front wall across the
+# entry corridor. data/scripts/elite_four.inc opens the door and switches
+# the spotlights off after the battle, and closes the entry door behind the
+# player (setmetatile): a model keeps the drawing it was built from, so
+# those cells stay drawn - the back wall stands on row 2's top edge, the
+# spotlights lying at its foot, a lintel over the door, and the front wall
+# runs in two stretches, a lintel over the corridor.
+
+E4_WALL_SIDE = (32, 16, 48, 32)
+
+
+def elite_four_room(floor):
+    """`floor`: the room's own floor colours (the pillars' tops are the
+    border's, so only the main floor is left round them)."""
+    side = E4_WALL_SIDE
+    return [
+        piece("pillar_w", [(0, 68, 26, 147)], 69, leave=floor),
+        piece("pillar_e", [(182, 68, 208, 147)], 69, leave=floor),
+        piece("wall", [(0, 0, 96, 32), (112, 0, 208, 32), (96, 0, 112, 16)], 32, fill=16,
+              foot=32, side=side),
+        piece("front", [(0, 172, 80, 224), (128, 172, 208, 224), (80, 172, 128, 192)], 32,
+              fill=16, foot=224, side=side),
+        piece("side_w", [], 32, side=side, walls=[((0, 204), (0, 32))]),
+        piece("side_e", [], 32, side=side, walls=[((208, 32), (208, 204))]),
+    ]
+
+
+# Pokémon League 1F: the Center's, wider. The healing machine, the PC, the
+# telephone, the balls on the counter's arms, the stools, tables, plants and
+# escalator are the Center's, found again (reuse_pieces); its own are its
+# two counters (their arms' back outline painted on the wall's foot) and its
+# walls: the Center's 45-degree corners and side walls, the back wall
+# between them, the gate to the Elite Four painted on it.
+
+LEAGUE_WALL_SIDE = (112, 0, 128, 32)
+LEAGUE_1F_OPEN = [[(0, 174), (18, 192), (0, 192)], [(304, 174), (286, 192), (304, 192)]]
+LEAGUE_COUNTER_LEAVE = ("cdc58b", "eedea4", "de7b31", "f6b473", "bd5220")
+
+
+def league_1f():
+    side = LEAGUE_WALL_SIDE
+    return [
+        # each a bar from the map's edge and an arm back to the wall, its inner
+        # front corner cut on the slant
+        piece("counter_w", [(0, 45, 95, 63), (80, 25, 95, 45)], 7, leave=LEAGUE_COUNTER_LEAVE,
+              plan=[(0, 52), (80, 52), (80, 32), (95, 32), (95, 61), (93, 63), (0, 63)]),
+        piece("counter_e", [(225, 45, 304, 63), (225, 25, 240, 45)], 7,
+              leave=LEAGUE_COUNTER_LEAVE,
+              plan=[(225, 32), (240, 32), (240, 52), (304, 52), (304, 63), (227, 63),
+                    (225, 61)]),
+        facet("corner_w", (0, 15, 47), (16, -1, 31), 32, walls=[((0, 174), (0, 47))],
+              side=side, cells=[(0, 10)]),
+        facet("corner_e", (288, -1, 31), (304, 15, 47), 32, walls=[((304, 47), (304, 174))],
+              side=side, cells=[(18, 10)]),
+        piece("wall_e", [(160, 0, 288, 32)], 32, fill=16, side=side),
+        piece("wall", [(16, 0, 160, 32)], 32, fill=16, side=side),
+    ]
+
+
+# The halls between the Elite Four's rooms: the back wall (its doorway
+# painted on it), a landing, and the stairs down between two rails over the
+# dark. The floor has one level: the landing's edge and the dark below it
+# stay drawn, as the Shipyard's well; the rails stand along the stairs, 16
+# px from the landing's edge to the map's.
+
+LEAGUE_HALL_SIDE = (16, 16, 32, 48)
+
+
+def league_hall(h, rail=80):
+    """`rail`: the row the hall's own rails start at. Hall 4's first 13 rows
+    are the short halls': their rails are found again there, and its own run
+    on from them, their tops back to where those end."""
+    side = LEAGUE_HALL_SIDE
+    back = None if rail == 80 else rail
+    return [
+        piece("rail_w", [(51, rail, 64, h)], 16, back=back),
+        piece("rail_e", [(112, rail, 125, h)], 16, back=back),
+        piece("wall", [(0, 0, 176, 48)], 48, fill=16, foot=48, side=side),
+        piece("side_w", [], 48, side=side, walls=[((0, h), (0, 48))]),
+        piece("side_e", [], 48, side=side, walls=[((176, 48), (176, h))]),
+    ]
+
+
+# The Hall of Fame: the back wall with its screens, its middle a cell
+# forward round the great screen, and the record machine before it; the
+# dais under the machine and the trim along the wall's foot are steps the
+# floor's one level can't take, and stay drawn. The side walls are edge on
+# to the GBA's camera (a pale line of their top drawn beside the floor).
+
+HOF_FLOOR = ("524ab4", "524a62", "31394a")
+HOF_WALL_SIDE = (54, 0, 60, 29)
+
+
+def hall_of_fame():
+    side = HOF_WALL_SIDE
+    return [
+        piece("machine", [(98, 56, 142, 88)], 29, leave=HOF_FLOOR),
+        piece("wall_c", [(88, 0, 152, 51)], 51, fill=16, foot=51, side=side),
+        piece("wall_w", [(16, 0, 88, 29)], 29, fill=16, foot=29, side=side),
+        piece("wall_e", [(152, 0, 224, 29)], 29, fill=16, foot=29, side=side),
+        # the corners' cells beside the wall's ends with them
+        piece("side_w", [], 29, side=side, walls=[((16, 256), (16, 29))],
+              cells=[(1, 2)] + [(0, y) for y in range(2, 16)]),
+        piece("side_e", [], 29, side=side, walls=[((224, 29), (224, 256))],
+              cells=[(13, 2)] + [(14, y) for y in range(2, 16)]),
+    ]
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -6244,6 +6355,47 @@ SPECS = [
         "name": "mystery_events_house_b1f",
         "interior": {"layout": "LAYOUT_SOOTOPOLIS_CITY_MYSTERY_EVENTS_HOUSE_B1F",
                      "ground": [0x235], "pieces": own_shell(room_shell(192, 144, foot=31))},
+    },
+    {
+        "name": "sidneys_room",
+        "interior": {"layout": "LAYOUT_EVER_GRANDE_CITY_SIDNEYS_ROOM", "ground": [0x22c],
+                     "pieces": own_shell(elite_four_room(("c59462", "cda473")))},
+    },
+    {
+        "name": "phoebes_room",
+        "interior": {"layout": "LAYOUT_EVER_GRANDE_CITY_PHOEBES_ROOM", "ground": [0x25c],
+                     "pieces": own_shell(elite_four_room(("a47bac", "b48bbd")))},
+    },
+    {
+        "name": "glacias_room",
+        "interior": {"layout": "LAYOUT_EVER_GRANDE_CITY_GLACIAS_ROOM", "ground": [0x28c],
+                     "pieces": own_shell(elite_four_room(("bdc5ff", "cdd5ff")))},
+    },
+    {
+        "name": "drakes_room",
+        "interior": {"layout": "LAYOUT_EVER_GRANDE_CITY_DRAKES_ROOM", "ground": [0x2bc],
+                     "pieces": own_shell(elite_four_room(("e67341", "ff7341")))},
+    },
+    {
+        "name": "league_1f",
+        "interior": {"layout": "LAYOUT_EVER_GRANDE_CITY_POKEMON_LEAGUE_1F", "ground": [0x240],
+                     "pieces": own_shell(league_1f()), "open": LEAGUE_1F_OPEN},
+    },
+    {
+        # the four halls between the Elite Four's rooms
+        "name": "league_hall",
+        "interior": {"layout": "LAYOUT_EVER_GRANDE_CITY_SHORT_HALL", "ground": [0x2d1],
+                     "pieces": own_shell(league_hall(208))},
+    },
+    {
+        "name": "league_hall4",
+        "interior": {"layout": "LAYOUT_EVER_GRANDE_CITY_HALL4", "ground": [0x2d1],
+                     "pieces": own_shell(league_hall(544, rail=208))},
+    },
+    {
+        "name": "hall_of_fame",
+        "interior": {"layout": "LAYOUT_EVER_GRANDE_CITY_HALL_OF_FAME", "ground": [0x2f6],
+                     "pieces": own_shell(hall_of_fame())},
     },
     {
         "name": "treasure_house",
