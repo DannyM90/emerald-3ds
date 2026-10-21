@@ -700,9 +700,6 @@ static Tile sTiles[CACHE_COUNT];
 static uint16_t sHash[HASH_COUNT];
 static uint16_t sPalette[512 + CTR_EXT_PALETTES * 16];
 static uint16_t sTexturePalette[512 + CTR_EXT_PALETTES * 16];
-/* Background colours shown transparent, a bit per colour of each BG
- * palette (KeySectionColours). */
-static uint16_t sKeyed[16];
 static uint8_t sMorton[64];
 /* A 4bpp tile's two pixels of a byte, (x, y) and (x + 1, y) for an even x,
  * are neighbouring texels in the tiled order: written as one word. */
@@ -1246,8 +1243,7 @@ static void UpdatePalette(void)
                 unsigned p = bank * 16 + index;
                 if (sPalette[p] == source[p]) continue;
                 sPalette[p] = source[p];
-                sTexturePalette[p] = bank < 16 && ((sKeyed[bank] >> index) & 1) ? 0
-                                                                                 : CtrVideo_RGBA5551(sPalette[p]);
+                sTexturePalette[p] = CtrVideo_RGBA5551(sPalette[p]);
                 sPaletteChanges[bank][0] |= 1u << index;
                 unsigned entry = p & 255;
                 sPaletteChanges[group][entry / 32] |= 1u << (entry & 31);
@@ -1278,47 +1274,6 @@ static void UpdatePalette(void)
             sPaletteChanges[bank][0] |= 1u << index;
         }
         ++sPaletteVersion[bank];
-    }
-}
-
-/*
- * The party menu's and the bag's own backgrounds - the party menu's olive and
- * striped panel (BG1, palette 1, colours 3-5), the bag's stripes (BG2,
- * palettes 0 and 1, colours 12 and 13) - give way on the bottom screen to its
- * light green, drawn behind them (DrawSectionBackdrop): while one of those
- * screens is there, those colours are transparent. Only those layers use
- * those palettes; their panels, slots and buttons keep every other colour.
- */
-static void KeySectionColours(void)
-{
-    uint16_t want[16] = {0};
-
-    if (sCentredScreen == CTR_CENTRED_PARTY || sCentredScreen == CTR_CENTRED_PARTY_WHOLE)
-        want[1] = (1u << 3) | (1u << 4) | (1u << 5);
-    else if (sCentredScreen == CTR_CENTRED_BAG || sCentredScreen == CTR_CENTRED_BAG_WHOLE)
-        want[0] = want[1] = (1u << 12) | (1u << 13);
-    for (unsigned bank = 0; bank < 16; ++bank)
-    {
-        uint16_t changed = want[bank] ^ sKeyed[bank];
-
-        if (!changed)
-            continue;
-        sKeyed[bank] = want[bank];
-        for (unsigned index = 0; index < 16; ++index)
-        {
-            unsigned p = bank * 16 + index;
-
-            if ((changed >> index) & 1)
-                sTexturePalette[p] = ((want[bank] >> index) & 1) ? 0 : CtrVideo_RGBA5551(sPalette[p]);
-        }
-        /* A version on from whatever this frame's palette update made of
-         * it: its tiles are rebuilt, and the layers that hold them walked. */
-        memset(sPaletteChanges[bank], 0, sizeof(sPaletteChanges[bank]));
-        sPaletteChanges[bank][0] = changed;
-        memset(sPaletteChanges[PAL_BG256], 0xff, sizeof(sPaletteChanges[PAL_BG256]));
-        ++sPaletteVersion[bank];
-        ++sPaletteVersion[PAL_BG256];
-        sBgPaletteStamp = sStats.frames + 1;
     }
 }
 
@@ -1909,65 +1864,11 @@ static void DrawTextSpan(unsigned bg, int left, int right, int top, int bottom)
  */
 static bool sScissored;
 
-/*
- * The PokéNav on the bottom screen has 240 lines for the GBA's 160, and it
- * spends them as a phone screen would: its header stays on the top edge, its
- * footer (the help bar) goes down to the bottom edge, and the rest - its
- * body - sits in the middle, the background at the back carried on in the
- * space between them. The main menu is a header (the POKéMON NAVIGATOR bar)
- * and a body; the screens under it slide that bar down as their help bar,
- * and their header is the tab of sprites naming the screen at the top.
- *
- * Each band is composed as a frame of its own (NavCompose), moved down by
- * its shift, scissored to the part of the screen it owns: the backgrounds
- * only for its lines of the picture, the backmost one (CentredLayers) over
- * all of that part, and the sprites that belong to it (NavObjectBand) whole.
- */
-typedef struct
-{
-    /* The picture's lines [top, bottom), shown shift lines lower, and the
-     * part of the bottom screen [screenTop, screenBottom) the band owns. */
-    int top, bottom, shift, screenTop, screenBottom;
-} NavBand;
-
-#define NAV_BAR_LINES 32
-#define NAV_HELP_TOP 144
-#define NAV_BODY_SHIFT ((240 - 160) / 2)
-/* How far the map's info window slides down when the map zooms out. */
-#define NAV_INFO_SLIDE 96
-
-static const NavBand sNavMain[] =
-{
-    {0, NAV_BAR_LINES, 0, 0, NAV_BAR_LINES + NAV_BODY_SHIFT},
-    {NAV_BAR_LINES, 160, NAV_BODY_SHIFT, NAV_BAR_LINES + NAV_BODY_SHIFT, 240},
-};
-static const NavBand sNavSubmenu[] =
-{
-    {0, 0, 0, 0, NAV_BODY_SHIFT},
-    {0, NAV_HELP_TOP, NAV_BODY_SHIFT, NAV_BODY_SHIFT, 240 - (160 - NAV_HELP_TOP)},
-    {NAV_HELP_TOP, 160, 240 - 160, 240 - (160 - NAV_HELP_TOP), 240},
-};
-/* The bands of the last PokéNav frame, and the one being composed. */
-static const NavBand *sNavBands = sNavMain;
-static unsigned sNavBandCount = 2;
-static const NavBand *sNavBand;
-/* The sprite tiles of the header tab, [first, end): pokenav_main_menu.c. */
-static unsigned sNavHeaderTiles[2];
-/* The scissor's lines while a band is composed, on screen. */
-static int sNavClip0, sNavClip1;
-unsigned char CtrPokenav_HeaderTiles(unsigned short *first, unsigned short *end);
-
 static void Scissor(int x0, int y0, int x1, int y1)
 {
     float sx0 = (x0 + CTR_VIEW_X) * sZoom + sOffX, sx1 = (x1 + CTR_VIEW_X) * sZoom + sOffX;
     float sy0 = (y0 + CTR_VIEW_Y) * sZoom + sOffY, sy1 = (y1 + CTR_VIEW_Y) * sZoom + sOffY;
 
-    if (sNavBand)
-    {
-        if (sy0 < sNavClip0) sy0 = (float)sNavClip0;
-        if (sy1 > sNavClip1) sy1 = (float)sNavClip1;
-        if (sy1 < sy0) sy1 = sy0;
-    }
     if (sx0 < 0) sx0 = 0;
     if (sy0 < 0) sy0 = 0;
     C3D_SetScissor(GPU_SCISSOR_NORMAL, (unsigned)roundf(sx0), (unsigned)(sSurfaceH - roundf(sy1)),
@@ -3562,10 +3463,6 @@ typedef struct
     uint16_t tileEntry;
     uint8_t skyRows, bandRow, bandChars;
     int8_t bandX, bandY;
-    /* Instead of any layer: the bottom screen's light green behind the
-     * whole of it (DrawSectionBackdrop), the screen's own background colours
-     * transparent (KeySectionColours). */
-    bool section;
 } CentredFill;
 
 static const CentredFill sCentredFills[CTR_CENTRED_SCREENS] =
@@ -3583,17 +3480,15 @@ static const CentredFill sCentredFills[CTR_CENTRED_SCREENS] =
     /* The PC's scrolling pattern, which the GBA wraps round its 32x32 map. */
     [CTR_CENTRED_STORAGE] = {.layers = 1u << 3, .wrap = true},
     [CTR_CENTRED_SUMMARY] = {0},
-    /* The bag and the party menu on the bottom screen's light green. */
-    [CTR_CENTRED_BAG] = {.section = true},
-    [CTR_CENTRED_BAG_WHOLE] = {.section = true},
-    /* The shop's BUY screen, on the same green as the bag it sells from. */
-    [CTR_CENTRED_SHOP] = {.section = true},
+    [CTR_CENTRED_BAG] = {0},
+    [CTR_CENTRED_BAG_WHOLE] = {0},
+    [CTR_CENTRED_SHOP] = {0},
     /* The Pokédex: a tile its screen on show names (CentredFillOf), or else
      * whatever is at the back of it. */
     [CTR_CENTRED_POKEDEX] = {.backmost = true},
     [CTR_CENTRED_POKEDEX_CAUGHT] = {.layers = 1u << 3, .tile = true, .tileColumn = 0, .tileRow = 2},
-    [CTR_CENTRED_PARTY] = {.section = true},
-    [CTR_CENTRED_PARTY_WHOLE] = {.section = true},
+    [CTR_CENTRED_PARTY] = {0},
+    [CTR_CENTRED_PARTY_WHOLE] = {0},
     /* The trade menu's two layers of stripes, which repeat across. */
     [CTR_CENTRED_TRADE_MENU] = {.layers = (1u << 2) | (1u << 3), .wrap = true},
     /* The trade itself on its black. */
@@ -3704,39 +3599,10 @@ static void DrawCentredMargins(unsigned bg, const CentredFill *fill, int from, i
     TileWalkEnd(batch);
 }
 
-/*
- * The backmost layer in a band of the PokéNav: the band's lines of the
- * picture, and over the rest of the band's part of the screen the picture's
- * bottom row, the one the GBA screen ends on below its help bar - the dots,
- * the sea, the wood. With texture it is cut from the layer's texture.
- */
 static void DrawLayerRect(unsigned bg, int x0, int x1, int y0, int y1,
                           float sx, float sy, float dx, float dy, bool fade, int top, int bottom);
 
-static void DrawNavBackmost(unsigned bg, bool texture)
-{
-    const NavBand *band = sNavBand;
-
-    if (band->top < band->bottom)
-    {
-        if (texture) DrawLayerRect(bg, 0, 240, band->top, band->bottom, 0, (float)band->top, 1, 1, false, 0, 0);
-        else DrawCentredSpan(bg, 0, 240, band->top, band->bottom);
-    }
-    for (int y = band->screenTop - band->shift; y < band->screenBottom - band->shift; y += 8)
-    {
-        if (y + 8 > band->top && y < band->bottom) continue;
-        if (texture)
-            DrawLayerRect(bg, 0, 240, y, y + 8, 0, 152, 1, 1, false, 0, 0);
-        else
-        {
-            sSpanShiftY = y - 152;
-            DrawCentredSpan(bg, 0, 240, 152, 160);
-            sSpanShiftY = 0;
-        }
-    }
-}
-
-/* The PokéNav keeps its own band by band path (NavCompose, DrawBandBgTex). */
+/* The PokéNav keeps to its tiles: no layer textures for it. */
 static bool CentredTexture(unsigned bg)
 {
     return sCentredScreen != CTR_CENTRED_POKENAV && LayerDrawable(bg);
@@ -3782,11 +3648,6 @@ static bool DrawCentredBg(unsigned bg)
 
     bool speech = fill->bandRow && ((Reg(8) >> 2) & 3) == fill->bandChars;
 
-    if (sNavBand && (CentredLayers(fill) & (1u << bg)))
-    {
-        DrawNavBackmost(bg, false);
-        return true;
-    }
     if (CentredLayers(fill) & (1u << bg))
     {
         int sky = speech ? fill->skyRows : 0;
@@ -5181,17 +5042,6 @@ static void DrawAffineBg(unsigned bg)
     ViewBase();
 }
 
-/* The PokéNav band a sprite belongs to: its top line's, or the header's for
- * the tab naming a screen under the main menu. */
-static const NavBand *NavObjectBand(unsigned tile, int y)
-{
-    if (sNavBands == sNavSubmenu && tile >= sNavHeaderTiles[0] && tile < sNavHeaderTiles[1])
-        return &sNavBands[0];
-    for (unsigned b = sNavBandCount; b-- > 1;)
-        if (y >= sNavBands[b].top && sNavBands[b].top < sNavBands[b].bottom) return &sNavBands[b];
-    return sNavBands == sNavSubmenu ? &sNavBands[1] : &sNavBands[0];
-}
-
 /*
  * Where a sprite placed on the screen, not on the map, goes in the field view
  * (400x240, the 240x160 picture's own layout on it). Those of a window - the
@@ -5537,7 +5387,6 @@ static void DrawObjects(unsigned priority, bool effects)
         if (sDayNightObject != nightObject)
             SpriteBatchFlush();
         sDayNightObject = nightObject;
-        if (sNavBand && NavObjectBand(attr2 & 1023, y) != sNavBand) continue;
         /*
          * Any one of the fog's sprites gives the lattice its phase, on the
          * screen or not: as a map is entered the game can have all twenty
@@ -5578,52 +5427,6 @@ static void DrawObjects(unsigned priority, bool effects)
     SpriteBatchFlush();
     sLayerShift = layerShift;
     ViewBase();
-}
-
-/*
- * An affine backmost layer in a band of the PokéNav (the Hoenn map): the map
- * carries on around the body as it is, above it and below, at the body's
- * shift in every band - more of the sea, more of the zoomed map - drawn once.
- */
-static void DrawNavBackmostAffine(unsigned bg)
-{
-    int clipY0 = sClipY0, clipY1 = sClipY1, viewY = sViewY, shift = sNavBands[1].shift;
-
-    sViewY = shift;
-    sClipY0 = clipY0 + viewY - shift;
-    sClipY1 = clipY1 + viewY - shift;
-    if (sClipY0 < sClipY1) DrawAffineBg(bg);
-    sViewY = viewY;
-    sClipY0 = clipY0;
-    sClipY1 = clipY1;
-}
-
-/*
- * How much lower than its band a background of the PokéNav goes: the map's
- * info window, which the GBA slides down to the help bar while the map is
- * zoomed out, keeps to the help bar here too, and rises with the window as it
- * slides up for the zoomed map.
- */
-int CtrPokenavRegionMap_InfoBg(void);
-
-static int NavLayerShift(unsigned bg)
-{
-    int scroll;
-
-    if (sNavBand != &sNavSubmenu[1] || CtrPokenavRegionMap_InfoBg() != (int)bg) return 0;
-    scroll = (int)(Reg(0x12 + bg * 4) & 511);
-    scroll = scroll >= 256 ? 512 - scroll : 0;
-    if (scroll > NAV_INFO_SLIDE) scroll = NAV_INFO_SLIDE;
-    return (240 - 160 - NAV_BODY_SHIFT) * scroll / NAV_INFO_SLIDE;
-}
-
-/* Narrows the scissor of a PokéNav band to lines [top, bottom) of the screen. */
-static void NavScissor(int top, int bottom)
-{
-    C2D_Flush();
-    sNavClip0 = top > sNavBand->screenTop ? top : sNavBand->screenTop;
-    sNavClip1 = bottom < sNavBand->screenBottom ? bottom : sNavBand->screenBottom;
-    RestoreScissor();
 }
 
 /*
@@ -5771,29 +5574,10 @@ static void Layers(unsigned mask)
              * (InitOverworldBgs) and leaves REG_MOSAIC at 0. */
             if ((Reg(8 + bg * 2) & 0x40) && (Reg(0x4c) & 0xff)) Error(11, "BG mosaic not supported");
             int clipY0 = sClipY0, clipY1 = sClipY1, viewY = sViewY, drop = StageLayerDrop(bg);
-            bool lines = sNavBand && !(CentredLayers(CentredFillOf(sCentredScreen)) & (1u << bg));
 
             sViewY += drop;
             sClipY0 -= drop;
             sClipY1 -= drop;
-            if (lines)
-            {
-                int lower = NavLayerShift(bg);
-
-                sViewY += lower;
-                sClipY0 -= lower;
-                sClipY1 -= lower;
-                if (sClipY0 < sNavBand->top) sClipY0 = sNavBand->top;
-                if (sClipY1 > sNavBand->bottom) sClipY1 = sNavBand->bottom;
-                if (sClipY0 >= sClipY1)
-                {
-                    sViewY = viewY;
-                    sClipY0 = clipY0;
-                    sClipY1 = clipY1;
-                    continue;
-                }
-                NavScissor(sNavBand->top + sViewY, sNavBand->bottom + sViewY);
-            }
             Blend(bg, mask & 32, false);
             /* Which stage a slow frame is in: the layer walk, the sprites or
              * the GPU. Guessing that from fps alone costs a hardware run. */
@@ -5801,8 +5585,7 @@ static void Layers(unsigned mask)
             float shift = sLayerShift;
             uint32_t tilesBefore = sStats.tiles;
             if (sFieldUi && bg == 0 && !sFieldBanner) sLayerShift += CTR_FIELD_UI_SHIFT / sShiftZoom;
-            if (((mode == 1 && bg == 2) || mode == 2) && sNavBand && !lines) DrawNavBackmostAffine(bg);
-            else if ((mode == 1 && bg == 2) || mode == 2) DrawAffineBg(bg);
+            if ((mode == 1 && bg == 2) || mode == 2) DrawAffineBg(bg);
             else if (sBattle && (bg == 0 || (BattleBoxLayers() & (1u << bg)))) DrawBattleTextLayer(bg);
             else if (!DrawLineBg(bg) && !DrawFieldBgTex(bg) && !DrawStageBgTex(bg) && !DrawBandBgTex(bg))
                 DrawTextBg(bg);
@@ -5811,7 +5594,6 @@ static void Layers(unsigned mask)
             sViewY = viewY;
             sClipY0 = clipY0;
             sClipY1 = clipY1;
-            if (lines) NavScissor(sNavBand->screenTop, sNavBand->screenBottom);
             sBgTicks += svcGetSystemTick() - start;
         }
         if ((mask & 16) && (display & 0x1000) && (sPriorityMask & SLOT_OBJ(priority)))
@@ -5956,11 +5738,8 @@ static bool DrawBandBgTex(unsigned bg)
 
     if (!sLineBand.on || !LayerDrawable(bg)) return false;
     ViewBase();
-    if (sNavBand && (CentredLayers(fill) & (1u << bg)))
-        DrawNavBackmost(bg, true);
-    else
-        DrawLayerRect(bg, 0, 240, 0, 160, 0, 0, 1, 1, false, 0, 0);
-    if (!sNavBand && (CentredLayers(fill) & (1u << bg))) DrawCentredMargins(bg, fill, -64, 64);
+    DrawLayerRect(bg, 0, 240, 0, 160, 0, 0, 1, 1, false, 0, 0);
+    if (CentredLayers(fill) & (1u << bg)) DrawCentredMargins(bg, fill, -64, 64);
     return true;
 }
 
@@ -6017,7 +5796,7 @@ static unsigned WindowPartition(int top, int bottom, int rects[WINDOW_RECTS][4],
     unsigned display = Reg(0), count = 0;
     /* Window rectangles are GBA coordinates; the partition covers the whole
      * viewport so the margins keep the "outside" mask. */
-    bool gba = sNavBand || sTransitionCompose;
+    bool gba = sTransitionCompose;
     int xs[6] = {gba ? 0 : VIEW_LEFT, gba ? 240 : VIEW_RIGHT};
     int ys[6] = {top, bottom};
     unsigned nx = 2, ny = 2;
@@ -6409,7 +6188,7 @@ static void ComposeBand(int top, int bottom)
         sClipY0 = y0; sClipY1 = y1;
         Layers(mask);
         /* The OBJ window opens only where windows 0 and 1 are not. */
-        if (sObjWin.ready && !sTransitionCompose && !sNavBand
+        if (sObjWin.ready && !sTransitionCompose
             && !((Reg(0) & 0x2000) && Inside(x0, y0, 0)) && !((Reg(0) & 0x4000) && Inside(x0, y0, 1)))
             ObjWindowDraw(x0, y0, x1, y1);
     }
@@ -6420,8 +6199,7 @@ static void ComposeBand(int top, int bottom)
 static void Compose(void)
 {
     unsigned display = Reg(0);
-    /* A band of the PokéNav composes only its part of the screen. */
-    int top = sNavBand ? sClipY0 : VIEW_TOP, bottom = sNavBand ? sClipY1 : VIEW_BOTTOM;
+    int top = VIEW_TOP, bottom = VIEW_BOTTOM;
     int first = top > 0 ? top : 0, end = bottom < 160 ? bottom : 160;
 
     /* No window at all. With only the OBJ window on - a stat change after
@@ -7328,11 +7106,96 @@ static bool sPlaneReleaseAsked;
 static C3D_RenderTarget *sBottom;
 static uint32_t sBottomUsed, sBottomFailFrame;
 static bool sBottomFailed;
+/* The window's copy goes through it (BottomTransfer). */
+static u16 *sBottomScratch;
+static bool sBottomScratchFailed;
+
+/*
+ * The canvas round the window, over the window's columns: the header's 40
+ * rows above it and the dock's 40 below, drawn into the bottom surface as a
+ * texture, so the window's columns go to the framebuffer whole, one display
+ * transfer, with nothing of the picture outside the window. The copy that
+ * skipped those rows (a texture copy with gaps, into a column at its 40th
+ * row) came out shifted 40 rows in Azahar: the header over the dock, the
+ * window's top over the header. 3ds_bottom_ui.c names its canvas when it
+ * puts it on the screen (CtrVideo_BottomStrips); the texture is filled from it
+ * before the bottom is drawn, the same frame. Rows 0-39 are the header's,
+ * 64-103 the dock's.
+ */
+#define STRIP_TEX_W 256
+#define STRIP_TEX_H 128
+#define STRIP_DOCK_ROW 64
+static C3D_Tex sStripTex;
+static const u16 *sStripCanvas;
+static bool sStripDirty, sStripReady, sStripFailed;
+
+void CtrVideo_BottomStrips(const uint16_t *canvas)
+{
+    sStripCanvas = canvas;
+    sStripDirty = true;
+}
+
+static void StripRelease(void)
+{
+    if (sStripTex.data) C3D_TexDelete(&sStripTex);
+    memset(&sStripTex, 0, sizeof(sStripTex));
+    sStripReady = sStripFailed = false;
+}
+
+/* The canvas is the framebuffer's layout: column x, row y at x * 240 + 239 - y. */
+static void StripUpload(void)
+{
+    u16 *data;
+
+    if (!sStripCanvas || sStripFailed) return;
+    if (!sStripTex.data)
+    {
+        if (!C3D_TexInit(&sStripTex, STRIP_TEX_W, STRIP_TEX_H, GPU_RGB565))
+        {
+            memset(&sStripTex, 0, sizeof(sStripTex));
+            sStripFailed = true;
+            CtrLog_Write(CTR_LOG_ERROR, "video: no memory for the bottom window's surroundings (linear free=%lu); "
+                         "its columns are copied round them", (unsigned long)linearSpaceFree());
+            return;
+        }
+        C3D_TexSetFilter(&sStripTex, GPU_NEAREST, GPU_NEAREST);
+        C3D_TexSetWrap(&sStripTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+        sStripDirty = true;
+    }
+    if (!sStripDirty) return;
+    data = sStripTex.data;
+    for (int strip = 0; strip < 2; ++strip)
+    {
+        int screenY = strip ? CTR_BOTTOM_WIN_Y + 160 : 0, texY = strip ? STRIP_DOCK_ROW : 0;
+
+        for (int ty = 0; ty < CTR_BOTTOM_WIN_Y; ty += 8)
+            for (int tx = 0; tx < 240; tx += 8)
+            {
+                u16 *tile = data + (((texY + ty) / 8) * (STRIP_TEX_W / 8) + tx / 8) * 64;
+
+                for (int x = 0; x < 8; ++x)
+                {
+                    const u16 *column = sStripCanvas + (CTR_BOTTOM_WIN_X + tx + x) * BOTTOM_SIZE
+                                      + (BOTTOM_SIZE - 1 - (screenY + ty));
+
+                    for (int y = 0; y < 8; ++y)
+                        tile[sMorton[y * 8 + x]] = column[-y];
+                }
+            }
+    }
+    C3D_TexFlush(&sStripTex);
+    sStripDirty = false;
+    sStripReady = true;
+}
 
 static void BottomRelease(void)
 {
     if (sBottom) { ClearWhenMadeForget(sBottom); C3D_RenderTargetDelete(sBottom); }
     sBottom = NULL;
+    if (sBottomScratch) linearFree(sBottomScratch);
+    sBottomScratch = NULL;
+    sBottomScratchFailed = false;
+    StripRelease();
 }
 
 /* Outside the frame, where deleting a render target may wait for the GPU. */
@@ -7372,10 +7235,29 @@ static bool BottomReady(bool wanted)
 }
 
 static bool sBottomInUse;
+/* 3ds_bottom_ui.c draws the game's screen itself, from its state: its
+ * picture is not composed at all (CtrVideo_SetBottomNative). */
+static bool sBottomNative;
 
 bool CtrVideo_BottomInUse(void) { return sBottomInUse; }
+void CtrVideo_SetBottomNative(bool native) { sBottomNative = native; }
 
-/* The screens drawn over the whole bottom screen, rather than left of the column. */
+/* Without the classic menus the bottom screen draws the Pokédex, the bag and
+ * the party menu opened from the field itself: their pictures are never
+ * composed, not even the frames they open or close in while it has no view
+ * of them (the old screen flashed there). */
+static bool sNativeMenus;
+
+void CtrVideo_SetNativeMenus(bool on) { sNativeMenus = on; }
+
+static bool BottomNative(unsigned screen)
+{
+    return sBottomNative
+        || (sNativeMenus && (screen == CTR_CENTRED_POKEDEX || screen == CTR_CENTRED_BAG
+                             || screen == CTR_CENTRED_PARTY));
+}
+
+/* The screens drawn over the whole bottom screen, rather than in its window. */
 static bool BottomWhole(unsigned screen)
 {
     return screen == CTR_CENTRED_STORAGE || screen == CTR_CENTRED_SUMMARY || screen == CTR_CENTRED_BAG_WHOLE
@@ -7387,7 +7269,7 @@ static bool BottomWhole(unsigned screen)
 static bool BottomScreen(unsigned screen)
 {
     return screen == CTR_CENTRED_POKENAV || screen == CTR_CENTRED_BAG || screen == CTR_CENTRED_POKEDEX
-        || screen == CTR_CENTRED_PARTY || BottomWhole(screen);
+        || screen == CTR_CENTRED_PARTY || screen == CTR_CENTRED_CARD || BottomWhole(screen);
 }
 
 bool CtrVideo_BottomWhole(void) { return sBottomInUse && BottomWhole(sCentredScreen); }
@@ -7399,74 +7281,84 @@ bool CtrVideo_BottomWhole(void) { return sBottomInUse && BottomWhole(sCentredScr
  * the whole frame and then for the copy, every frame a bottom screen is up:
  * the PC, the bag and the Pokédex spent ~5 ms of CPU a frame on an Old 3DS
  * beyond their layers and sprites, and dropped frames. The framebuffer is
- * single-buffered (3ds_log.c) and the CPU canvas only writes the column past
- * it.
+ * single-buffered (3ds_log.c).
+ *
+ * A game screen sits in the bottom screen's window, the GBA picture 1:1 at
+ * (CTR_BOTTOM_WIN_X, CTR_BOTTOM_WIN_Y); 3ds_bottom_ui.c's canvas owns the
+ * rest (the header, the dock, the window's frame). One with the whole screen
+ * (BottomWhole) is the picture at the same place and its margins round it,
+ * all of it transferred. A display transfer copies
+ * whole framebuffer lines, which are screen columns, so it goes through a
+ * linear scratch: the window's 240 columns untiled into it, then a texture
+ * copy of the picture's 160 rows of each column, skipping the 80 above and
+ * below, into the framebuffer. Without the scratch the window's columns are
+ * transferred whole (the header and the dock over them are lost to black)
+ * and that is logged once.
  */
+#define BOTTOM_WIN_PIXELS (240 * BOTTOM_SIZE)
+
 static void BottomTransfer(void)
 {
-    u32 *fb = (u32 *)gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
-
-    unsigned columns = BottomWhole(sCentredScreen) ? BOTTOM_WIDTH : BOTTOM_SIZE;
+    u16 *fb = (u16 *)gfxGetFramebuffer(GFX_BOTTOM, GFX_LEFT, NULL, NULL);
+    u16 *in;
+    const u32 flags = GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0)
+                    | GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGB565) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565)
+                    | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
 
     if (!sBottom || !fb || gfxGetScreenFormat(GFX_BOTTOM) != GSP_RGB565_OES) return;
-    C3D_SyncDisplayTransfer((u32 *)sBottom->frameBuf.colorBuf, GX_BUFFER_DIM(BOTTOM_SIZE, columns),
-                            fb, GX_BUFFER_DIM(BOTTOM_SIZE, columns),
-                            GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0)
-                            | GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGB565)
-                            | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB565)
-                            | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
-}
-
-/* The PokéNav's frame on the bottom screen, band by band (sNavMain). */
-static void NavCompose(void)
-{
-    unsigned short first, end;
-    int viewY = sViewY;
-
-    /* The bar is on top in the main menu; slid down past half, a help bar. */
-    sNavBands = (Reg(0x12) & 511) >= 16 ? sNavSubmenu : sNavMain;
-    sNavBandCount = sNavBands == sNavSubmenu ? 3 : 2;
-    sNavHeaderTiles[0] = sNavHeaderTiles[1] = 0;
-    if (CtrPokenav_HeaderTiles(&first, &end))
+    /* A screen with the whole screen (the boxes, a summary, the bag from a
+     * battle): all of it, margins included. */
+    if (BottomWhole(sCentredScreen))
     {
-        sNavHeaderTiles[0] = first;
-        sNavHeaderTiles[1] = end;
+        C3D_SyncDisplayTransfer((u32 *)sBottom->frameBuf.colorBuf, GX_BUFFER_DIM(BOTTOM_SIZE, BOTTOM_WIDTH),
+                                (u32 *)fb, GX_BUFFER_DIM(BOTTOM_SIZE, BOTTOM_WIDTH), flags);
+        return;
     }
-    for (unsigned b = 0; b < sNavBandCount; ++b)
+    /* The target is BOTTOM_WIDTH lines of BOTTOM_SIZE (8x8 tiles): the
+     * window's first column is line CTR_BOTTOM_WIN_X, a whole tile row. */
+    in = (u16 *)sBottom->frameBuf.colorBuf + CTR_BOTTOM_WIN_X * BOTTOM_SIZE;
+    /* The header and the dock drawn over the columns (StripUpload): whole. */
+    if (sStripReady)
     {
-        sNavBand = &sNavBands[b];
-        sViewY = sNavBand->shift;
-        ClipToView();
-        /* The bottom screen shows the picture's 240 columns. */
-        sClipX0 = 0;
-        sClipX1 = 240;
-        sClipY0 = sNavBand->screenTop - sViewY;
-        sClipY1 = sNavBand->screenBottom - sViewY;
-        sNavClip0 = sNavBand->screenTop;
-        sNavClip1 = sNavBand->screenBottom;
-        C2D_Flush();
-        sScissored = true;
-        RestoreScissor();
-        Compose();
-        C2D_Flush();
-        C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
-        sScissored = false;
+        C3D_SyncDisplayTransfer((u32 *)in, GX_BUFFER_DIM(BOTTOM_SIZE, 240),
+                                (u32 *)(fb + CTR_BOTTOM_WIN_X * BOTTOM_SIZE), GX_BUFFER_DIM(BOTTOM_SIZE, 240), flags);
+        return;
     }
-    sNavBand = NULL;
-    sViewY = viewY;
-    ClipToView();
+    if (!sBottomScratch && !sBottomScratchFailed)
+    {
+        sBottomScratch = linearAlloc(BOTTOM_WIN_PIXELS * sizeof(u16));
+        if (!sBottomScratch)
+        {
+            sBottomScratchFailed = true;
+            CtrLog_Write(CTR_LOG_ERROR, "video: no linear memory for the bottom window's copy (free=%lu); "
+                         "the window's columns go whole", (unsigned long)linearSpaceFree());
+        }
+    }
+    if (!sBottomScratch)
+    {
+        C3D_SyncDisplayTransfer((u32 *)in, GX_BUFFER_DIM(BOTTOM_SIZE, 240),
+                                (u32 *)(fb + CTR_BOTTOM_WIN_X * BOTTOM_SIZE), GX_BUFFER_DIM(BOTTOM_SIZE, 240), flags);
+        return;
+    }
+    C3D_SyncDisplayTransfer((u32 *)in, GX_BUFFER_DIM(BOTTOM_SIZE, 240), (u32 *)sBottomScratch,
+                            GX_BUFFER_DIM(BOTTOM_SIZE, 240), flags);
+    /* A column runs from the screen's bottom row up: the picture's rows
+     * [y, y + 160) are its [240 - y - 160, 240 - y). Units of 16 bytes. */
+    C3D_SyncTextureCopy((u32 *)(sBottomScratch + (BOTTOM_SIZE - CTR_BOTTOM_WIN_Y - 160)),
+                        GX_BUFFER_DIM(160 * 2 / 16, (BOTTOM_SIZE - 160) * 2 / 16),
+                        (u32 *)(fb + CTR_BOTTOM_WIN_X * BOTTOM_SIZE + (BOTTOM_SIZE - CTR_BOTTOM_WIN_Y - 160)),
+                        GX_BUFFER_DIM(160 * 2 / 16, (BOTTOM_SIZE - 160) * 2 / 16),
+                        240 * 160 * sizeof(u16), GX_TRANSFER_RAW_COPY(1));
 }
 
 /*
- * The PC's boxes (and a summary, and the bag) on the bottom screen: the GBA
- * picture 1:1 in the middle of the whole screen, or of the area left of the
- * column. Around it only the layer at the back goes on - the boxes' scrolling
- * pattern, the bag's stripes, the summary's backdrop; everything else,
- * sprites included, is cut at the picture's edges, where the GBA screen ends
- * and parks what it hides.
+ * A game screen on the bottom screen (the PC's boxes, a summary, the bag, the
+ * party menu, the Pokédex, the PokéNav): the GBA picture 1:1, cut at its
+ * edges, where the GBA screen ends and parks what it hides. In the window
+ * only the picture reaches the screen (BottomTransfer), everything round it
+ * is 3ds_bottom_ui.c's; with the whole screen its margins are the layers'
+ * own past the picture (CentredFill), the sprites kept to the picture.
  */
-#define STORAGE_MARGIN_X ((BOTTOM_WIDTH - 240) / 2)
-
 static void StorageComposePart(int left, int right, int top, int bottom, unsigned exclude)
 {
     ClipToView();
@@ -7485,133 +7377,24 @@ static void StorageComposePart(int left, int right, int top, int bottom, unsigne
     sLayerExclude = 0;
 }
 
-/*
- * The bottom screen's light green behind the bag or the party menu, over the
- * whole of its part of the screen: what 3ds_bottom_ui.c draws behind its own
- * screens (DrawSection), faded as their background layer is. The Poké Ball
- * is a texture of its own, made once; the rest are rectangles.
- */
-static C3D_Tex sBallTex;
-/* When making it last failed (0: never): tried again a couple of seconds on,
- * not given up for the session - linear memory comes back as screens close. */
-static uint32_t sBallFailFrame;
-static bool sBallFailLogged;
-#define BALL_RETRY_FRAMES 120
-
-static uint32_t SectionColour(uint16_t bgr, float fade, bool white)
+static void WindowCompose(void)
 {
-    uint32_t c = CtrVideo_RGBA8(bgr, true);
-    float to = white ? 255.0f : 0.0f;
-    unsigned r = (unsigned)((c >> 24) * (1.0f - fade) + to * fade + 0.5f);
-    unsigned g = (unsigned)(((c >> 16) & 255) * (1.0f - fade) + to * fade + 0.5f);
-    unsigned b = (unsigned)(((c >> 8) & 255) * (1.0f - fade) + to * fade + 0.5f);
-
-    return C2D_Color32(r, g, b, 255);
-}
-
-static bool BallTexture(void)
-{
-    const uint8_t *mask = CtrBottom_BallMask();
-    const unsigned size = 2 * CTR_SECTION_BALL_RADIUS;
-    uint16_t *data;
-
-    if (sBallTex.data) return true;
-    if (!mask || (sBallFailFrame && (int32_t)(sStats.frames - sBallFailFrame) < BALL_RETRY_FRAMES)) return false;
-    if (!C3D_TexInit(&sBallTex, size, size, GPU_RGBA5551))
+    if (BottomWhole(sCentredScreen))
     {
-        memset(&sBallTex, 0, sizeof(sBallTex));
-        sBallFailFrame = sStats.frames | 1;
-        if (!sBallFailLogged)
-            CtrLog_Write(CTR_LOG_ERROR, "video: no memory for the section's Poke Ball (linear free=%lu); "
-                         "tried again every %u frames", (unsigned long)linearSpaceFree(), BALL_RETRY_FRAMES);
-        sBallFailLogged = true;
-        return false;
+        unsigned back = CentredLayers(CentredFillOf(sCentredScreen)) ? CentredLayers(CentredFillOf(sCentredScreen))
+                                                                       : 1u << 3;
+
+        StorageComposePart(-CTR_BOTTOM_WIN_X, 240 + CTR_BOTTOM_WIN_X, -CTR_BOTTOM_WIN_Y, 160 + CTR_BOTTOM_WIN_Y,
+                           63u & ~back);
     }
-    if (sBallFailLogged)
-        CtrLog_Write(CTR_LOG_VIDEO, "video: the section's Poke Ball made after all");
-    sBallFailFrame = 0;
-    sBallFailLogged = false;
-    C3D_TexSetFilter(&sBallTex, GPU_NEAREST, GPU_NEAREST);
-    C3D_TexSetWrap(&sBallTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
-    data = sBallTex.data;
-    for (unsigned y = 0; y < size; ++y)
-        for (unsigned x = 0; x < size; ++x)
-        {
-            uint8_t v = mask[y * size + x];
-            data[CtrVideo_Texel(x, y, size)] =
-                v ? CtrVideo_RGBA5551(v == 1 ? CTR_SECTION_BALL : CTR_SECTION_BALL_TOP) : 0;
-        }
-    C3D_TexFlush(&sBallTex);
-    return true;
-}
-
-static void DrawSectionBackdrop(int marginX, unsigned layer)
-{
-    const int w = 240 + 2 * marginX, h = 160 + 2 * CTR_STAGE_Y;
-    const float x0 = -marginX + CTR_VIEW_X + sLayerShift, y0 = -CTR_STAGE_Y + CTR_VIEW_Y;
-    bool white;
-    float fade = LayerBrightness(layer, &white);
-    uint32_t base = SectionColour(CTR_SECTION_BASE, fade, white);
-    uint32_t line = SectionColour(CTR_SECTION_LINE, fade, white);
-    uint32_t light = SectionColour(CTR_SECTION_LIGHT, fade, white);
-
-    ViewBase();
-    Blend(layer, false, false);
-    C2D_DrawRectSolid(x0, y0, 0, w, h, base);
-    C2D_DrawRectSolid(x0 + 1, y0 + 1, 0, w - 2, 1, line);
-    C2D_DrawRectSolid(x0 + 1, y0 + h - 2, 0, w - 2, 1, line);
-    C2D_DrawRectSolid(x0 + 1, y0 + 2, 0, w - 2, 1, light);
-    C2D_DrawRectSolid(x0 + 1, y0 + h - 1, 0, w - 2, 1, light);
-    C2D_DrawRectSolid(x0 + 1, y0 + 1, 0, 1, h - 2, line);
-    C2D_DrawRectSolid(x0 + w - 2, y0 + 1, 0, 1, h - 2, line);
-    C2D_DrawRectSolid(x0 + 2, y0 + 1, 0, 1, h - 2, light);
-    if (BallTexture())
-    {
-        const float size = 2 * CTR_SECTION_BALL_RADIUS;
-        const Tex3DS_SubTexture all = {(u16)size, (u16)size, 0, 1, 1, 0};
-        C2D_ImageTint tint;
-
-        C2D_PlainImageTint(&tint, white ? C2D_Color32(255, 255, 255, 255) : C2D_Color32(0, 0, 0, 255), fade);
-        C2D_DrawImageAt((C2D_Image){&sBallTex, &all}, x0 + w / 2 - CTR_SECTION_BALL_RADIUS,
-                        y0 + h / 2 - CTR_SECTION_BALL_RADIUS, 0, &tint, 1, 1);
-    }
-    sStats.tiles += 9;
-}
-
-static void StorageCompose(int marginX)
-{
-    unsigned back = CentredLayers(CentredFillOf(sCentredScreen)) ? CentredLayers(CentredFillOf(sCentredScreen))
-                                                                   : 1u << 3;
-    unsigned marginsOnly = 63u & ~back;
-
-    if (CentredFillOf(sCentredScreen)->section)
-    {
-        bool party = sCentredScreen == CTR_CENTRED_PARTY || sCentredScreen == CTR_CENTRED_PARTY_WHOLE;
-
-        /* Nothing goes on past the picture: the green is the margins. */
-        DrawSectionBackdrop(marginX, party ? 1 : 2);
-        StorageComposePart(0, 240, 0, 160, 0);
-        ClipToView();
-        return;
-    }
-    StorageComposePart(-marginX, 240 + marginX, -CTR_STAGE_Y, 160 + CTR_STAGE_Y, marginsOnly);
     StorageComposePart(0, 240, 0, 160, 0);
     ClipToView();
 }
 
 int CtrVideo_BottomPictureY(int y)
 {
-    for (unsigned b = 0; b < sNavBandCount; ++b)
-    {
-        const NavBand *band = &sNavBands[b];
-        int line = y - band->shift;
-
-        if (y < band->screenTop || y >= band->screenBottom) continue;
-        /* The header tab lies where it does on the GBA. */
-        if (band->top == band->bottom || (line >= band->top && line < band->bottom)) return line;
-        return -1;
-    }
-    return -1;
+    y -= CTR_BOTTOM_WIN_Y;
+    return y >= 0 && y < 160 ? y : -1;
 }
 
 static void SurfaceFilter(GPU_TEXTURE_FILTER_PARAM filter);
@@ -7640,10 +7423,7 @@ static void RenderEye(C3D_RenderTarget *target, uint32_t clear, float parallax)
     if (!(Reg(0) & 128))
     {
         if (target != sBottom) Compose();
-        else if (BottomWhole(sCentredScreen)) StorageCompose(STORAGE_MARGIN_X);
-        else if (sCentredScreen == CTR_CENTRED_BAG || sCentredScreen == CTR_CENTRED_POKEDEX
-                 || sCentredScreen == CTR_CENTRED_PARTY) StorageCompose(0);
-        else NavCompose();
+        else WindowCompose();
     }
     sLayerExclude = 0;
     C2D_Flush();
@@ -7655,9 +7435,10 @@ static void RenderEye(C3D_RenderTarget *target, uint32_t clear, float parallax)
     SceneOn(target);
     if (target == sBottom)
     {
-        /* The middle 240 columns of the logical frame, or 320 for the boxes:
-         * the picture and the margins around it. Tilted as a screen target is. */
-        int width = BottomWhole(sCentredScreen) ? BOTTOM_WIDTH : BOTTOM_SIZE;
+        /* The middle 320 columns of the logical frame, the picture in the
+         * window's place (BottomTransfer keeps only that). Tilted as a screen
+         * target is. */
+        int width = BOTTOM_WIDTH;
         const Tex3DS_SubTexture middle = {(u16)width, BOTTOM_SIZE,
             (CTR_GAME_WIDTH - width) / 2 / 512.0f, 1,
             (CTR_GAME_WIDTH + width) / 2 / 512.0f, 1 - BOTTOM_SIZE / 256.0f};
@@ -7667,6 +7448,22 @@ static void RenderEye(C3D_RenderTarget *target, uint32_t clear, float parallax)
         C2D_ViewReset();
         Blend(5, false, false);
         C2D_DrawImageAt((C2D_Image){&sSurface, &middle}, 0, 0, 0, NULL, 1, 1);
+        /* In the window: the header and the dock over its columns, so they
+         * go whole to the screen (BottomTransfer). */
+        if (!BottomWhole(sCentredScreen))
+        {
+            StripUpload();
+            if (sStripReady)
+            {
+                const float w = 240.0f / STRIP_TEX_W, h = (float)CTR_BOTTOM_WIN_Y / STRIP_TEX_H,
+                            dock = (float)STRIP_DOCK_ROW / STRIP_TEX_H;
+                const Tex3DS_SubTexture head = {240, CTR_BOTTOM_WIN_Y, 0, 1, w, 1 - h};
+                const Tex3DS_SubTexture foot = {240, CTR_BOTTOM_WIN_Y, 0, 1 - dock, w, 1 - dock - h};
+
+                C2D_DrawImageAt((C2D_Image){&sStripTex, &head}, CTR_BOTTOM_WIN_X, 0, 0, NULL, 1, 1);
+                C2D_DrawImageAt((C2D_Image){&sStripTex, &foot}, CTR_BOTTOM_WIN_X, CTR_BOTTOM_WIN_Y + 160, 0, NULL, 1, 1);
+            }
+        }
     }
     else if (sStageZoomed)
     {
@@ -10500,13 +10297,12 @@ static bool BlendBox(unsigned slots, int *x0, int *y0, int *x1, int *y1)
      * The 2D field's sprites are placed on its 400x240 view as DrawObjects
      * places them; the window partition keeps to the box (ComposeBand). The
      * fog, the ash and the sand are one picture over the whole view, the
-     * weather's particles are repeated across it (DrawObjects), and the
-     * PokéNav's bands place their sprites themselves: those take the whole
-     * view.
+     * weather's particles are repeated across it (DrawObjects): those take
+     * the whole view.
      */
     bool field = !sStage && !sCentred && !sBattle && !sTransitionCompose;
 
-    if (!(sStage || sCentred || field) || sNavBand || ((display & 0x6000) && !field)) return false;
+    if (!(sStage || sCentred || field) || ((display & 0x6000) && !field)) return false;
     for (unsigned bg = 0; bg < 4 && alpha; ++bg)
         if ((target1 & (1u << bg)) && (display & (0x100u << bg)) && (slots & SLOT_BG(Reg(8 + bg * 2) & 3)))
             return false;
@@ -10942,11 +10738,18 @@ void CtrVideo_Present(void)
     if (!sMemory.regs) CtrPlatform_Fatal("VIDEO has no logical memory bound");
     /* The PokéNav, the PC's boxes and the bag are drawn on the bottom screen, whether
      * or not the top is held. */
-    bool bottom = BottomReady(BottomScreen(sCentredRequested) && !sStageRequested);
+    bool wanted = BottomScreen(sCentredRequested) && !sStageRequested;
+    bool native = BottomNative(sCentredRequested);
+    bool bottom = BottomReady(wanted && !native);
+    /* The Pokédex drawn natively down there still has its device up here:
+     * the top screen is drawn as with its picture down there (down), the
+     * bottom one's picture is not. */
+    bool down = bottom || (wanted && native && CtrDexTop_Active());
     sBottomInUse = bottom;
     /* Nor is the shop's BUY screen ever shown on the top screen while its
-     * surface down there is not ready yet. */
-    if ((sHoldTop || sCentredRequested == CTR_CENTRED_SHOP) && !bottom)
+     * surface down there is not ready yet, nor a screen the bottom one
+     * draws natively. */
+    if ((sHoldTop || sCentredRequested == CTR_CENTRED_SHOP || (wanted && native)) && !down)
     {
         sStats.mode = CTR_MODE_OTHER;
         sStats.route = CTR_ROUTE_BLANK;
@@ -11009,9 +10812,9 @@ void CtrVideo_Present(void)
     if (sStage || sCentred)
     {
         sViewX = CTR_STAGE_X;
-        /* The PokeNav is on the bottom screen, laid out band by band from
-         * its top edge (NavCompose). */
-        sViewY = sCentredScreen == CTR_CENTRED_POKENAV ? 0 : CTR_STAGE_Y;
+        /* The bottom screen's game screens, the PokeNav too, are the
+         * picture 1:1 in its window. */
+        sViewY = CTR_STAGE_Y;
     }
     else if (sBattle)
     {
@@ -11195,7 +10998,6 @@ void CtrVideo_Present(void)
     PORT_PROF_BEGIN(palette);
     CtrDayNight_Update();
     UpdatePalette();
-    KeySectionColours();
     PORT_PROF_END(palette, PORT_PROF_PALETTE);
     if (sStage || sBattle) RecordScroll();
     /* The shown backdrop, faded: sPalette may hold the unfaded one. */
@@ -11238,7 +11040,7 @@ void CtrVideo_Present(void)
      * voxel world: the flash starts now, undone below if the world is not
      * drawn after all (still warming up).
      */
-    if (!bottom && !VoxelSwoop_Active(&sSwoop))
+    if (!down && !VoxelSwoop_Active(&sSwoop))
     {
         if (sFieldMode == FIELD_MODE_VOXEL && field && !wantVoxel && voxelMap)
             VoxelSwoop_Begin(&sSwoop, false, true);
@@ -11266,7 +11068,7 @@ void CtrVideo_Present(void)
     /* ... unless the 2D field was up: it stays until the voxel world is
      * drawn and the swoop crossfades into it (no black in between). */
     bool blank = overworld && !voxel && CtrVoxel_IsWarmingUp() && sFieldMode != FIELD_MODE_PIXEL;
-    if (!bottom)
+    if (!down)
     {
         unsigned mode = !field ? FIELD_MODE_NONE : voxel ? FIELD_MODE_VOXEL
                       : blank ? sFieldMode : FIELD_MODE_PIXEL;
@@ -11326,7 +11128,7 @@ void CtrVideo_Present(void)
     /* The same for the battle over the voxel world, once it has the shared
      * stereo surface (asked for here, made before the next frame). */
 #if CTR_VOXEL_ENABLED
-    bool worldStereo = sBattleWorld && sScene && !bottom && !sTransition && sTopRight && slider > 0.02f;
+    bool worldStereo = sBattleWorld && sScene && !down && !sTransition && sTopRight && slider > 0.02f;
     /* The world's picture goes into the scene surface (RenderBattleWorld):
      * no surface of its own to wait for. */
     bool worldWanted = worldStereo;
@@ -11351,17 +11153,17 @@ void CtrVideo_Present(void)
      * its planes keep on one plane, and the swoop's crossfade is flat too). */
     bool planesMissing = stereo && !voxel && !blank && !sStage && !sBattle && !planes;
     if (planesMissing) stereo = false;
-    if (bottom) stereo = planes = battleStereo = false;
+    if (down) stereo = planes = battleStereo = false;
     /* A magnified stage is one flat picture (RenderEye). */
     if (sStageZoomed) stereo = planes = false;
     /* With the Pokédex on the bottom screen the top shows the device, which
      * takes any slider position (RenderDexTop). */
-    bool dexTop = bottom && CtrDexTop_Active();
+    bool dexTop = down && CtrDexTop_Active();
     if (dexTop) stereo = sTopRight && slider > 0.02f;
     else CtrDexTop_Idle();
     /* The planes' parallax ramp (sPlaneRamp): in while they are used, out
      * once the voxel world is wanted (its VRAM waits for it, VoxelVramManage). */
-    if (!bottom)
+    if (!down)
     {
 #if CTR_VOXEL_ENABLED
         bool planesLeaving = field && CtrSettings_Voxel();
@@ -11390,7 +11192,7 @@ void CtrVideo_Present(void)
                   : roundf(slider * CTR_STEREO_PIXELS);
     /* What this frame is and how it is drawn, for the frame profiler: the
      * same choice as the chain below. */
-    sStats.route = bottom ? CTR_ROUTE_BOTTOM
+    sStats.route = down ? CTR_ROUTE_BOTTOM
                  : sTransition && !blank ? CTR_ROUTE_TRANSITION
                  : voxel ? (voxelStereo && stereo ? CTR_ROUTE_VOXEL_STEREO : CTR_ROUTE_VOXEL)
                  : blank ? CTR_ROUTE_BLANK
@@ -11403,7 +11205,7 @@ void CtrVideo_Present(void)
 #else
     const bool voxelBattle = false, worldWanted = false;
 #endif
-    sStats.mode = bottom ? CTR_MODE_BOTTOM
+    sStats.mode = down ? CTR_MODE_BOTTOM
                 : sBattle ? (voxelBattle ? CTR_MODE_BATTLE_VOXEL : CTR_MODE_BATTLE)
                 : overworld ? CTR_MODE_FIELD_VOXEL
                 : field ? CTR_MODE_FIELD
@@ -11417,7 +11219,7 @@ void CtrVideo_Present(void)
     /* The battle's info boxes and text box (DrawBattleTextHd, HudDrawCrisp). */
     HudFrame();
     BoxFrame();
-    sHudCrisp = sHud && sScene && !bottom && !blank && !sTransition && !voxel && HudCrispPossible();
+    sHudCrisp = sHud && sScene && !down && !blank && !sTransition && !voxel && HudCrispPossible();
     /* Why the boxes are drawn into the scene (magnified with it) when they
      * are: each change, the first few hundred of a session. */
     {
@@ -11438,7 +11240,7 @@ void CtrVideo_Present(void)
 #if CTR_VOXEL_ENABLED
     /* The swoop's crossfade: the 2D field is composed over the voxel world. */
     float fade2d = 0.0f, blur2d = 0.0f;
-    if (voxel && !bottom)
+    if (voxel && !down)
     {
         VoxelSwoopFrame swoop;
 
@@ -11449,19 +11251,19 @@ void CtrVideo_Present(void)
 #else
     const float fade2d = 0.0f;
 #endif
-    if ((!voxel && !blank) || fade2d > 0.0f) LayersRender();
+    if (((!voxel && !blank) || fade2d > 0.0f) && down == bottom) LayersRender();
     /* Before anything is composed: it is drawn from within (ComposeBand). */
     sObjWin.ready = false;
-    if (!voxel && !blank && !bottom) ObjWindowCompose();
+    if (!voxel && !blank && !down) ObjWindowCompose();
     PORT_PROF_END(layers, PORT_PROF_LAYERS);
     PORT_PROF_BEGIN(draw);
 
-    if (bottom)
+    if (down)
     {
         /* The top screen is not drawn: it keeps the frame it showed last -
          * unless the Pokédex is open down there. */
         sPlanes = 0;
-        RenderEye(sBottom, clear, 0.0f);
+        if (bottom) RenderEye(sBottom, clear, 0.0f);
         if (dexTop) RenderDexTop(stereo, slider);
     }
     else if (sTransition && !blank)
@@ -11521,18 +11323,18 @@ void CtrVideo_Present(void)
         RenderEye(sTop, clear, sStats.stereo);
         RenderEye(sTopRight, clear, -(float)sStats.stereo);
     }
-    if (sStats.frames < sNoHomeUntil && !bottom)
+    if (sStats.frames < sNoHomeUntil && !down)
     {
         DrawNoHome(sTop);
         if (stereo) DrawNoHome(sTopRight);
     }
-    if (field && !bottom && !blank && CtrGame_FieldPoison() && PoisonVeil() != 0)
+    if (field && !down && !blank && CtrGame_FieldPoison() && PoisonVeil() != 0)
     {
         DrawPoisonVeil(sTop, PoisonVeil());
         if (stereo) DrawPoisonVeil(sTopRight, PoisonVeil());
     }
 #if CTR_VOXEL_ENABLED
-    if (!bottom && VoxelSwoop_Active(&sSwoop))
+    if (!down && VoxelSwoop_Active(&sSwoop))
     {
         VoxelSwoopFrame swoop;
 
@@ -11571,7 +11373,7 @@ void CtrVideo_Present(void)
 #if CTR_SHOW_FPS
     if (CtrSettings_ShowFps())
     {
-        if (!bottom || dexTop) DrawFps(sTop);
+        if (!down || dexTop) DrawFps(sTop);
         if (stereo) DrawFps(sTopRight);
     }
 #endif

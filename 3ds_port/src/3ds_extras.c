@@ -256,6 +256,10 @@ const CtrExtra gCtrExtras[] =
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("SHOW CLOCK", "VER RELOJ", "VOIR HORLOGE", "MOSTRA OROLOGIO", "MOSTRAR RELÓGIO"), "show_clock", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     /* The lead Pokémon walking behind the player, on HGSS's sprites from the
      * data pack (src/follower_mon.c). */
+    /* The party menu, the bag, the trainer card and the Pokédex as the game
+     * draws them, in a window of the bottom screen, instead of the bottom
+     * screen's own (3ds_bottom_game.inc). */
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("CLASSIC MENUS", "MENÚS CLÁSICOS", "MENUS CLASSIQ.", "MENU CLASSICI", "MENUS CLÁSSICOS"), "classic_menus", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("FOLLOWER", "ACOMPAÑANTE", "COMPAGNON", "COMPAGNO", "COMPANHEIRO"), "follower", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
 #include "3ds_nuzlocke_extras.inc"
 #include "3ds_randomizer_extras.inc"

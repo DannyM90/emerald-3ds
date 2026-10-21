@@ -388,20 +388,32 @@ void CtrCentredTrade_SetVBlankCallback(IntrCallback callback)
                                                                            : CTR_CENTRED_TRADE);
 }
 
-/* The bag from the field goes left of the column, from anywhere else over the
+bool8 CtrBag_InWindow(void);
+
+/* The bag from the field or its party menu goes in the game screen's window
+ * (or is drawn natively, 3ds_bottom_game.inc), from anywhere else over the
  * whole bottom screen. */
 void CtrCentredBag_SetVBlankCallback(IntrCallback callback)
 {
-    SetCentredCallback(callback, gBagPosition.location == ITEMMENULOCATION_FIELD ? CTR_CENTRED_BAG
-                                                                                  : CTR_CENTRED_BAG_WHOLE);
+    SetCentredCallback(callback, CtrBag_InWindow() ? CTR_CENTRED_BAG : CTR_CENTRED_BAG_WHOLE);
 }
 
-/* The party menu from the field goes left of the column, from a battle, a
- * contest or a facility over the whole bottom screen. */
+/* The party menu from the field goes in the game screen's window (or is drawn
+ * natively), from a battle, a contest or a facility over the whole bottom
+ * screen. */
 void CtrCentredParty_SetVBlankCallback(IntrCallback callback)
 {
     SetCentredCallback(callback, !gMain.inBattle && gPartyMenu.menuType == PARTY_MENU_TYPE_FIELD
                                      ? CTR_CENTRED_PARTY : CTR_CENTRED_PARTY_WHOLE);
+}
+
+/* trainer_card.c: the field's card in the bottom screen's window, a link
+ * partner's centred on the top screen. */
+bool8 CtrTrainerCard_FieldOpen(void);
+
+void CtrCentredCard_SetVBlankCallback(IntrCallback callback)
+{
+    SetCentredCallback(callback, CtrTrainerCard_FieldOpen() ? CTR_CENTRED_CARD : CTR_CENTRED_PLAIN);
 }
 
 IntrCallback CtrPokedex_VBlankCallback(void);
