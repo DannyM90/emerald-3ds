@@ -34,31 +34,31 @@ static u8 sArm;
 static u32 sArmPersonality, sArmOtId;
 static bool sArmShedinja;
 
-const char *const gCtrNuzlockeOpenText[1] = {CTR_TEXT("TAP TO OPEN", "TOCA PARA ABRIR", "OUVRIR", "APRI")};
-const char *const gCtrNuzlockeBackText[1] = {CTR_TEXT("BACK", "VOLVER", "RETOUR", "INDIETRO")};
-const char *const gCtrNuzlockeRecordText[1] = {CTR_TEXT("TAP TO RECORD", "TOCA PARA ANOTAR", "NOTER", "REGISTRA")};
+const char *const gCtrNuzlockeOpenText[1] = {CTR_TEXT("TAP TO OPEN", "TOCA PARA ABRIR", "OUVRIR", "APRI", "TOQUE P/ ABRIR")};
+const char *const gCtrNuzlockeBackText[1] = {CTR_TEXT("BACK", "VOLVER", "RETOUR", "INDIETRO", "VOLTAR")};
+const char *const gCtrNuzlockeRecordText[1] = {CTR_TEXT("TAP TO RECORD", "TOCA PARA ANOTAR", "NOTER", "REGISTRA", "TOQUE P/ ANOTAR")};
 const char *const gCtrNuzlockeInfoText[1] = {"--"};
 
 static const char *const sStatusText[CTR_NUZ_STATUS_COUNT] = {
-    CTR_TEXT("UNUSED", "LIBRE", "LIBRE", "LIBERO"),
-    CTR_TEXT("CAUGHT", "CAPTURADO", "CAPTURÉ", "CATTURATO"),
-    CTR_TEXT("MISSED", "PERDIDO", "RATÉ", "PERSO"),
+    CTR_TEXT("UNUSED", "LIBRE", "LIBRE", "LIBERO", "LIVRE"),
+    CTR_TEXT("CAUGHT", "CAPTURADO", "CAPTURÉ", "CATTURATO", "CAPTURADO"),
+    CTR_TEXT("MISSED", "PERDIDO", "RATÉ", "PERSO", "PERDIDO"),
 };
-static const char *const sAliveText[] = {CTR_TEXT("ALIVE", "VIVO", "VIVANT", "VIVO")};
-static const char *const sFallenText[] = {CTR_TEXT("FALLEN", "CAÍDO", "TOMBÉ", "CADUTO")};
-static const char *const sEggText[] = {CTR_TEXT("EGG", "HUEVO", "OEUF", "UOVO")};
-static const char *const sConfirmText[] = {CTR_TEXT("TAP TO CONFIRM", "TOCA OTRA VEZ", "CONFIRMER", "CONFERMA")};
-static const char *const sNoneText[] = {CTR_TEXT("NONE", "NINGUNO", "AUCUN", "NESSUNO")};
-static const char *const sToMarkFormat[] = {CTR_TEXT("%u TO MARK", "%u POR MARCAR", "%u À MARQUER", "%u DA SEGNARE")};
-static const char *const sGymFormat[] = {CTR_TEXT("GYM %u: LV %u", "GIM. %u: NV %u", "ARÈNE %u: N %u", "PAL. %u: LV %u")};
-static const char *const sChampionFormat[] = {CTR_TEXT("CHAMPION: LV %u", "CAMPEÓN: NV %u", "MAÎTRE: N %u", "CAMPIONE: LV %u")};
+static const char *const sAliveText[] = {CTR_TEXT("ALIVE", "VIVO", "VIVANT", "VIVO", "VIVO")};
+static const char *const sFallenText[] = {CTR_TEXT("FALLEN", "CAÍDO", "TOMBÉ", "CADUTO", "CAÍDO")};
+static const char *const sEggText[] = {CTR_TEXT("EGG", "HUEVO", "OEUF", "UOVO", "OVO")};
+static const char *const sConfirmText[] = {CTR_TEXT("TAP TO CONFIRM", "TOCA OTRA VEZ", "CONFIRMER", "CONFERMA", "TOQUE DE NOVO")};
+static const char *const sNoneText[] = {CTR_TEXT("NONE", "NINGUNO", "AUCUN", "NESSUNO", "NENHUM")};
+static const char *const sToMarkFormat[] = {CTR_TEXT("%u TO MARK", "%u POR MARCAR", "%u À MARQUER", "%u DA SEGNARE", "%u A MARCAR")};
+static const char *const sGymFormat[] = {CTR_TEXT("GYM %u: LV %u", "GIM. %u: NV %u", "ARÈNE %u: N %u", "PAL. %u: LV %u", "GIN. %u: NV %u")};
+static const char *const sChampionFormat[] = {CTR_TEXT("CHAMPION: LV %u", "CAMPEÓN: NV %u", "MAÎTRE: N %u", "CAMPIONE: LV %u", "CAMPEÃO: NV %u")};
 static const char *const sLabelText[CTR_NUZ_LABEL_COUNT] = {
-    CTR_TEXT("THIS SAVE", "ESTA PARTIDA", "CETTE PARTIE", "QUESTA PARTITA"),
-    CTR_TEXT("NEW", "NUEVO", "NOUVEAU", "NUOVO"),
-    CTR_TEXT("OTHER SAVE", "OTRA PARTIDA", "AUTRE PARTIE", "ALTRA PARTITA"),
-    CTR_TEXT("DAMAGED", "DAÑADO", "ENDOMMAGÉ", "DANNEGGIATO"),
-    CTR_TEXT("SAVE TO KEEP", "GUARDA PARA FIJAR", "SAUVER POUR GARDER", "SALVA PER TENERE"),
-    CTR_TEXT("WRITE FAILED", "ERROR AL ESCRIBIR", "ÉCHEC ÉCRITURE", "ERRORE SCRITTURA"),
+    CTR_TEXT("THIS SAVE", "ESTA PARTIDA", "CETTE PARTIE", "QUESTA PARTITA", "ESTE JOGO"),
+    CTR_TEXT("NEW", "NUEVO", "NOUVEAU", "NUOVO", "NOVO"),
+    CTR_TEXT("OTHER SAVE", "OTRA PARTIDA", "AUTRE PARTIE", "ALTRA PARTITA", "OUTRO JOGO"),
+    CTR_TEXT("DAMAGED", "DAÑADO", "ENDOMMAGÉ", "DANNEGGIATO", "DANIFICADO"),
+    CTR_TEXT("SAVE TO KEEP", "GUARDA PARA FIJAR", "SAUVER POUR GARDER", "SALVA PER TENERE", "SALVE P/ MANTER"),
+    CTR_TEXT("WRITE FAILED", "ERROR AL ESCRIBIR", "ÉCHEC ÉCRITURE", "ERRORE SCRITTURA", "ERRO AO GRAVAR"),
 };
 
 #define TEXT_SIZE 40
@@ -472,4 +472,55 @@ const uint8_t *CtrNuzlockeUi_LinkText(void)
     CtrNuzLabel label = CtrNuzSession_Label(&sSession);
 
     return SetText(text, sLabelText[label < CTR_NUZ_LABEL_COUNT ? label : CTR_NUZ_LABEL_NEW]);
+}
+
+int CtrNuzlockeUi_Enabled(void)
+{
+    return Enabled();
+}
+
+int CtrNuzlockeUi_AreaStatus(void)
+{
+    unsigned area;
+
+    if (!Enabled() || !CurrentArea(&area))
+        return -1;
+    return CtrNuz_Area(&sSession.state, area);
+}
+
+void CtrNuzlockeUi_RecordAs(int status)
+{
+    if (status < 0 || status >= CTR_NUZ_STATUS_COUNT)
+        return;
+    sChoice = (CtrNuzStatus)status;
+    CtrNuzlockeUi_Record();
+}
+
+int CtrNuzlockeUi_Slot(void)
+{
+    unsigned count = PartyCount();
+
+    return count == 0 ? -1 : (int)(sSlot % count);
+}
+
+void CtrNuzlockeUi_SetSlot(int slot)
+{
+    if (slot < 0 || (unsigned)slot >= PartyCount() || GetMonData(&gPlayerParty[slot], MON_DATA_SPECIES) == 0)
+        return;
+    if (sSlot != slot)
+        sArm = ARM_NONE;
+    sSlot = slot;
+}
+
+int CtrNuzlockeUi_SlotFallen(int slot)
+{
+    struct Pokemon *mon;
+
+    if (!Enabled() || slot < 0 || (unsigned)slot >= PartyCount())
+        return 0;
+    mon = &gPlayerParty[slot];
+    if (GetMonData(mon, MON_DATA_SPECIES) == 0 || IsEgg(mon))
+        return 0;
+    return CtrNuz_IsFallen(&sSession.state, GetMonData(mon, MON_DATA_PERSONALITY), GetMonData(mon, MON_DATA_OT_ID),
+                           GetMonData(mon, MON_DATA_SPECIES) == SPECIES_SHEDINJA);
 }

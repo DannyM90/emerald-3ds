@@ -117,11 +117,12 @@ static void StartCgbChannels(void)
 }
 
 /*
- * Soft reset: A+B+START+SELECT, and the game's own DoSoftReset (after the save
- * is cleared, a failed save, the clock reset and the like). The GBA clears its
- * RAM and starts the game again. Here the game's variables (its .data and .bss,
- * gathered by emerald3ds.ld.in) are put back as they were when AgbMain first
- * started, the emulated hardware is cleared, and AgbMain is entered again. Not
+ * Soft reset: L+R+START+SELECT (CTR_SOFT_RESET_KEYS), and the game's own
+ * DoSoftReset (after the save is cleared, a failed save, the clock reset and
+ * the like). The GBA clears its RAM and starts the game again. Here the game's
+ * variables (its .data and .bss, gathered by emerald3ds.ld.in) are put back as
+ * they were when AgbMain first started, the emulated hardware is cleared, and
+ * AgbMain is entered again. Not
  * put back: the game's platform/ layer (emulated hardware, the flash with the
  * save), the port's state and the data the port loaded before AgbMain.
  */
@@ -151,14 +152,14 @@ static void KeepGameAtStart(void)
 
 /*
  * The game reads the keys the frame boundary scanned, and a reset comes before
- * the next boundary: with A+B+START+SELECT still held, AgbMain would reset
+ * the next boundary: with L+R+START+SELECT still held, AgbMain would reset
  * again at once, for ever, and nothing would scan the keys (nor answer HOME).
  * The GBA reads them live and resets until they are let go; here the reset
  * waits, frame by frame, until they are.
  */
 static void WaitForResetKeysUp(void)
 {
-    const u16 keys = A_BUTTON | B_BUTTON | START_BUTTON | SELECT_BUTTON;
+    const u16 keys = CTR_SOFT_RESET_KEYS;
 
     while ((Platform_GetKeyInput() & keys) == keys)
     {
@@ -387,20 +388,32 @@ void CtrCentredTrade_SetVBlankCallback(IntrCallback callback)
                                                                            : CTR_CENTRED_TRADE);
 }
 
-/* The bag from the field goes left of the column, from anywhere else over the
+bool8 CtrBag_InWindow(void);
+
+/* The bag from the field or its party menu goes in the game screen's window
+ * (or is drawn natively, 3ds_bottom_game.inc), from anywhere else over the
  * whole bottom screen. */
 void CtrCentredBag_SetVBlankCallback(IntrCallback callback)
 {
-    SetCentredCallback(callback, gBagPosition.location == ITEMMENULOCATION_FIELD ? CTR_CENTRED_BAG
-                                                                                  : CTR_CENTRED_BAG_WHOLE);
+    SetCentredCallback(callback, CtrBag_InWindow() ? CTR_CENTRED_BAG : CTR_CENTRED_BAG_WHOLE);
 }
 
-/* The party menu from the field goes left of the column, from a battle, a
- * contest or a facility over the whole bottom screen. */
+/* The party menu from the field goes in the game screen's window (or is drawn
+ * natively), from a battle, a contest or a facility over the whole bottom
+ * screen. */
 void CtrCentredParty_SetVBlankCallback(IntrCallback callback)
 {
     SetCentredCallback(callback, !gMain.inBattle && gPartyMenu.menuType == PARTY_MENU_TYPE_FIELD
                                      ? CTR_CENTRED_PARTY : CTR_CENTRED_PARTY_WHOLE);
+}
+
+/* trainer_card.c: the field's card in the bottom screen's window, a link
+ * partner's centred on the top screen. */
+bool8 CtrTrainerCard_FieldOpen(void);
+
+void CtrCentredCard_SetVBlankCallback(IntrCallback callback)
+{
+    SetCentredCallback(callback, CtrTrainerCard_FieldOpen() ? CTR_CENTRED_CARD : CTR_CENTRED_PLAIN);
 }
 
 IntrCallback CtrPokedex_VBlankCallback(void);

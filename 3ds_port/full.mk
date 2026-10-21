@@ -141,6 +141,8 @@ endif
 ROMFS_SHADER_OUTS += romfs/stage/leaves.bin
 # The bottom screen's battle menus: the port's own art (scripts/gen_battle_art.py).
 ROMFS_SHADER_OUTS += romfs/bottom/battle.bin
+# The bottom screen's menu backdrop: the port's own art (scripts/gen_menu_art.py).
+ROMFS_SHADER_OUTS += romfs/bottom/menu.bin
 # The battle's info boxes and text box: the port's own art (scripts/gen_battle_hud.py).
 ROMFS_SHADER_OUTS += romfs/battle/hud.bin
 
@@ -236,6 +238,11 @@ build/root/src/trade.o: compat/ctr_gba_centred.h $(ROOT)/include/gba/defines.h
 build/root/src/party_menu.o: FULLCFLAGS += -DCTR_GBA_STAGE -DCTR_CENTRED_PARTY \
 	-include $(abspath compat/ctr_gba_centred.h)
 build/root/src/party_menu.o: compat/ctr_gba_centred.h $(ROOT)/include/gba/defines.h
+# The trainer card, laid out for the GBA screen: with the classic menus the
+# field's is in the bottom screen's window, a link partner's centred on top.
+build/root/src/trainer_card.o: FULLCFLAGS += -DCTR_GBA_STAGE -DCTR_CENTRED_CARD \
+	-include $(abspath compat/ctr_gba_centred.h)
+build/root/src/trainer_card.o: compat/ctr_gba_centred.h $(ROOT)/include/gba/defines.h
 # The Pokédex as the game draws it, left of the column: its list, search,
 # entries, area, cry and size screens. pokedex.c installs their VBlank
 # callbacks.
@@ -510,6 +517,10 @@ romfs/voxel/relief.bin: scripts/gen_voxel_relief.py scripts/voxel_cells.py scrip
 romfs/bottom/battle.bin: scripts/gen_battle_art.py
 	@mkdir -p $(@D)
 	"$(PYTHON)" scripts/gen_battle_art.py --output $@
+
+romfs/bottom/menu.bin: scripts/gen_menu_art.py scripts/gen_battle_art.py
+	@mkdir -p $(@D)
+	"$(PYTHON)" scripts/gen_menu_art.py --output $@
 
 romfs/battle/hud.bin: scripts/gen_battle_hud.py
 	@mkdir -p $(@D)
