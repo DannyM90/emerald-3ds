@@ -185,3 +185,6 @@ under = "its body is drawn in the floor's own grey, inside its rim: it is the bi
 
 [allow.frontier_factory_lobby_bin_17]
 under = "its body is drawn in the floor's own grey, inside its rim: it is the bin, not the floor under it"
+
+[allow.trick_house_puzzle8_jar_3_21]
+backdrop = "its mouth is drawn in the tatami's colours, inside its outline: it is the jar, not the room round it"
