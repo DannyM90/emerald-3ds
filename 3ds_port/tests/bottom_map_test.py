@@ -80,7 +80,6 @@ typedef bool bool8;
 #define H 240
 #define CTR_BOTTOM_WIN_X 40
 #define CTR_BOTTOM_WIN_Y 40
-#define CTR_VOXEL_ENABLED 1
 #define PARTY_SIZE 6
 #define POKEMON_NAME_LENGTH 10
 #define PLAYER_NAME_LENGTH 7
@@ -101,7 +100,7 @@ typedef bool bool8;
 struct ChooseMoveStruct { u8 data[64]; };
 /* The game's screens' views (3ds_game_views.h): only compared here. */
 struct CtrPartyView { u8 state, cursor, data[350]; u8 iconFrame[6]; s8 iconLift[6]; };
-struct CtrSummaryView { u8 state, page, data[400]; };
+struct CtrSummaryView { u8 state, page, data[400]; const u8 *picTiles; u32 picSum; };
 struct CtrBagView { u8 state, pocket, data[700]; };
 struct CtrDexView { u8 state, national, data[300]; };
 '''
@@ -127,6 +126,8 @@ struct CtrDexView { u8 state, national, data[300]; };
         source += define(shell, name)
     for name in ('MAP_PIC_W', 'MAP_PIC_H'):
         source += define((ROOT / 'src/3ds_bottom_field.inc').read_text(encoding='utf-8'), name)
+    for name in ('SUM_TAB_H', 'SUM_Y', 'SUM_LEFT_W', 'SUM_PIC_BOTTOM'):
+        source += define((ROOT / 'src/3ds_bottom_game.inc').read_text(encoding='utf-8'), name)
     for name in ('OPT_PANEL_Y', 'OPT_PANEL_H'):
         source += define(options, name)
     source += r'''

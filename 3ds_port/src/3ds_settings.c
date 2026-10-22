@@ -57,17 +57,29 @@ static int sSpeed = 0;
  * 3ds_extras.c): "key=number" lines kept as read and written back with the
  * rest. A key no build knows yet survives in the file too.
  */
-#define EXTRA_KEYS 48
+#define EXTRA_KEYS 96
+/* The longest line: a 23-character key, '=', an int's 11 characters, '\n'. */
+#define EXTRA_LINE_BYTES 40
 static struct { char key[24]; int value; } sExtra[EXTRA_KEYS];
 static int sExtraCount;
 
 static int ExtraIndex(const char *key, bool add)
 {
+    static bool sFullLogged;
+
     for (int i = 0; i < sExtraCount; ++i)
         if (strcmp(sExtra[i].key, key) == 0)
             return i;
-    if (!add || sExtraCount == EXTRA_KEYS || strlen(key) >= sizeof(sExtra[0].key))
+    if (!add || strlen(key) >= sizeof(sExtra[0].key))
         return -1;
+    if (sExtraCount == EXTRA_KEYS)
+    {
+        /* Not stored: the setting keeps its default and is not saved. */
+        if (!sFullLogged)
+            CtrLog_Write(CTR_LOG_ERROR, "settings: %d keys, the most kept; %s not saved", EXTRA_KEYS, key);
+        sFullLogged = true;
+        return -1;
+    }
     strcpy(sExtra[sExtraCount].key, key);
     sExtra[sExtraCount].value = 0;
     return sExtraCount++;
@@ -165,7 +177,7 @@ void CtrSettings_Load(void)
 static Thread sSaver;
 static LightEvent sSaveWake;
 static LightLock sSaveLock = 1;
-static char sSaveText[160 + EXTRA_KEYS * 32];
+static char sSaveText[160 + EXTRA_KEYS * EXTRA_LINE_BYTES];
 static bool sSavePending, sSaveQuit;
 
 /* Into a temp file, then in place of the old one: rewritten in place, a power
@@ -196,7 +208,8 @@ static void WriteText(const char *text)
 
 static void Saver(void *arg)
 {
-    char text[sizeof(sSaveText)];
+    /* Off the thread's 8 KB stack: the one saver thread uses it. */
+    static char text[sizeof(sSaveText)];
 
     (void)arg;
     for (;;)
@@ -239,7 +252,8 @@ int CtrSettings_Text(char *text, unsigned size)
 
 static void Save(void)
 {
-    char text[sizeof(sSaveText)] = {0};
+    /* Game thread only (below): static, as the text has grown to 4 KB. */
+    static char text[sizeof(sSaveText)];
 
     /* Settings and shutdown are submitted by the game thread. */
     if (sSaveQuit || sFrozen)

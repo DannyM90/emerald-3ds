@@ -44,6 +44,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 #include <math.h>
 #include <string.h>
 
@@ -52,6 +53,7 @@
 #include "3ds_daynight.h"
 #include "3ds_encounters.h"
 #include "3ds_locale_text.h"
+#include "mail.h"
 #include "main.h"
 #include "money.h"
 #include "battle.h"
@@ -126,6 +128,7 @@ void CtrStartMenu_Request(u8 action);
 bool8 CtrStartMenu_Pending(void);
 bool8 CtrStartMenu_Available(void);
 bool8 CtrStartMenu_Busy(void);
+MainCallback CtrStartMenu_DirectCallback(u8 action);
 bool8 CtrPokenav_IsOpen(void);
 u32 CtrPokenav_Screen(bool8 *ready);
 int CtrPokenavMenu_Options(int *cursor);
@@ -136,7 +139,8 @@ bool8 CtrPokenavRibbons_Summary(u16 *selected, u16 *normal, u16 *gift, u16 *gift
 bool8 CtrRegionMap_Cursor(s16 *x, s16 *y, bool8 *zoomed, bool8 *moving);
 bool8 CtrMonMarkings_Menu(s8 *cursor, s16 *x, s16 *y);
 bool8 CtrPokenavCondition_Marking(void);
-void CtrPokenavMenu_SetCursor(int cursor);
+void CtrPokenavMenu_Select(int cursor);
+void CtrPokenav_Leave(void);
 void CtrPokenavList_SetSelected(u16 selected);
 void CtrPokenavMatchCall_SetOption(u16 cursor);
 void CtrMonMarkings_SetCursor(s8 cursor);
@@ -456,11 +460,7 @@ enum { COL_Y = SCR_COUNT, COL_TITLE, COL_RUN, COL_ITEMS };
 enum { OPT_TEXT_SPEED, OPT_BATTLE_SCENE, OPT_BATTLE_STYLE, OPT_SOUND, OPT_BUTTON_MODE, OPT_FRAME,
        OPT_FPS, OPT_VOXEL, OPT_VOXEL_PITCH, OPT_VOXEL_ZOOM, OPT_VOXEL_BLUR, OPT_VOXEL_BATTLE,
        OPTION_ROWS };
-#if CTR_VOXEL_ENABLED
 #define OPTION_SHOWN OPTION_ROWS
-#else
-#define OPTION_SHOWN OPT_VOXEL
-#endif
 
 typedef struct
 {
@@ -496,6 +496,9 @@ static struct
     Pal playerIconPal[2];
     u8 *cursorTiles;
     Pal cursorPal;
+    /* The party menu's held item and mail signs, a tile each. */
+    u8 *holdTiles;
+    Pal holdPal;
     /* Trainer card. */
     Pal badgePal;
     u8 *badgeTiles;
@@ -607,6 +610,9 @@ static void LoadResources(void)
     sRes.cursorTiles = UnlzFile("pokenav/region_map/cursor_small.4bpp.lz", NULL);
     PalFile("pokenav/region_map/cursor.gbapal", &sRes.cursorPal, 1, FALSE);
 
+    sRes.holdTiles = ReadRomfs("party_menu/hold_icons.4bpp", NULL);
+    PalFile("party_menu/hold_icons.gbapal", &sRes.holdPal, 1, FALSE);
+
     PalFile("trainer_card/badges.gbapal", &sRes.badgePal, 1, FALSE);
     sRes.badgeTiles = UnlzFile("trainer_card/badges.4bpp.lz", NULL);
 
@@ -675,7 +681,7 @@ static const u8 *MonIcon(u16 iconSpecies, bool8 deoxysForm)
 }
 
 /* Item icons: 24x24 with their own palette. */
-#define ITEM_ICON_SLOTS 24
+#define ITEM_ICON_SLOTS 48
 static struct
 {
     u16 item;
@@ -1347,11 +1353,6 @@ static void DrawStrRight(const Font *font, const u8 *str, int right, int y, u16 
     DrawStr(font, str, right - StrWidth(font, str), y, fg, shadow);
 }
 
-static void DrawStrCentered(const Font *font, const u8 *str, int cx, int y, u16 fg, u16 shadow)
-{
-    DrawStr(font, str, cx - StrWidth(font, str) / 2, y, fg, shadow);
-}
-
 /* Whether a glyph paints (glyph or shadow) the pixel at column px of row. */
 static bool8 GlyphInk(const Font *font, u16 glyph, int px, int row)
 {
@@ -1400,22 +1401,6 @@ static void CapRows(const Font *font, int *top, int *bottom)
                 if (row + 1 > *bottom) *bottom = row + 1;
                 break;
             }
-}
-
-/* A one-line string centred in [x0, x1) x [y0, y1): across by the pixels it
- * paints, down by the capitals' band. */
-static void DrawStrIn(const Font *font, const u8 *str, int x0, int x1, int y0, int y1, u16 fg, u16 shadow)
-{
-    int ix0, ix1, top, bottom;
-
-    if (!font->glyphs || !str)
-        return;
-    InkColumns(font, str, &ix0, &ix1);
-    if (ix1 <= ix0)
-        return;
-    CapRows(font, &top, &bottom);
-    DrawStr(font, str, x0 + ((x1 - x0) - (ix1 - ix0)) / 2 - ix0, y0 + ((y1 - y0) - (bottom - top)) / 2 - top, fg,
-            shadow);
 }
 
 /* Latin labels for the few words the game has no standalone string for. */
@@ -2137,17 +2122,21 @@ static void SpriteBox(const u8 *tiles, int wt, int ht, int *x0, int *y0, int *x1
     *x0 = wt * 8;
     *y0 = ht * 8;
     *x1 = *y1 = 0;
+    /* A tile's row at a time: its four bytes, pixel px the nibble at bit 4px. */
     for (int y = 0; y < ht * 8; ++y)
-        for (int x = 0; x < wt * 8; ++x)
+        for (int tx = 0; tx < wt; ++tx)
         {
-            const u8 *tile = tiles + ((y / 8) * wt + x / 8) * 32;
-            int px = x & 7, py = y & 7;
+            const u8 *row = tiles + ((y / 8) * wt + tx) * 32 + (y & 7) * 4;
+            u32 bits = row[0] | (row[1] << 8) | (row[2] << 16) | ((u32)row[3] << 24);
+            int first, last;
 
-            if (!((tile[py * 4 + px / 2] >> ((px & 1) * 4)) & 15))
+            if (!bits)
                 continue;
-            if (x < *x0) *x0 = x;
+            first = tx * 8 + __builtin_ctz(bits) / 4;
+            last = tx * 8 + (31 - __builtin_clz(bits)) / 4;
+            if (first < *x0) *x0 = first;
             if (y < *y0) *y0 = y;
-            if (x + 1 > *x1) *x1 = x + 1;
+            if (last + 1 > *x1) *x1 = last + 1;
             if (y + 1 > *y1) *y1 = y + 1;
         }
 }
@@ -2195,9 +2184,12 @@ typedef struct
     u16 species;      /* SPECIES_NONE: empty slot */
     u16 iconSpecies;
     u8 deoxys, isEgg, level, gender, ailment, fainted;
+    u8 held;          /* HELD_NONE, HELD_ITEM, HELD_MAIL */
     u16 hp, maxHp;
     u8 nick[POKEMON_NAME_LENGTH + 2];
 } MonView;
+
+enum { HELD_NONE, HELD_ITEM, HELD_MAIL };
 
 /* A row of the map's wild Pokemon list (map extras): a species of one
  * method's table, its slots' levels and chances added up. */
@@ -2222,8 +2214,9 @@ typedef struct
     u8 title;                         /* MODE_OFF on the title screen */
     u16 enabled;                      /* bit per section */
     /* Whether the dock and the header are on screen (not under the game's
-     * screen opened from a battle, a shop or the PC). */
-    u8 dock;
+     * screen opened from a shop or the PC); in a battle's party menu or bag
+     * only their own button takes a tap (dockLocked), the others grey. */
+    u8 dock, dockLocked;
     /* Party: SAVE's and NUZLOCKE's icons. */
     MonView party[PARTY_SIZE];
     /* Region map, and the header's clock. */
@@ -2515,9 +2508,9 @@ static u8 CurrentMode(void)
         return MODE_POKEDEX;
     if (CtrTrainerCard_FieldOpen())
         return MODE_CARD;
-    /* The summary from the field's party menu, drawn here; a classic one has
-     * the whole screen, as from the boxes (MODE_STORAGE). */
-    if (!sClassicMenus && CtrSummary_FieldOpen())
+    /* The summary from the field's or a battle's party menu, drawn here; a
+     * classic one has the whole screen, as from the boxes (MODE_STORAGE). */
+    if (!sClassicMenus && CtrSummary_InWindow())
         return MODE_SUMMARY;
     /* Before the boxes: the bag can be opened from them, whole screen too. */
     if (gMain.callback2 == CB2_BagMenuRun && gBagMenu)
@@ -3013,6 +3006,11 @@ static void SnapshotPartyFull(ViewState *s)
         view->hp = GetMonData(mon, MON_DATA_HP);
         view->maxHp = GetMonData(mon, MON_DATA_MAX_HP);
         view->ailment = GetAilmentFromStatus(GetMonData(mon, MON_DATA_STATUS));
+        {
+            u16 item = GetMonData(mon, MON_DATA_HELD_ITEM);
+
+            view->held = item == ITEM_NONE ? HELD_NONE : ItemIsMail(item) ? HELD_MAIL : HELD_ITEM;
+        }
         GetMonData(mon, MON_DATA_NICKNAME, view->nick);
         StringGet_Nickname(view->nick);
         view->gender = view->isEgg ? MON_GENDERLESS : GetMonGender(mon);
@@ -3043,12 +3041,17 @@ static u8 NativeKind(const ViewState *s)
  * reads of it. With nothing to read for a moment (the menu coming in or
  * going out, a state it has no view of) what was drawn stays; with nothing
  * drawn yet, the section's empty backdrop (NATIVE_BLANK). The game's
- * picture is never shown for these. */
+ * picture is never shown for these. What stays is stale: still drawn, but
+ * its plates are no longer the game's, so a tap on them is not taken. */
+static bool8 sNativeStale;
+
 static void SnapshotNative(ViewState *s)
 {
     u8 kind = NativeKind(s);
     bool8 got = FALSE;
 
+    /* No native view now: one still shown is stale too, until redrawn. */
+    sNativeStale = kind == NATIVE_NONE && sShown.native != NATIVE_NONE;
     if (kind == NATIVE_NONE)
         return;
     switch (kind)
@@ -3070,6 +3073,7 @@ static void SnapshotNative(ViewState *s)
         s->native = kind;
     else if (sShown.native == kind)
     {
+        sNativeStale = TRUE;
         s->native = kind;
         s->pv = sShown.pv;
         s->sv = sShown.sv;
@@ -3361,18 +3365,17 @@ static void Snapshot(ViewState *s, u8 mode, u8 pressed)
     if (mode == MODE_PARTY_MENU)
     {
         s->screen = SCR_POKEMON;
-        /* The party menu from the field is in the window; from a battle, a
+        /* The party menu from the field or a battle is in the window; from a
          * contest or a facility it has the whole screen (CtrCentredParty). */
-        s->bagView = !gMain.inBattle && gPartyMenu.menuType == PARTY_MENU_TYPE_FIELD ? BAG_VIEW_SECTION
-                                                                                       : BAG_VIEW_WHOLE;
+        s->bagView = CtrParty_InWindow() ? BAG_VIEW_SECTION : BAG_VIEW_WHOLE;
         if (s->bagView == BAG_VIEW_WHOLE)
             s->screen = SCR_COUNT;
     }
     else if (mode == MODE_BAG_MENU)
     {
         s->screen = SCR_BAG;
-        /* The bag from the field is in the window; from anything else it has
-         * the whole screen. */
+        /* The bag from the field or a battle is in the window; from anything
+         * else it has the whole screen. */
         s->bagView = CtrBag_InWindow() ? BAG_VIEW_SECTION : BAG_VIEW_WHOLE;
         if (s->bagView == BAG_VIEW_WHOLE)
             s->screen = SCR_COUNT;
@@ -3389,11 +3392,17 @@ static void Snapshot(ViewState *s, u8 mode, u8 pressed)
         s->screen = SCR_COUNT;   /* the boxes have the whole screen */
     if (s->screen < SCR_COUNT && !((s->enabled >> s->screen) & 1))
         s->screen = SCR_MAP;
-    s->dock = mode < MODE_BATTLE_INFO && !s->inBattle && s->screen < SCR_COUNT;
+    /* In a battle, its party menu, summary and bag in their section, nothing else
+     * of the bottom screen's to go to: the dock with only their own button. */
+    s->dock = mode < MODE_BATTLE_INFO && s->screen < SCR_COUNT
+           && (!s->inBattle || mode == MODE_SUMMARY
+               || ((mode == MODE_PARTY_MENU || mode == MODE_BAG_MENU) && s->bagView == BAG_VIEW_SECTION));
+    s->dockLocked = s->dock && s->inBattle;
     StringCopy(s->name, gSaveBlock2Ptr->playerName);
-    /* The header's Y and RUN, and the focus on the dock or the header. */
-    s->registered = gSaveBlock1Ptr->registeredItem;
-    s->run = (CtrSettings_RunAlways() ? 1 : 0) | (FlagGet(FLAG_SYS_B_DASH) ? 2 : 0);
+    /* The header's Y and RUN, and the focus on the dock or the header; in a
+     * battle neither is for now. */
+    s->registered = s->dockLocked ? ITEM_NONE : gSaveBlock1Ptr->registeredItem;
+    s->run = s->dockLocked ? 0 : (CtrSettings_RunAlways() ? 1 : 0) | (FlagGet(FLAG_SYS_B_DASH) ? 2 : 0);
     s->focus = sFocus;
     s->optFocus = FOCUS_NONE;
 
@@ -3412,7 +3421,7 @@ static void Snapshot(ViewState *s, u8 mode, u8 pressed)
         else
             s->cursorX = s->cursorY = 0;
         /* Read only: the step counter is the game's (UpdateRepelCounter). */
-        if (CtrExtras_Get("repel_steps") == 1)
+        if (CtrExtras_Get("repel_steps") == 1 && !s->inBattle)
         {
             s->repelShown = TRUE;
             s->repelSteps = VarGet(VAR_REPEL_STEP_COUNT);
@@ -3947,6 +3956,8 @@ static bool8 sIconsReady;
 /* Every icon the screen needs is loaded (this frame's sIconsReady stays FALSE
  * on the frame they come in, for the captures' sake). */
 static bool8 sIconsIn;
+/* Icons come in for a native view: its area drawn again, not the screen. */
+static bool8 sAreaRedraw;
 /* Plates kept on screen this frame: one. All of them in the redraw that opens
  * the action menu was 17-18 ms on an Old 3DS; the rest follow on the blinks. */
 static u8 sShowCaptures;
@@ -4334,6 +4345,10 @@ static void WarmView(ViewState *v, u8 battler)
     SnapshotPartyBalls(v);
 }
 
+/* The battle's own menus all made (WarmBattleMenus): its frames may make the
+ * party menu's and the bag's plates ahead (WarmScreens). */
+static bool8 sBattleMenusReady;
+
 static void WarmBattleMenus(void)
 {
     static ViewState v;
@@ -4359,6 +4374,7 @@ static void WarmBattleMenus(void)
     }
     for (int i = 0; i < PARTY_SIZE; ++i)
         key = Mix(key, v.partyBalls[i]);
+    sBattleMenusReady = key == sWarmKey;
     if (key == sWarmKey)
         return;
     {
@@ -4529,7 +4545,8 @@ static u16 sQuickWarmBall = ITEM_NONE;
  * from what is ready, not built in the frame it is chosen. Once all of it
  * is, nothing more is asked until another ball is chosen.
  */
-static void WarmQuickBalls(const ViewState *s)
+/* TRUE: nothing of the quick balls' left to make (or none to make). */
+static bool8 WarmQuickBalls(const ViewState *s)
 {
     static unsigned starved;
     static u16 count, balls[2], counts[2];
@@ -4539,7 +4556,7 @@ static void WarmQuickBalls(const ViewState *s)
     float slice;
 
     if (s->mode != MODE_BATTLE_ACTION || s->safari || s->quickBall == ITEM_NONE || sBuildBudget != 0xFF)
-        return;
+        return sBuildBudget == 0xFF;
     if (sQuickWarmBall != s->quickBall || count != s->quickBallCount)
     {
         sQuickWarmBall = s->quickBall;
@@ -4552,14 +4569,14 @@ static void WarmQuickBalls(const ViewState *s)
         ready = FALSE;
     }
     if (ready)
-        return;
+        return TRUE;
     sIconBudget = TRUE;
     for (int i = 0; i < 2; ++i)
         if (balls[i] != ITEM_NONE && ItemIcon(balls[i]) < 0 && !sIconBudget)
             icons = FALSE;
     sIconBudget = FALSE;
     if (!IdleSlice(&starved, &slice))
-        return;
+        return FALSE;
     ResolveFonts();
     sOX = 0;
     sClipX0 = sClipY0 = sClipX1 = sClipY1 = 0;
@@ -4579,6 +4596,7 @@ static void WarmQuickBalls(const ViewState *s)
     sClipY0 = clip[1];
     sClipX1 = clip[2];
     sClipY1 = clip[3];
+    return FALSE;
 }
 
 /* ------------------------------------------------------------------------ */
@@ -4757,7 +4775,8 @@ static void MapCacheTake(void)
 /*
  * A whole redraw over CTR_RENDER_SLOW_MS, phase by phase, for the console's
  * log: Azahar copies memory far faster than an Old 3DS, so where a 10 ms
- * redraw goes can only be read there.
+ * redraw goes can only be read there. CTR_RENDER_SLOW_LINES of them for the
+ * field, again for each battle and the field after it.
  */
 #define CTR_RENDER_SLOW_MS 4.0f
 #define CTR_RENDER_SLOW_LINES 60
@@ -4766,6 +4785,8 @@ static void Render(const ViewState *s)
 {
     bool8 cacheable = MapCacheable(s), blitted = FALSE;
     uint64_t phase[6] = {CtrPlatform_Ticks()};
+    u32 platesAt = sPlatesMade, evictedAt = sPlatesEvicted;
+    uint64_t plateTicksAt = sPlateTicks, drawTicksAt = sPlateDrawTicks, textTicksAt = sTextTicks;
 
     ResolveFonts();
     if (cacheable && sMapCache.valid && memcmp(&sMapCache.state, s, sizeof(*s)) == 0)
@@ -4805,18 +4826,22 @@ static void Render(const ViewState *s)
     if (s->mode == MODE_OFF)
     {
         memset(sCanvas, 0, sizeof(sCanvas));
+        phase[1] = CtrPlatform_Ticks();
         if (s->title)
             DrawTitleCredit();
+        phase[2] = CtrPlatform_Ticks();
     }
     else if (s->mode >= MODE_BATTLE_INFO)
     {
         CopyCache(sCache[CACHE_BATTLE] ? CACHE_BATTLE : CACHE_WIDE);
+        phase[1] = CtrPlatform_Ticks();
         if (s->mode == MODE_BATTLE_ACTION)
             DrawBattleActions(s);
         else if (s->mode == MODE_BATTLE_MOVE)
             DrawBattleMoves(s);
         else if (s->mode == MODE_BATTLE_TARGET)
             DrawBattleTarget(s);
+        phase[2] = CtrPlatform_Ticks();
     }
     else if (!s->dock)
     {
@@ -4879,22 +4904,33 @@ static void Render(const ViewState *s)
      * present split into its copy to the screen and its cache flush. */
     {
         static unsigned lines;
+        static bool8 battle;
         float total = CtrPlatform_TickMs(phase[5] - phase[0]);
         uint64_t copy = 0, flush = 0;
 
-        if (total > CTR_RENDER_SLOW_MS && lines < CTR_RENDER_SLOW_LINES && s->mode == MODE_FIELD)
+        /* Each battle, and the field after it, has lines of its own. */
+        if (s->inBattle != battle)
+        {
+            battle = s->inBattle;
+            lines = 0;
+        }
+
+        if (total > CTR_RENDER_SLOW_MS && lines < CTR_RENDER_SLOW_LINES)
         {
             if (blitted)
                 CtrBottom_LastBlitTicks(&copy, &flush);
             ++lines;
-            CtrLog_Write(CTR_LOG_VIDEO, "bottom render f=%lu screen=%u page=%u part=%d,%d-%d,%d total=%.2f: "
+            CtrLog_Write(CTR_LOG_VIDEO, "bottom render f=%lu mode=%u screen=%u page=%u part=%d,%d-%d,%d total=%.2f: "
                          "backdrop=%.2f screen=%.2f frame=%.2f icons=%.2f blit=%.2f "
-                         "(copy=%.2f flush=%.2f) ms",
-                         (unsigned long)sFrames, s->screen, s->optPage, sClipX0, sClipY0, sClipX1, sClipY1, total,
-                         CtrPlatform_TickMs(phase[1] - phase[0]),
+                         "(copy=%.2f flush=%.2f) ms plates made=%lu in %.2f ms evicted=%lu; drawn plates=%.2f "
+                         "text=%.2f ms",
+                         (unsigned long)sFrames, s->mode, s->screen, s->optPage, sClipX0, sClipY0, sClipX1, sClipY1,
+                         total, CtrPlatform_TickMs(phase[1] - phase[0]),
                          CtrPlatform_TickMs(phase[2] - phase[1]), CtrPlatform_TickMs(phase[3] - phase[2]),
                          CtrPlatform_TickMs(phase[4] - phase[3]), CtrPlatform_TickMs(phase[5] - phase[4]),
-                         CtrPlatform_TickMs(copy), CtrPlatform_TickMs(flush));
+                         CtrPlatform_TickMs(copy), CtrPlatform_TickMs(flush), (unsigned long)(sPlatesMade - platesAt),
+                         CtrPlatform_TickMs(sPlateTicks - plateTicksAt), (unsigned long)(sPlatesEvicted - evictedAt),
+                         CtrPlatform_TickMs(sPlateDrawTicks - drawTicksAt), CtrPlatform_TickMs(sTextTicks - textTicksAt));
         }
     }
 }
@@ -5027,6 +5063,7 @@ static bool8 DirtyRect(const ViewState *now, const ViewState *shown, Rect *r)
 {
     static ViewState probe;
     bool8 battle = now->mode >= MODE_BATTLE_INFO;
+    bool8 iconsOnly = FALSE;
 
     if (now->mode != shown->mode || now->screen != shown->screen || now->dock != shown->dock)
         return FALSE;
@@ -5091,10 +5128,13 @@ static bool8 DirtyRect(const ViewState *now, const ViewState *shown, Rect *r)
     if (memcmp(&probe, shown, sizeof(probe)) != 0)
         return FALSE;
     RectInit(r);
-    /* The party menu's icons moving, and nothing else of it: theirs alone. */
+    /* The party menu's icons moving, and nothing else of it: theirs alone.
+     * A slot whose icon is not drawn (all but the chosen one over the menu)
+     * goes on animating unseen: nothing to draw for it, not a whole redraw. */
     if (now->native == NATIVE_PARTY && memcmp(&now->pv, &shown->pv, offsetof(struct CtrPartyView, iconFrame)) == 0
      && memcmp(now->party, shown->party, sizeof(now->party)) == 0)
     {
+        iconsOnly = TRUE;
         for (int i = 0; i < PARTY_SIZE; ++i)
         {
             int x0, y0, x1, y1;
@@ -5104,6 +5144,17 @@ static bool8 DirtyRect(const ViewState *now, const ViewState *shown, Rect *r)
             if (PartyIconRect(now, i, &x0, &y0, &x1, &y1))
                 RectAdd(r, x0, y0, x1, y1);
         }
+    }
+    /* The summary's mon moving with its animation, and nothing else of it:
+     * the picture's part of its plate alone. */
+    else if (now->native == NATIVE_SUMMARY
+          && memcmp(&now->sv, &shown->sv, offsetof(struct CtrSummaryView, picTiles)) == 0
+          && memcmp(&now->pv, &shown->pv, sizeof(now->pv)) == 0 && memcmp(&now->bv, &shown->bv, sizeof(now->bv)) == 0
+          && memcmp(&now->dx, &shown->dx, sizeof(now->dx)) == 0
+          && memcmp(now->party, shown->party, sizeof(now->party)) == 0)
+    {
+        if (memcmp(&now->sv, &shown->sv, sizeof(now->sv)) != 0)
+            RectAdd(r, AREA_X, SUM_Y, AREA_X + SUM_LEFT_W, SUM_PIC_BOTTOM);
     }
     else if (now->native && (memcmp(&now->pv, &shown->pv, sizeof(now->pv)) != 0
                         || memcmp(&now->sv, &shown->sv, sizeof(now->sv)) != 0
@@ -5144,7 +5195,8 @@ static bool8 DirtyRect(const ViewState *now, const ViewState *shown, Rect *r)
             RectAdd(r, x0, y0, x1, y1);
         }
     }
-    return r->x0 < r->x1 && r->y0 < r->y1;
+    /* Only hidden icons moved: TRUE with an empty rect, which draws nothing. */
+    return (r->x0 < r->x1 && r->y0 < r->y1) || iconsOnly;
 }
 
 static void RenderPart(const ViewState *s, int x0, int y0, int x1, int y1);
@@ -5300,14 +5352,13 @@ enum
 {
     NAV_NONE,
     NAV_PRESS,    /* keys, once */
-    NAV_MENU,     /* walk the menu cursor to target */
+    NAV_MENU,     /* put the menu cursor on target */
     NAV_LIST,     /* walk the list selection to target */
     NAV_OPTION,   /* walk Match Call's options cursor to target */
     NAV_PARTY,    /* walk the condition screen's mon to target */
     NAV_MAP,      /* dx, dy presses on the map */
     NAV_RIBBON,   /* walk the ribbon cursor to target */
     NAV_MARK,     /* walk the markings menu's cursor to target */
-    NAV_LEAVE,    /* B until the PokéNav closes */
 };
 
 static struct
@@ -5330,13 +5381,9 @@ static struct
 #define NAV_OPTION_Y 72
 #define NAV_OPTION_W 88
 
-/* Stops what is under way. A NAV_LEAVE given up - a key held, the PokéNav not
- * closing, or another plan for it - drops the screen chosen from the dock:
- * that one is not to open later, when the player closes the PokéNav. */
+/* Stops what is under way: a key held, or another plan for it. */
 static void NavStop(void)
 {
-    if (sNav.kind == NAV_LEAVE)
-        sScreen = SCR_MAP;
     sNav.kind = NAV_NONE;
 }
 
@@ -5372,7 +5419,6 @@ static u16 NavNext(int cursor, int target, void (*set)(int))
     return target > cursor ? DPAD_DOWN : DPAD_UP;
 }
 
-static void NavSetMenu(int cursor) { CtrPokenavMenu_SetCursor(cursor); }
 static void NavSetList(int cursor) { CtrPokenavList_SetSelected((u16)cursor); }
 static void NavSetOption(int cursor) { CtrPokenavMatchCall_SetOption((u16)cursor); }
 static void NavSetMark(int cursor) { CtrMonMarkings_SetCursor((s8)cursor); }
@@ -5396,8 +5442,10 @@ static u16 NavStep(bool8 *done)
     case NAV_MENU:
         count = CtrPokenavMenu_Options(&cursor);
         if (sNav.target >= count) break;
-        if (cursor == sNav.target) { *done = TRUE; return sNav.finish; }
-        return NavNext(cursor, sNav.target, NavSetMenu);
+        /* Put straight on the option, then A: nothing walked on the way. */
+        CtrPokenavMenu_Select(sNav.target);
+        *done = TRUE;
+        return sNav.finish;
     case NAV_LIST:
         if (!CtrPokenavList_View(&x, &y, &width, &top, &selected, &shown, &total) || sNav.target >= total) break;
         if (selected == sNav.target) { *done = TRUE; return sNav.finish; }
@@ -5434,8 +5482,6 @@ static u16 NavStep(bool8 *done)
         if (mark == sNav.target) { *done = TRUE; return sNav.finish; }
         return NavNext(mark, sNav.target, NavSetMark);
     }
-    case NAV_LEAVE:
-        return B_BUTTON;
     }
     /* What the plan was for is gone. */
     sNav.kind = NAV_NONE;
@@ -5454,8 +5500,8 @@ static void RunNav(u8 mode)
         sNav.kind = NAV_NONE;
         return;
     }
-    /* As in RunPlan: not the keys the bottom screen holds back, such as the A that
-     * chose another screen from it and started this NAV_LEAVE. */
+    /* As in RunPlan: not the keys the bottom screen holds back, such as the A
+     * that chose an option on it. */
     if (CtrBottom_FilterKeys(CtrInput_Get()->held) & CTR_KEY_GAME)
     {
         NavStop();
@@ -5484,7 +5530,7 @@ static void RunNav(u8 mode)
             NavStop();
         return;
     }
-    if (done && sNav.kind != NAV_LEAVE)
+    if (done)
         sNav.kind = NAV_NONE;
     if (++sNav.steps > 64)
         NavStop();
@@ -5706,15 +5752,58 @@ static void OpenSave(void)
 /* A column screen chosen while one of the game's is on show, for when the
  * area is the bottom screen's again. sScreen may still be SAVE from before
  * that screen opened: SAVE opens on its question all the same. */
-/* A screen to go to once the summary is back in the party menu. */
-static u8 sLeaveVia = SCR_COUNT, sLeaveWait;
+/* A screen chosen from the dock while one of the game's was up, for that one
+ * to go to when it closes (CtrBottom_LeaveTo), and the frames it has been
+ * waiting. */
+static u8 sLeaveTo = SCR_COUNT;
+static u16 sLeaveToWait;
 
 static void LeaveForScreen(u8 screen)
 {
     if (screen == SCR_SAVE)
         OpenSave();
     sScreen = screen;
+    sLeaveTo = screen;
+    sLeaveToWait = 0;
 }
+
+/*
+ * Where one of the game's screens goes as it closes, given where it would
+ * go (field): with a screen of the game's own chosen from the dock, that
+ * screen, opened straight from this one as the start menu would open it
+ * from the field - one screen closing and the other opening, as the
+ * sections of the bottom screen change, not the field in between. The
+ * bottom screen's own sections open with the field back, as before.
+ */
+/* A screen chosen from the dock is waiting for the one on show to close. */
+bool8 CtrBottom_LeavePending(void)
+{
+    return sLeaveTo < SCR_COUNT;
+}
+
+MainCallback CtrBottom_LeaveTo(MainCallback field)
+{
+    u8 screen = sLeaveTo;
+    u8 action = START_NONE;
+    MainCallback cb;
+
+    sLeaveTo = SCR_COUNT;
+    if (field != CB2_ReturnToFieldWithOpenMenu || screen >= SCR_COUNT || !(EnabledScreens() & (1 << screen)))
+        return field;
+    switch (screen)
+    {
+    case SCR_POKEMON: action = START_POKEMON; break;
+    case SCR_BAG:     action = START_BAG; break;
+    case SCR_POKEDEX: action = START_POKEDEX; break;
+    case SCR_POKENAV: action = START_POKENAV; break;
+    case SCR_CARD:    action = sClassicMenus ? START_PLAYER : START_NONE; break;
+    }
+    if (action == START_NONE || (cb = CtrStartMenu_DirectCallback(action)) == NULL)
+        return field;
+    CtrLog_Write(CTR_LOG_VIDEO, "bottom screen: straight to screen %u", screen);
+    return cb;
+}
+
 
 /* Touches use the displayed snapshot and only act on enabled controls. */
 static void MapExtrasTap(u8 id)
@@ -5784,6 +5873,16 @@ static void OpenAsked(u8 mode)
         sScreen = SCR_MAP;
 }
 
+/* The dock's buttons for a screen of the game's own, which takes the buttons
+ * itself once open. */
+static bool8 IsGameScreenItem(u8 item)
+{
+    return item == SCR_POKEMON || item == SCR_BAG || item == SCR_POKEDEX || item == SCR_POKENAV
+        || (item == SCR_CARD && sClassicMenus);
+}
+
+static void LeaveFocus(void);
+
 static void Activate(u8 id, u8 mode)
 {
     if (id == HIT_NONE)
@@ -5817,6 +5916,10 @@ static void Activate(u8 id, u8 mode)
     {
         u8 screen = id - HIT_COLUMN;
 
+        /* A battle's party menu, summary or bag: only its own button, their B. */
+        if (gMain.inBattle && screen != sShown.screen)
+            return;
+
         if (mode == MODE_POKENAV)
         {
             /* Its own button is its B; any other leaves it for that screen. */
@@ -5824,8 +5927,10 @@ static void Activate(u8 id, u8 mode)
                 NavPress(B_BUTTON);
             else
             {
-                /* First: NavStart drops the screen of a leave under way. */
-                NavStart(NAV_LEAVE, 0, 0);
+                /* Off from the menu on show, straight to that screen
+                 * (Task_Pokenav, CtrBottom_LeaveTo). */
+                NavStop();
+                CtrPokenav_Leave();
                 LeaveForScreen(screen);
             }
             return;
@@ -5865,15 +5970,20 @@ static void Activate(u8 id, u8 mode)
         /* The game's party menu on show: its own button is B, as the bag's
          * and the Pokédex's are; any other closes it for that screen. */
         /* The summary opened from the party menu: POKéMON is its B, back to
-         * the menu; any other goes back and leaves the menu for its screen. */
+         * the menu; any other goes back and leaves the menu for its screen.
+         * With a move chosen or being moved, B only ends that: no leave. */
         if (mode == MODE_SUMMARY)
         {
-            CtrSummary_NativeTap(CTR_SUM_TAP_BACK, 0);
-            if (screen != SCR_POKEMON)
+            static struct CtrSummaryView view;
+            bool8 closes = CtrSummary_GetView(&view) && view.movesMode == CTR_SUM_MOVES_VIEW;
+
+            if (screen != SCR_POKEMON && closes)
             {
-                sLeaveVia = screen;
-                sLeaveWait = 0;
+                LeaveForScreen(screen);
+                CtrSummary_NativeTap(CTR_SUM_TAP_LEAVE, 0);
             }
+            else
+                CtrSummary_NativeTap(CTR_SUM_TAP_BACK, 0);
             return;
         }
         if (mode == MODE_PARTY_MENU)
@@ -5931,10 +6041,13 @@ static void Activate(u8 id, u8 mode)
         return;
     }
 
-    /* The game's screen drawn here: the tap its own code takes. */
+    /* The game's screen drawn here: the tap its own code takes. Not on a
+     * view kept from before while the game's has none to read: whatever
+     * menu is up now would take it (a YES on a new question). */
     if (sShown.native)
     {
-        GameViewTap(&sShown, id);
+        if (!sNativeStale)
+            GameViewTap(&sShown, id);
         return;
     }
     switch (sShown.screen)
@@ -6192,7 +6305,16 @@ static u8 ProcessTouch(u8 mode)
             return HIT_NONE;
         }
         if ((!sTouch.dragged || sTouch.pressed == HIT_MAP) && HitTest(sTouch.lastX, sTouch.lastY) == sTouch.pressed)
-            Activate(sTouch.pressed, mode);
+        {
+            u8 id = sTouch.pressed;
+
+            Activate(id, mode);
+            /* A game's screen opened by a tap while the dock had the focus
+             * (X): the buttons go to it, as when A chose it. */
+            if (id >= HIT_COLUMN && id < HIT_COLUMN + SCR_COUNT && IsGameScreenItem(id - HIT_COLUMN)
+             && (sFocus != FOCUS_NONE || sInside != INSIDE_NONE))
+                LeaveFocus();
+        }
         return HIT_NONE;
     }
     if (!sTouch.active || sTouch.dragged)
@@ -6218,6 +6340,11 @@ static u8 ProcessTouch(u8 mode)
  */
 uint16_t CtrBottom_FilterKeys(uint16_t held)
 {
+    /* The soft reset's chord reaches the game whatever has the buttons
+     * (main.c reads it from them), and only that; not while the game
+     * forbids the reset (a link save). */
+    if ((held & CTR_SOFT_RESET_KEYS) == CTR_SOFT_RESET_KEYS && !gSoftResetDisabled)
+        return sFocus != FOCUS_NONE || sInside != INSIDE_NONE || sSwallow ? CTR_SOFT_RESET_KEYS : held;
     return sFocus != FOCUS_NONE || sInside != INSIDE_NONE || sSwallow ? 0 : held;
 }
 
@@ -6310,8 +6437,7 @@ static void LeaveFocus(void)
  * goes. */
 static void ChooseColumnItem(u8 mode, u8 item)
 {
-    bool8 gameScreen = item == SCR_POKEMON || item == SCR_BAG || item == SCR_POKEDEX || item == SCR_POKENAV
-                    || (item == SCR_CARD && sClassicMenus);
+    bool8 gameScreen = IsGameScreenItem(item);
 
     if (item == COL_RUN)
     {
@@ -6441,7 +6567,10 @@ void CtrBottom_Init(void)
 
     LoadResources();
     if (sRes.ready)
+    {
         BuildBackgroundCaches();
+        PlateDiskOpen();
+    }
     sShown.mode = 0xFF;
     CtrLog_Write(CTR_LOG_VIDEO, "bottom screen: resources %s in %.1f ms", sRes.ready ? "ready" : "MISSING",
                  CtrPlatform_TickMs(CtrPlatform_Ticks() - start));
@@ -6703,6 +6832,216 @@ void CtrBottom_SoftReset(void)
     sForceRedraw = TRUE;
 }
 
+/*
+ * Plates made ahead. The first time a section or one of the game's screens
+ * is drawn, each of its plates is worked out pixel by pixel: 50-100 ms in one
+ * frame in Azahar for the party menu, the bag, the summary or the card, more
+ * on an Old 3DS. While the field is idle and a frame has time left, the
+ * sections the dock can open are walked with nothing to draw into, so only
+ * their missing plate pictures are made (sPlateWarm, WarmPlate): one at a
+ * time within what the frame leaves, only into room free now - a plate made
+ * already is never given up for it. The game's own screens are walked as
+ * they were last shown (sWarmSeen); the party menu also before it ever has
+ * been, from the party itself. Labels are left to the redraw.
+ * A battle's party menu, summary and bag are drawn with their dock locked
+ * and the header without Y, RUN or the Repel: plates of their own, made ahead
+ * in a battle's idle frames once its menus are (WarmBattleMenus), from the
+ * battle's screens as last shown, the party menu from the party.
+ */
+#define PLATE_WARM_MS 4.0f
+static ViewState sWarmSeen[NATIVE_BLANK], sWarmSeenBattle[NATIVE_BLANK];
+static bool8 sWarmSeenOk[NATIVE_BLANK], sWarmSeenBattleOk[NATIVE_BLANK];
+enum { WARM_POKEMON, WARM_BAG, WARM_SUMMARY, WARM_DEX, WARM_CARD, WARM_SAVE, WARM_OPTION, WARM_NUZLOCKE, WARM_COUNT };
+static bool8 sWarmScreenDone[WARM_COUNT], sWarmBattleDone[WARM_COUNT];
+static u8 sWarmNext;
+static u32 sWarmEvicted = 0xFFFFFFFF;
+
+/* What the screen `which` would show, opened now (in a battle, from its
+ * menu); FALSE for none to walk. */
+static bool8 WarmScreenView(u8 which, ViewState *v, bool8 battle)
+{
+    static const u8 screens[WARM_COUNT] = {SCR_POKEMON, SCR_BAG, SCR_POKEMON, SCR_POKEDEX, SCR_CARD, SCR_SAVE,
+                                           SCR_OPTION, SCR_NUZLOCKE};
+    static const u8 natives[WARM_COUNT] = {NATIVE_PARTY, NATIVE_BAG, NATIVE_SUMMARY, NATIVE_DEX};
+    u8 screen = screens[which], keep = sScreen;
+
+    if (battle)
+    {
+        u8 native;
+
+        if (which > WARM_SUMMARY || sClassicMenus || !(EnabledScreens() & (1 << screen)))
+            return FALSE;
+        native = natives[which];
+        if (sWarmSeenBattleOk[native])
+        {
+            *v = sWarmSeenBattle[native];
+            v->pressed = HIT_NONE;
+            v->focus = FOCUS_NONE;
+            return TRUE;
+        }
+        if (native != NATIVE_PARTY)
+            return FALSE;
+        /* As Snapshot has a battle's party menu: in its section, only its
+         * own button on the dock. */
+        sScreen = screen;
+        Snapshot(v, MODE_FIELD, HIT_NONE);
+        sScreen = keep;
+        v->focus = FOCUS_NONE;
+        v->screen = screen;
+        v->dock = v->dockLocked = TRUE;
+        v->registered = ITEM_NONE;
+        v->run = 0;
+        v->mode = MODE_PARTY_MENU;
+        v->native = NATIVE_PARTY;
+        v->bagView = BAG_VIEW_SECTION;
+        SnapshotPartyFull(v);
+        memset(&v->pv, 0, sizeof(v->pv));
+        v->pv.state = CTR_PARTY_VIEW_LIST;
+        v->pv.moving = v->pv.chosen = -1;
+        memset(v->pv.desc, CTR_PARTY_DESC_NONE, sizeof(v->pv.desc));
+        return TRUE;
+    }
+
+    if (!(EnabledScreens() & (1 << screen)) || screen == sScreen)
+        return FALSE;
+    if (which <= WARM_DEX)
+    {
+        u8 native = natives[which];
+
+        if (sClassicMenus)
+            return FALSE;
+        if (sWarmSeenOk[native])
+        {
+            *v = sWarmSeen[native];
+            v->pressed = HIT_NONE;
+            v->focus = FOCUS_NONE;
+            return TRUE;
+        }
+        if (native != NATIVE_PARTY)
+            return FALSE;
+    }
+    if (which == WARM_CARD && sClassicMenus)
+        return FALSE;
+    sScreen = screen;
+    Snapshot(v, MODE_FIELD, HIT_NONE);
+    sScreen = keep;
+    v->focus = FOCUS_NONE;
+    if (which == WARM_POKEMON)
+    {
+        /* The party menu as it opens: its list, the cursor on the first. */
+        v->mode = MODE_PARTY_MENU;
+        v->native = NATIVE_PARTY;
+        v->bagView = BAG_VIEW_SECTION;
+        SnapshotPartyFull(v);
+        memset(&v->pv, 0, sizeof(v->pv));
+        v->pv.state = CTR_PARTY_VIEW_LIST;
+        v->pv.moving = v->pv.chosen = -1;
+        memset(v->pv.desc, CTR_PARTY_DESC_NONE, sizeof(v->pv.desc));
+    }
+    return v->dock;
+}
+
+/* One idle frame's walk, the field's or a battle's: the next screen not done
+ * yet, then the next. */
+static void WarmScreens(bool8 battle)
+{
+    bool8 *done = battle ? sWarmBattleDone : sWarmScreenDone;
+    static ViewState v;
+    int ox = sOX, hits = sHitCount, clip[4] = {sClipX0, sClipY0, sClipX1, sClipY1};
+    bool8 refine = sRefineLabels, worked = sRedrawLabelWorked, bad = sCompBad, icons = sIconBudget;
+    u32 misses = sLabelMisses;
+    float slice;
+
+    if (sPlatesEvicted != sWarmEvicted)
+    {
+        /* Plates given up since: the walks are worth making again. */
+        sWarmEvicted = sPlatesEvicted;
+        memset(sWarmScreenDone, 0, sizeof(sWarmScreenDone));
+        memset(sWarmBattleDone, 0, sizeof(sWarmBattleDone));
+    }
+    /* What the last frame's work left, as for the battle menus, up to
+     * PLATE_WARM_MS: a plate that costs more waits for a frame with room. */
+    {
+        const CtrTiming *timing = CtrPlatform_GetTiming();
+
+        slice = WARM_FRAME_MS - (timing->workMs - timing->bottomMs) - WARM_MARGIN_MS;
+        if (slice > PLATE_WARM_MS)
+            slice = PLATE_WARM_MS;
+        if (slice < WARM_MIN_MS)
+            return;
+    }
+    for (int tries = 0; tries < WARM_COUNT; ++tries)
+    {
+        u8 which = sWarmNext;
+
+        sWarmNext = (sWarmNext + 1) % WARM_COUNT;
+        if (done[which])
+            continue;
+        if (!WarmScreenView(which, &v, battle))
+        {
+            done[which] = TRUE;
+            continue;
+        }
+        ResolveFonts();
+        sOX = 0;
+        sClipX0 = sClipY0 = sClipX1 = sClipY1 = 0;
+        sBuildBudget = 0;
+        sIconBudget = FALSE;
+        sPlateWarm = TRUE;
+        sPlateWarmStart = CtrPlatform_Ticks();
+        sPlateWarmMs = slice;
+        sPlateWarmShort = sPlateWarmFull = FALSE;
+        sPlateWarmBuilt = 0;
+        sPlateJobSeen = FALSE;
+        if (v.native)
+            DrawGameView(&v);
+        else if (v.screen == SCR_CARD)
+            DrawTrainerCard(&v);
+        else if (v.screen == SCR_SAVE)
+            DrawSave(&v);
+        else if (v.screen == SCR_OPTION)
+            DrawOptions(&v);
+        else if (v.screen == SCR_NUZLOCKE)
+            DrawNuzlocke(&v);
+        DrawHeader(&v);
+        DrawDock(&v);
+        sPlateWarm = FALSE;
+        /* A plate begun for a screen that no longer has it goes; one still
+         * being made keeps the walk on its screen. */
+        if (sPlateJob.active && !sPlateJobSeen)
+            PlateJobDrop();
+        if (sPlateJob.active)
+            sWarmNext = which;
+        /* Nothing missing that fits the cache: this screen is ready. */
+        if (!sPlateWarmShort)
+            done[which] = TRUE;
+        if (sPlateWarmBuilt)
+            CtrLog_Write(CTR_LOG_VIDEO, "bottom screen: %u plates made ahead for screen %u%s", sPlateWarmBuilt,
+                         v.screen, sPlateWarmFull ? " (cache full)" : "");
+        break;
+    }
+    sBuildBudget = 0xFF;
+    sIconBudget = icons;
+    sRefineLabels = refine;
+    sRedrawLabelWorked = worked;
+    sCompBad = bad;
+    sLabelMisses = misses;
+    sOX = ox;
+    sHitCount = hits;
+    sClipX0 = clip[0];
+    sClipY0 = clip[1];
+    sClipX1 = clip[2];
+    sClipY1 = clip[3];
+}
+
+/* Set by the APT hook (3ds_platform.c), taken by the next frame. */
+static volatile bool sResumed;
+
+void CtrBottom_OnResume(void)
+{
+    sResumed = true;
+}
+
 void CtrBottom_Frame(void)
 {
     static u32 frames;
@@ -6713,6 +7052,22 @@ void CtrBottom_Frame(void)
 
     if (!sRes.ready)
         return;
+    /* Back from HOME or sleep: the input was cleared with no touch let go,
+     * so a touch held across it is forgotten here (the game's bag, Pokédex
+     * or shop told it is cancelled), and the screen is drawn again. */
+    if (sResumed)
+    {
+        sResumed = false;
+        if (sTouch.bag)
+        {
+            CtrBag_Touch(BAG_TOUCH_CANCEL, 0, 0);
+            CtrPokedex_Touch(BAG_TOUCH_CANCEL, 0, 0);
+            CtrShop_Touch(BAG_TOUCH_CANCEL, 0, 0);
+        }
+        sTouch.active = sTouch.dragged = sTouch.bag = FALSE;
+        sTouch.pressed = HIT_NONE;
+        sForceRedraw = TRUE;
+    }
     ++frames;
     /* Last frame's press is over, also on the frames the battle's entrance
      * skips RunPlan and RunNav: a press left in would stay held through it. */
@@ -6729,26 +7084,20 @@ void CtrBottom_Frame(void)
     /* Away from the action menu its labels may give way: looked at again. */
     if (mode != MODE_BATTLE_ACTION)
         sQuickWarmBall = ITEM_NONE;
-    if (mode < MODE_BATTLE_INFO && sCompAny)
+    if (mode < MODE_BATTLE_INFO && sCompAny && !gMain.inBattle)
     {
-        /* The plate pictures are only for a battle. */
+        /* The plate pictures are only for a battle: kept through its own
+         * party menu, summary and bag, which it comes back from. */
         FreeComps();
         sCompAny = FALSE;
         sWarmKey = sWarmIdxKey = 0xFFFFFFFF;
     }
     if (BattleIntro(mode))
         return;
-    /* Left the summary for another screen: the party menu after it too. */
-    if (sLeaveVia < SCR_COUNT && mode != MODE_SUMMARY)
-    {
-        if (mode == MODE_PARTY_MENU && CtrParty_Close(TRUE))
-        {
-            LeaveForScreen(sLeaveVia);
-            sLeaveVia = SCR_COUNT;
-        }
-        else if (mode != MODE_PARTY_MENU && ++sLeaveWait > 60)
-            sLeaveVia = SCR_COUNT;
-    }
+    /* A screen to leave for, not taken by the one on show as it closed: the
+     * field opens it (OpenAsked), or it is dropped after four seconds. */
+    if (sLeaveTo < SCR_COUNT && (mode == MODE_FIELD || mode >= MODE_BATTLE_INFO || ++sLeaveToWait > 240))
+        sLeaveTo = SCR_COUNT;
     pressed = ProcessTouch(mode);
     ProcessKeys(mode);
     OpenAsked(mode);
@@ -6791,13 +7140,37 @@ void CtrBottom_Frame(void)
     else if (iconsPending)
     {
         iconsPending = FALSE;
-        sForceRedraw = TRUE;
         sIconsIn = TRUE;
+        /* A native view's icons are all in its area (an item described, a
+         * mon's): that drawn again, unless the header's Y waited too. */
+        if (sState.native && sState.native == sShown.native && !sHeaderYMissing && !sForceRedraw
+         && sShown.mode != 0xFF && !CtrVideo_BottomWhole())
+            sAreaRedraw = TRUE;
+        else
+            sForceRedraw = TRUE;
     }
     else
         sIconsReady = sIconsIn = TRUE;
 
     ticks[2] = CtrPlatform_Ticks();
+    if (sAreaRedraw)
+    {
+        bool8 same = memcmp(&sState, &sShown, sizeof(sState)) == 0;
+        Rect r;
+
+        sAreaRedraw = FALSE;
+        if (!sForceRedraw && (same || DirtyRect(&sState, &sShown, &r)))
+        {
+            if (same)
+                RectInit(&r);
+            AreaRect(&r);
+            TimedRenderPart(&sState, r);
+            sShown = sState;
+            BottomProfile(frames, mode, ticks, 3);
+            return;
+        }
+        sForceRedraw = TRUE;
+    }
     if (!sForceRedraw && MapCursorOnlyMoved(&sState, &sShown) && MoveMapCursor(&sShown, &sState))
     {
         sShown = sState;
@@ -6826,7 +7199,8 @@ void CtrBottom_Frame(void)
     }
     if (sForceRedraw || memcmp(&sState, &sShown, sizeof(sState)) != 0)
     {
-        uint64_t start = CtrPlatform_Ticks();
+        uint64_t start = CtrPlatform_Ticks(), plateTicksAt = sPlateTicks;
+        u32 platesAt = sPlatesMade, evictedAt = sPlatesEvicted;
         static float peak;
         float ms;
 
@@ -6841,6 +7215,20 @@ void CtrBottom_Frame(void)
         sRedrawLabelWorked = FALSE;
         Render(&sShown);
         sRedrawLabelMs = 0.0f;
+        /* What the game's screen showed, to make its plates ahead next time. */
+        if (sShown.native > NATIVE_NONE && sShown.native < NATIVE_BLANK && !sNativeStale && sShown.dock)
+        {
+            if (sShown.inBattle)
+            {
+                sWarmSeenBattle[sShown.native] = sShown;
+                sWarmSeenBattleOk[sShown.native] = TRUE;
+            }
+            else
+            {
+                sWarmSeen[sShown.native] = sShown;
+                sWarmSeenOk[sShown.native] = TRUE;
+            }
+        }
         /* A label left flat: drawn again next frame, built a bit further. */
         if (sRefineLabels)
             sForceRedraw = TRUE;
@@ -6854,16 +7242,33 @@ void CtrBottom_Frame(void)
         if (ms > peak + 0.25f)
         {
             peak = ms;
-            CtrLog_Write(CTR_LOG_VIDEO, "bottom screen: redraw peak %.2f ms (mode %u screen %u)", ms, sShown.mode,
-                         sShown.screen);
+            CtrLog_Write(CTR_LOG_VIDEO, "bottom screen: redraw peak %.2f ms (mode %u screen %u) "
+                         "plates made=%lu in %.2f ms evicted=%lu", ms, sShown.mode, sShown.screen,
+                         (unsigned long)(sPlatesMade - platesAt), CtrPlatform_TickMs(sPlateTicks - plateTicksAt),
+                         (unsigned long)(sPlatesEvicted - evictedAt));
         }
         BottomProfile(frames, mode, ticks, 2);
         return;
     }
     if (mode == MODE_BATTLE_INFO)
+    {
         WarmBattleMenus();
+        if (sBattleMenusReady && !sJob.t && !sRefineLabels)
+            WarmScreens(TRUE);
+    }
     else if (mode == MODE_BATTLE_ACTION)
-        WarmQuickBalls(&sShown);
+    {
+        if (WarmQuickBalls(&sShown) && sBattleMenusReady && !sJob.t && !sRefineLabels)
+            WarmScreens(TRUE);
+    }
+    else if (mode == MODE_FIELD && FieldIdle() && !sSession.active && sPlan.kind == PLAN_NONE && !sJob.t
+          && !sRefineLabels)
+    {
+        /* The next battle's party menu made again, from its party then. */
+        memset(sWarmBattleDone, 0, sizeof(sWarmBattleDone));
+        WarmScreens(FALSE);
+    }
+    PlateDiskAdopt();
     BottomProfile(frames, mode, ticks, 0);
 }
 
