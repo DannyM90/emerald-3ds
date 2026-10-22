@@ -76,6 +76,10 @@ SKIP_GRAPHICS = {
     "graphics/credits/french_the_end.bin.lz": "FR-only port asset",
     "graphics/credits/italian_the_end.bin.lz": "IT-only port asset",
 }
+# Labels of the cartridge header, which is never text.
+HEADER = "RomHeader"
+# Easy-chat speeches no reference localizes; German picks other words.
+WORD_TABLES = {"src/battle_pike.c": ("sNPCSpeeches",)}
 FLOORS = ("sFloors_Normal", "sFloors_Variety", "sFloors_Unique", "sFloors_Expert")
 # The German branches of the port's patches declare the strings only the German
 # ROM has as empty literals under their decomp names; they are filled from it.
@@ -232,12 +236,35 @@ def nth_string(rom: bytes, start: int, count: int) -> int:
     return offset
 
 
+def in_data(builds: Builds, offset: int) -> bool:
+    """Whether an English offset is in a data object, not code or the header."""
+    hit = builds.en_index.containing(offset)
+    return bool(hit) and not hit[0].startswith(HEADER) and builds.en[hit[0]][2] != "func"
+
+
+def whole_string(builds: Builds, offset: int) -> bool:
+    """Whether an English match starts a string in a data object."""
+    hit = builds.en_index.containing(offset)
+    return in_data(builds, offset) and (hit[1] == 0 or builds.en_rom[offset - 1] in (0x00, 0xFF))
+
+
+def textlike(data: bytes, want: bytes) -> bool:
+    """A translation of want: mostly letters, digits, punctuation and control
+    codes (no tiles or code), with the same placeholders and control codes."""
+    plain = sum(b == 0 or 0xA1 <= b <= 0xF6 or b >= 0xF7 for b in data)
+    return (data.endswith(b"\xff") and plain * 4 >= len(data) * 3
+            and (len(data) > 1 or len(want) == 1)
+            and all(data.count(c) == want.count(c) for c in (b"\xfc", b"\xfd")))
+
+
 def place_text(builds: Builds, en_offset: int, want: bytes, kind: str):
     """German (offset, size) of the English string at en_offset, or a reason."""
     hit = builds.en_index.containing(en_offset)
     if not hit:
         return None, "no English symbol"
     name, rel = hit
+    if name.startswith(HEADER):
+        return None, "English match in the cartridge header"
     if name in STRIDE:
         if b"\xff" in want or name not in builds.de:
             return None, "unexpected keyboard row"
@@ -273,7 +300,7 @@ def text_edits(builds: Builds, tree: Path):
         for relative, file in manifests[language]["files"].items():
             digests[relative] = file["sha256"]
             for start, end, offset, size, kind in file["edits"]:
-                spans[relative].setdefault((start, end, kind), (language, offset, size))
+                spans[relative].setdefault((start, end, kind), []).append((language, offset, size))
     texts = {}
     for relative in spans:
         text = (tree / relative).read_text(encoding="utf-8")
@@ -284,8 +311,12 @@ def text_edits(builds: Builds, tree: Path):
     english = iter(encode(tree, [(k, texts[f][s:e]) for f, (s, e, k) in order if k in TEXT]))
     files, unmapped, stats = collections.defaultdict(list), [], collections.Counter()
     for relative, (start, end, kind) in order:
-        language, offset, size = spans[relative][(start, end, kind)]
-        hit = indexes[language].containing(offset)
+        # Some references found one-byte strings (the empty placeholders) in the
+        # ROM header; take the reference that names the string's own object.
+        candidates = [(language, offset, size, indexes[language].containing(offset))
+                      for language, offset, size in spans[relative][(start, end, kind)]]
+        language, offset, size, hit = next(
+            (c for c in candidates if c[3] and not c[3][0].startswith(HEADER)), candidates[0])
         name, rel = hit if hit else (None, 0)
         name = builds.en_name(name) if name else None
         if kind in TEXT:
@@ -297,14 +328,19 @@ def text_edits(builds: Builds, tree: Path):
                     guess = en_start + rel
                 else:
                     found = builds.en_rom.find(want, en_start, en_start + max(en_size, 0x4000) + len(want))
-                    guess = found if found >= 0 else None
+                    guess = found if found >= 0 and whole_string(builds, found) else None
+                if guess is not None and not in_data(builds, guess):
+                    guess = None
             if guess is None:
                 # Not inside the expected object: accept a unique German reading.
                 hits, found = [], builds.en_rom.find(want)
                 while found >= 0 and len(hits) < 64:
                     hits.append(found)
                     found = builds.en_rom.find(want, found + 1)
+                # Only whole strings in data: not the tail of a longer string, not code.
+                hits = [h for h in hits if whole_string(builds, h)]
                 placed = [place_text(builds, h, want, kind)[0] for h in hits]
+                placed = [p if p and textlike(builds.de_rom[p[0]:p[0] + p[1]], want) else None for p in placed]
                 readings = {builds.de_rom[p[0]:p[0] + p[1]] for p in placed if p}
                 if hits and len(readings) == 1:
                     guess = hits[placed.index(next(p for p in placed if p))]
@@ -341,6 +377,28 @@ def text_edits(builds: Builds, tree: Path):
             files[relative].append([start, end, de_start + rel, size, kind])
         stats["data"] += 1
     return {f: {"sha256": digests[f], "edits": v} for f, v in sorted(files.items())}, unmapped, stats
+
+
+def word_table_edits(builds: Builds, tree: Path, files: dict, stats) -> None:
+    """Easy-chat word tables no reference localizes, whose German words differ."""
+    for relative, names in WORD_TABLES.items():
+        text = (tree / relative).read_text(encoding="utf-8")
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        entry = files.setdefault(relative, {"sha256": digest, "edits": []})
+        if entry["sha256"] != digest:
+            raise SystemExit("Source differs from the pinned patched tree: " + relative)
+        for name in names:
+            match = re.search(r"\b%s\[[^=]*=\s*\{" % name, text)
+            if not match or name not in builds.de or builds.en[name][1] != builds.de[name][1]:
+                raise SystemExit("%s: %s does not have the English shape" % (relative, name))
+            depth, end = 1, match.end()
+            while depth:
+                depth += {"{": 1, "}": -1}.get(text[end], 0)
+                end += 1
+            address, size, _ = builds.de[name]
+            entry["edits"].append([match.end(), end - 1, address - ROM_BASE, size, "u16array"])
+            stats["data"] += 1
+        entry["edits"].sort()
 
 
 def german_only_edits(builds: Builds, tree: Path, files: dict, stats) -> None:
@@ -461,6 +519,7 @@ def main() -> None:
     args = parser.parse_args()
     builds = Builds(args.en_elf, args.en_rom, args.de_elf, args.de_rom)
     files, unmapped, stats = text_edits(builds, args.tree.resolve())
+    word_table_edits(builds, args.tree.resolve(), files, stats)
     german_only_edits(builds, args.tree.resolve(), files, stats)
     files = dict(sorted(files.items()))
     gfx, skipped, decompressed = graphics(builds)
