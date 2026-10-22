@@ -390,21 +390,22 @@ void CtrCentredTrade_SetVBlankCallback(IntrCallback callback)
 
 bool8 CtrBag_InWindow(void);
 
-/* The bag from the field or its party menu goes in the game screen's window
- * (or is drawn natively, 3ds_bottom_game.inc), from anywhere else over the
- * whole bottom screen. */
+/* The bag from the field, its party menu or a battle goes in the game
+ * screen's window (or is drawn natively, 3ds_bottom_game.inc), from anywhere
+ * else over the whole bottom screen. */
 void CtrCentredBag_SetVBlankCallback(IntrCallback callback)
 {
     SetCentredCallback(callback, CtrBag_InWindow() ? CTR_CENTRED_BAG : CTR_CENTRED_BAG_WHOLE);
 }
 
-/* The party menu from the field goes in the game screen's window (or is drawn
- * natively), from a battle, a contest or a facility over the whole bottom
- * screen. */
+bool8 CtrParty_InWindow(void);
+
+/* The party menu from the field or a battle's own goes in the game screen's
+ * window (or is drawn natively), from a contest or a facility over the whole
+ * bottom screen. */
 void CtrCentredParty_SetVBlankCallback(IntrCallback callback)
 {
-    SetCentredCallback(callback, !gMain.inBattle && gPartyMenu.menuType == PARTY_MENU_TYPE_FIELD
-                                     ? CTR_CENTRED_PARTY : CTR_CENTRED_PARTY_WHOLE);
+    SetCentredCallback(callback, CtrParty_InWindow() ? CTR_CENTRED_PARTY : CTR_CENTRED_PARTY_WHOLE);
 }
 
 /* trainer_card.c: the field's card in the bottom screen's window, a link
@@ -657,10 +658,6 @@ void CtrGame_VBlank(void)
     ++sFrames;
 }
 
-uint32_t CtrGame_Frames(void) { return sFrames; }
-uint32_t CtrGame_APresses(void) { return 0; }
-uint32_t CtrGame_Checks(void) { return 0; }
-
 /* A field effect that stores into VRAM itself, past the copies that announce
  * their writes (field_effect.c: the field move's streaks, Rayquaza's
  * spotlight): the compositor compares VRAM in full meanwhile. */
@@ -745,11 +742,6 @@ void Port_ReseedForNewGame(void)
 {
     if (!CtrScenario_Active())
         SeedRng(Port_RngSeed(0));
-}
-
-/* AgbMain never returns, so a reset request restarts the process state here. */
-void CtrGame_Frame(void)
-{
 }
 
 void CtrGame_Init(void)
@@ -1310,7 +1302,6 @@ void CtrGame_WaitFrame(void)
         CtrPlatform_Shutdown();
         exit(0);
     }
-    CtrPlatform_Diagnostic(sFrames, 0, 0);
     if (CtrScenario_Active())
         ScenarioCheckpoints();
 #ifdef CTR_TEST_SWOOP
@@ -1390,6 +1381,9 @@ void CtrGame_WaitFrame(void)
     {
         const struct CtrAssetStats *stats = CtrAssets_GetStats();
 
+        /* Every ten seconds, the heap's room too: what the caches may still take. */
+        if (sFrames >= nextReport)
+            CtrPlatform_ReportMemory("now");
         lastCallback = gMain.callback2;
         nextReport = sFrames + 600;
         CtrLog_Write(CTR_LOG_VIDEO, "DISPCNT=%04x BG0=%04x BG1=%04x BG2=%04x BG3=%04x",

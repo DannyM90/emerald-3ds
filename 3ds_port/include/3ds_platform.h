@@ -26,7 +26,6 @@ typedef struct
     void (*vblank)(void);
     void (*videoPresent)(void);
     void (*audioFrame)(void);
-    void (*reset)(void);
     void (*shutdown)(void);
 } CtrPlatformHooks;
 
@@ -35,7 +34,6 @@ void CtrPlatform_Shutdown(void);
 bool CtrPlatform_BeginFrame(void);
 void CtrPlatform_EndFrame(void);
 void CtrPlatform_SetHooks(const CtrPlatformHooks *hooks);
-void CtrPlatform_RequestReset(void);
 void CtrPlatform_RequestExit(void);
 void CtrPlatform_Fatal(const char *reason) __attribute__((noreturn));
 void CtrPlatform_ShowDataError(const char *title, const char *detail) __attribute__((noreturn));
@@ -46,8 +44,9 @@ float CtrPlatform_TickMs(uint64_t ticks);
 uint64_t CtrPlatform_FrameCount(void);
 const CtrTiming *CtrPlatform_GetTiming(void);
 void CtrPlatform_NoteBottom(float ms);
-void CtrPlatform_Diagnostic(uint32_t gameFrames, uint32_t aPresses, uint32_t checks);
 void CtrPlatform_ReportMemory(const char *stage);
+/* Bytes the application heap can still give: free in its arena and past it. */
+size_t CtrPlatform_HeapRoom(void);
 /*
  * Threads and locks for the port's own workers, usable from game translation
  * units. A CtrLock is a libctru LightLock. A thread is started detached, one
@@ -153,11 +152,7 @@ void CtrGame_Init(void);
 /* The game's variables back to how AgbMain first saw them, AgbMain again:
  * returns only when the reset is unavailable. */
 void CtrGame_SoftReset(void);
-void CtrGame_Frame(void);
 void CtrGame_VBlank(void);
-uint32_t CtrGame_Frames(void);
-uint32_t CtrGame_APresses(void);
-uint32_t CtrGame_Checks(void);
 /* The field is on screen (CB2_Overworld), whichever way it is drawn. */
 bool CtrGame_IsOverworld(void);
 bool CtrGame_IsOutdoor(void);
