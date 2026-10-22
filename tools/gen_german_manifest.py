@@ -96,20 +96,35 @@ def elf_symbols(path: Path) -> dict[str, tuple[int, int, str]]:
     shentsize, shnum = struct.unpack_from("<HH", data, 0x2E)
     sections = [struct.unpack_from("<IIIIIIIIII", data, shoff + i * shentsize) for i in range(shnum)]
     symbols: dict[str, tuple[int, int, str]] = {}
+    copies: dict[str, list[tuple[str, tuple[int, int, str]]]] = {}
     for sh in sections:
         if sh[1] != 2:  # SHT_SYMTAB
             continue
         strtab = sections[sh[6]]
+        source = ""
         for offset in range(sh[4], sh[4] + sh[5], 16):
             name_off, value, size, info, _, shndx = struct.unpack_from("<IIIBBH", data, offset)
-            if not name_off or shndx == 0:
+            if not name_off:
                 continue
             start = strtab[4] + name_off
             name = data[start:data.index(b"\0", start)].decode("ascii", "replace")
+            if info & 0xF == 4:  # STT_FILE: the local symbols after it are this file's
+                source = name
+                continue
+            if shndx == 0:
+                continue
             kind = {1: "object", 2: "func"}.get(info & 0xF, "other")
             if name.startswith((".L", "$")):
                 continue
             symbols.setdefault(name, (value, size, kind))
+            if not info >> 4:  # STB_LOCAL
+                copies.setdefault(name, []).append((source, (value, size, kind)))
+    # A static name used in several files (sText_PleaseWaitAWhile) is kept per
+    # file too, name@file, so each copy can be found in the other build.
+    for name, found in copies.items():
+        if len(found) > 1:
+            for source, symbol in found:
+                symbols.setdefault("%s@%s" % (name, source.rsplit("/", 1)[-1]), symbol)
     return symbols
 
 
@@ -500,7 +515,7 @@ def graphics(builds: Builds):
 def symbols_file(builds: Builds) -> bytes:
     lines = [".syntax unified"]
     for name, (address, size, kind) in sorted(builds.de.items()):
-        if not ROM_BASE <= address < ROM_BASE + 0x2000000:
+        if not ROM_BASE <= address < ROM_BASE + 0x2000000 or "@" in name:
             continue
         if kind == "func":
             address, size = 0, 0
