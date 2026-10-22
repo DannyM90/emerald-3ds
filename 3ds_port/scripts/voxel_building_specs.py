@@ -4987,6 +4987,140 @@ FRONTIER_LOBBY_SIDES = {
 }
 
 
+# The Battle Frontier's battle rooms and corridors: their walls, the doors
+# painted on them (the Tower corridor's two, which open by script, stay shut
+# as the Elite Four's back door does: a gap in a wall shows the floor behind
+# it, where the map draws the door lying flat). The trainers stand on the
+# battlefields and stages, which stay drawn.
+
+def pike_pillar(x, y):
+    """A Battle Pike pillar on cell (x, y): its cap from 15 px above the
+    cell, 21 px tall, as the lobby's."""
+    return piece("pillar_%d_%d" % (x, y), [(x * 16, y * 16 - 15, x * 16 + 16, y * 16 + 16)], 21)
+
+
+def tower_battle_room():
+    # the four lamps in its corners, 16 px tall
+    return [piece("lamp_%d_%d" % (x, y), [(x * 16, y * 16 - 8, x * 16 + 16, y * 16 + 16)], 16)
+            for (x, y) in ((0, 2), (9, 2), (0, 8), (9, 8))] + room_shell(160, 144, 32)
+
+
+def dome_pre_battle_room():
+    # the black down its west side is beyond the room
+    side = (64, 0, 80, 32)
+    return [
+        piece("wall", [(32, 0, 144, 32)], 32, fill=16, foot=32, side=side),
+        piece("side_w", [], 32, side=side, walls=[((32, 128), (32, 32))]),
+        piece("side_e", [], 32, side=side, walls=[((144, 32), (144, 128))]),
+    ]
+
+
+def dome_battle_room():
+    # a wall's top is filled from its own top rows: 8 of them, the banner
+    # being 16 px tall. In two halves: in one, 320 px wide and a cell tall,
+    # its faces read a row past its drawing, and the page has no room for it
+    side = (64, 48, 80, 64)
+    return [
+        piece("wall_w", [(0, 48, 160, 64)], 16, fill=8, foot=64, side=side),
+        piece("wall_e", [(160, 48, 320, 64)], 16, fill=8, foot=64, side=side),
+        piece("side_w", [], 16, side=side, walls=[((0, 160), (0, 64))]),
+        piece("side_e", [], 16, side=side, walls=[((320, 64), (320, 160))]),
+    ]
+
+
+def pike_three_path_room():
+    # its pillars, silver, stand here; the other Pike rooms' are these,
+    # found again (a pillar defined in two rooms would be found in each)
+    return [pike_pillar(x, y) for (x, y) in ((0, 4), (4, 4), (8, 4), (12, 4), (3, 10), (8, 10))]
+
+
+def pike_wild_mons_room():
+    # the gold pillars in rows across the room; its silver ones are the
+    # three-path room's, found again
+    cells = cell_runs((0, 6, 6), (1, 6, 6), (2, 6, 6), (6, 6, 6), (7, 6, 6), (8, 6, 6))
+    cells += [(x, 8) for x in range(0, 8)] + [(x, 10) for x in range(1, 9)]
+    cells += [(x, 12) for x in range(0, 7)] + [(8, 12), (0, 14)] + [(x, 14) for x in range(2, 9)]
+    cells += [(x, 16) for x in range(0, 7)] + [(8, 16), (0, 18), (1, 18), (7, 18), (8, 18)]
+    return [pike_pillar(x, y) for (x, y) in cells]
+
+
+def arena_corridor():
+    """The Battle Arena's corridor runs round a block: its face to the south,
+    shoji 64 px tall, its sides along the corridors; the black over it, and
+    between the two stretches of the back wall, is beyond the room."""
+    side = (64, 0, 80, 48)
+    shoji = (112, 128, 128, 192)
+    return [
+        piece("wall_w", [(0, 0, 96, 48)], 48, fill=16, foot=48, side=side),
+        piece("wall_e", [(192, 0, 288, 48)], 48, fill=16, foot=48, side=side),
+        piece("block", [(48, 128, 240, 192)], 64, fill=16, foot=192, side=shoji),
+        piece("block_sides", [], 64, side=shoji,
+              walls=[((96, 48), (96, 80)), ((48, 80), (48, 192)), ((192, 80), (192, 48)),
+                     ((240, 192), (240, 80))]),
+        piece("side_w", [], 48, side=side, walls=[((0, 224), (0, 48))]),
+        piece("side_e", [], 48, side=side, walls=[((288, 48), (288, 224))]),
+    ]
+
+
+# (name, layout, ground, pieces[, more of the room's keys])
+FRONTIER_ROOMS = [
+    ("frontier_tower_corridor", "LAYOUT_BATTLE_FRONTIER_BATTLE_TOWER_CORRIDOR", 0x229,
+     lambda: room_shell(272, 80, 32)),
+    ("frontier_tower_multi_corridor", "LAYOUT_BATTLE_FRONTIER_BATTLE_TOWER_MULTI_CORRIDOR", 0x229,
+     lambda: room_shell(272, 80, 32)),
+    ("frontier_tower_battle_room", "LAYOUT_BATTLE_FRONTIER_BATTLE_TOWER_BATTLE_ROOM", 0x23a,
+     tower_battle_room),
+    # the Tower's elevator, Trainer Hill's too
+    ("battle_elevator", "LAYOUT_BATTLE_ELEVATOR", 0x265, lambda: room_shell(80, 112, 48)),
+    ("frontier_tower_multi_partner_room", "LAYOUT_BATTLE_FRONTIER_BATTLE_TOWER_MULTI_PARTNER_ROOM",
+     0x200, lambda: room_shell(336, 240, 32)),
+    ("frontier_dome_corridor", "LAYOUT_BATTLE_FRONTIER_BATTLE_DOME_CORRIDOR", 0x341,
+     lambda: room_shell(768, 112, 64)),
+    ("frontier_dome_pre_battle_room", "LAYOUT_BATTLE_FRONTIER_BATTLE_DOME_PRE_BATTLE_ROOM", 0x346,
+     dome_pre_battle_room),
+    # the banner along the foot of the stands, 16 px; the stands stay drawn,
+    # the audience standing in them (as a wall they would hide it)
+    ("frontier_dome_battle_room", "LAYOUT_BATTLE_FRONTIER_BATTLE_DOME_BATTLE_ROOM", 0x309,
+     dome_battle_room),
+    ("frontier_palace_corridor", "LAYOUT_BATTLE_FRONTIER_BATTLE_PALACE_CORRIDOR", 0x201,
+     lambda: room_shell(272, 224, 64)),
+    ("frontier_palace_battle_room", "LAYOUT_BATTLE_FRONTIER_BATTLE_PALACE_BATTLE_ROOM", 0x206,
+     lambda: room_shell(240, 160, 48)),
+    # the pipes, the shutters, the doorways and the desks in the alcoves,
+    # all above row 6, painted on its wall
+    ("frontier_factory_pre_battle_room", "LAYOUT_BATTLE_FRONTIER_BATTLE_FACTORY_PRE_BATTLE_ROOM",
+     0x202, lambda: room_shell(272, 224, 96)),
+    ("frontier_factory_battle_room", "LAYOUT_BATTLE_FRONTIER_BATTLE_FACTORY_BATTLE_ROOM", 0x2f1,
+     lambda: room_shell(208, 192, 64)),
+    # the Pike's: their pillars copper (the lobby's), silver (the three-path
+    # room's) and gold (the wild Pokemon's room's); the normal room's
+    # curtain, which opens by script, is painted on its wall
+    # the corridor's two silver pillars by the curtain are its own (the
+    # curtain behind them is not the three-path room's)
+    ("frontier_pike_corridor", "LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_CORRIDOR", 0x2c1,
+     lambda: [pike_pillar(3, 4), pike_pillar(9, 4)] + room_shell(224, 128, 64)),
+    ("frontier_pike_three_path_room", "LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_THREE_PATH_ROOM", 0x2c1,
+     lambda: pike_three_path_room() + room_shell(208, 176, 64)),
+    ("frontier_pike_room_normal", "LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_NORMAL", 0x2c1,
+     lambda: room_shell(144, 128, 64)),
+    # its gold pillars, at the room's edges, are drawn a pixel narrower than
+    # the wild room's: its own, and named as its edge's (own_shell) - found
+    # again in the wild room, they would take its pillars' pixels
+    ("frontier_pike_room_final", "LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_FINAL", 0x340,
+     lambda: [dict(pike_pillar(x, y), name="edge_pillar_%d_%d" % (x, y))
+              for (x, y) in ((0, 4), (4, 4), (0, 7), (4, 7))] + room_shell(80, 128, 64),
+     {"shade": [0x341]}),
+    # (its floor's shaded cells run on beside the pillars at the ends of
+    # their rows: floor, not theirs)
+    ("frontier_pike_room_wild_mons", "LAYOUT_BATTLE_FRONTIER_BATTLE_PIKE_ROOM_WILD_MONS", 0x2c1,
+     lambda: pike_wild_mons_room() + room_shell(144, 320, 64), {"shade": [0x2da, 0x2d9]}),
+    ("frontier_arena_corridor", "LAYOUT_BATTLE_FRONTIER_BATTLE_ARENA_CORRIDOR", 0x201,
+     arena_corridor),
+    ("frontier_arena_battle_room", "LAYOUT_BATTLE_FRONTIER_BATTLE_ARENA_BATTLE_ROOM", 0x202,
+     lambda: room_shell(256, 176, 48)),
+]
+
+
 def front_corners(w, h):
     """A room's two bottom corner cells the GBA leaves black, as `open`."""
     return [[(0, h - 16), (16, h - 16), (16, h), (0, h)],
@@ -6943,3 +7077,10 @@ SPECS = [
     }
     for kind in ("beauty", "cool", "cute", "smart", "tough")
 ]
+
+
+# the Battle Frontier's battle rooms and corridors
+SPECS += [{"name": room[0], "interior": dict({"layout": room[1], "ground": [room[2]],
+                                              "pieces": own_shell(room[3]())},
+                                             **(room[4] if len(room) > 4 else {}))}
+          for room in FRONTIER_ROOMS]
