@@ -148,6 +148,34 @@ static const OptGroupDef sGroupsModes[] = {
     GROUP("NUZLOCKE", sRowsNuzlocke),
     GROUP(CTR_TEXT("RANDOMIZER", "ALEATORIO", "ALÉATOIRE", "CASUALE", "ALEATÓRIO", "ZUFALL"), sRowsRandom),
 };
+static const OptRowDef sRowsPlayer[] = {
+    EXTRA_ROW("ev_tickets"),
+    EXTRA_ROW("all_badges"),
+    EXTRA_ROW("all_fly"),
+    EXTRA_ROW("ignore_trainers"),
+};
+static const OptRowDef sRowsTeam[] = {
+    EXTRA_ROW("heal_party"),
+    EXTRA_ROW("max_friendship"),
+    EXTRA_ROW("perfect_ivs"),
+};
+static const OptRowDef sRowsGiveMon[] = {
+    EXTRA_ROW("gm_species"),
+    EXTRA_ROW("gm_level"),
+    EXTRA_ROW("gm_shiny"),
+    EXTRA_ROW("gm_give"),
+};
+static const OptRowDef sRowsTools[] = {
+    EXTRA_ROW("instant_text"),
+    EXTRA_ROW("open_pc"),
+    EXTRA_ROW("move_relearner"),
+};
+static const OptGroupDef sGroupsExtras[] = {
+    GROUP(CTR_TEXT("TOOLS", "HERRAMIENTAS", "OUTILS", "STRUMENTI", "FERRAMENTAS", "HELFER"), sRowsTools),
+    GROUP(CTR_TEXT("PLAYER", "JUGADOR", "JOUEUR", "GIOCATORE", "JOGADOR", "SPIELER"), sRowsPlayer),
+    GROUP(CTR_TEXT("PARTY", "EQUIPO", "ÉQUIPE", "SQUADRA", "EQUIPE", "TEAM"), sRowsTeam),
+    GROUP("POKéMON", sRowsGiveMon),
+};
 static const OptGroupDef sGroupsCheats[] = {
     GROUP(CTR_TEXT("CATCHING", "CAPTURA", "CAPTURE", "CATTURA", "CAPTURA", "FANGEN"), sRowsCatch),
     GROUP(CTR_TEXT("PERKS", "VENTAJAS", "BONUS", "VANTAGGI", "VANTAGENS", "BONI"), sRowsPerks),
@@ -155,13 +183,14 @@ static const OptGroupDef sGroupsCheats[] = {
     GROUP(CTR_TEXT("ITEMS", "OBJETOS", "OBJETS", "OGGETTI", "ITENS", "ITEMS"), sRowsItems),
 };
 
-enum { CAT_GENERAL, CAT_WORLD, CAT_BATTLE, CAT_MODES, CAT_CHEATS, CAT_COUNT };
+enum { CAT_GENERAL, CAT_WORLD, CAT_BATTLE, CAT_MODES, CAT_CHEATS, CAT_EXTRAS, CAT_COUNT };
 static const OptCatDef sCats[CAT_COUNT] = {
     {CTR_TEXT("GENERAL", "GENERAL", "GÉNÉRAL", "GENERALE", "GERAL", "ALLGEMEIN"), sGroupsGeneral, ARRAY_COUNT(sGroupsGeneral)},
     {CTR_TEXT("WORLD", "MUNDO", "MONDE", "MONDO", "MUNDO", "WELT"), sGroupsWorld, ARRAY_COUNT(sGroupsWorld)},
     {CTR_TEXT("BATTLE", "COMBATE", "COMBAT", "LOTTA", "BATALHA", "KAMPF"), sGroupsBattle, ARRAY_COUNT(sGroupsBattle)},
     {CTR_TEXT("MODES", "PARTIDA", "PARTIE", "PARTITA", "PARTIDA", "SPIELART"), sGroupsModes, ARRAY_COUNT(sGroupsModes)},
     {CTR_TEXT("CHEATS", "TRUCOS", "ASTUCES", "TRUCCHI", "TRAPAÇAS", "CHEATS"), sGroupsCheats, ARRAY_COUNT(sGroupsCheats)},
+    {CTR_TEXT("EXTRAS", "EXTRAS", "EXTRAS", "EXTRA", "EXTRAS", "EXTRAS"), sGroupsExtras, ARRAY_COUNT(sGroupsExtras)},
 };
 
 #define OPT_GROUPS_MAX 4

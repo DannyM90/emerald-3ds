@@ -1,0 +1,97 @@
+Emerald 3DS changes to pret/pokeemerald 76463dac15cad36aca5e2b3f6366abf9e53f814f: Danny edition game hooks
+Applies after 0080-german-layout.patch; apply with tools/bootstrap.py.
+
+diff --git a/data/scripts/pc.inc b/data/scripts/pc.inc
+index 1993aaf..7e00284 100644
+--- a/data/scripts/pc.inc
++++ b/data/scripts/pc.inc
+@@ -64,3 +64,27 @@ EventScript_AccessHallOfFame::
+ 	waitstate
+ 	goto EventScript_AccessPC
+ 	end
++
++@ Emerald 3DS (OPTIONS, EXTRAS): the PC's boxes and the Move Relearner,
++@ opened from the bottom screen in the field (3ds_cheats_plus.inc).
++EventScript_CtrOpenStorage::
++	lockall
++	special ShowPokemonStorageSystemPC
++	waitstate
++	releaseall
++	end
++
++EventScript_CtrMoveRelearner::
++	lockall
++	special ChooseMonForMoveRelearner
++	waitstate
++	goto_if_eq VAR_0x8004, PARTY_NOTHING_CHOSEN, EventScript_CtrMoveRelearnerEnd
++	special IsSelectedMonEgg
++	goto_if_eq VAR_RESULT, TRUE, EventScript_CtrMoveRelearner
++	goto_if_eq VAR_0x8005, 0, EventScript_CtrMoveRelearner
++	special TeachMoveRelearnerMove
++	waitstate
++	goto EventScript_CtrMoveRelearner
++EventScript_CtrMoveRelearnerEnd:
++	releaseall
++	end
+diff --git a/src/text.c b/src/text.c
+index 0799a09..5cae582 100644
+--- a/src/text.c
++++ b/src/text.c
+@@ -14,6 +14,9 @@
+ #include "fonts.h"
+ #ifdef PORT_BRIDGE
+ #include "port_platform.h"
++#ifdef PLATFORM_3DS
++#include "3ds_extras.h" // optional settings (OPTIONS pages)
++#endif
+ #endif
+ 
+ static u16 RenderText(struct TextPrinter *);
+@@ -336,6 +339,20 @@ void RunTextPrinters(void)
+             if (sTextPrinters[i].active)
+             {
+                 u16 renderCmd = RenderFont(&sTextPrinters[i]);
++#ifdef PLATFORM_3DS
++                // Instant text (OPTIONS, ENHANCEMENTS): the message is drawn at
++                // once up to where it waits for a button or scrolls.
++                if (renderCmd == RENDER_PRINT && sTextPrinters[i].printerTemplate.currentChar
++                 && CtrExtras_Get("instant_text"))
++                {
++                    for (int n = 0; n < 1024 && renderCmd == RENDER_PRINT; ++n)
++                    {
++                        sTextPrinters[i].delayCounter = 0;
++                        renderCmd = RenderFont(&sTextPrinters[i]);
++                    }
++                    CopyWindowToVram(sTextPrinters[i].printerTemplate.windowId, COPYWIN_GFX);
++                }
++#endif
+                 switch (renderCmd)
+                 {
+                 case RENDER_PRINT:
+diff --git a/src/trainer_see.c b/src/trainer_see.c
+index ec70c22..8811ccb 100644
+--- a/src/trainer_see.c
++++ b/src/trainer_see.c
+@@ -21,6 +21,9 @@
+ #include "constants/event_object_movement.h"
+ #include "constants/field_effects.h"
+ #include "constants/trainer_types.h"
++#ifdef PLATFORM_3DS
++#include "3ds_extras.h" // optional settings (OPTIONS pages)
++#endif
+ 
+ // this file's functions
+ static u8 CheckTrainer(u8 objectEventId);
+@@ -198,6 +201,12 @@ bool8 CheckForTrainersWantingBattle(void)
+     gNoOfApproachingTrainers = 0;
+     gApproachingTrainerId = 0;
+ 
++#ifdef PLATFORM_3DS
++    // Ignore trainers (OPTIONS, CHEATS): no trainer walks up on sight; talking
++    // to one still starts the battle.
++    if (CtrExtras_Get("ignore_trainers"))
++        return FALSE;
++#endif
+     for (i = 0; i < OBJECT_EVENTS_COUNT; i++)
+     {
+         u8 numTrainers;

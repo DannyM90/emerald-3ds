@@ -206,6 +206,8 @@ static const u8 *SpeedText(void)
     return text;
 }
 
+#include "3ds_cheats_plus.inc"
+
 const CtrExtra gCtrExtras[] =
 {
     /* Features add their lines here. */
@@ -260,6 +262,7 @@ const CtrExtra gCtrExtras[] =
 #include "3ds_nuzlocke_extras.inc"
 #include "3ds_randomizer_extras.inc"
     #include "3ds_field_qol_extras.inc"
+#include "3ds_cheats_plus_extras.inc"
     {0},
 };
 
