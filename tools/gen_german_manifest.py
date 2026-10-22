@@ -62,8 +62,14 @@ ROWS = {"u8rows22": lambda n: n == 18 * 22, "u8rows9": lambda n: n == 27,
         "u16rows10": lambda n: n % 20 == 0}
 # Fixed-width rows that are one character wider in German (9 keyboard columns).
 STRIDE = {"sKeyboardChars": (8, 9)}
-# German-only additions (the port's patches reference these paths).
-EXTRA_GRAPHICS = (("graphics/credits/german_the_end.bin.lz", "sCreditsCopyrightEnd_Tilemap"),)
+# German-only additions: the port's patches reference german_the_end; the
+# others are German in BPED alone (no reference language has them): the
+# Pokédex start menu one column further right, and the Berry Blender's
+# decimal comma.
+EXTRA_GRAPHICS = (("graphics/credits/german_the_end.bin.lz", "sCreditsCopyrightEnd_Tilemap"),
+                  ("graphics/pokedex/start_menu_main.bin.lz", "gPokedexStartMenuMain_Tilemap"),
+                  ("graphics/pokedex/start_menu_search_results.bin.lz", "gPokedexStartMenuSearchResults_Tilemap"),
+                  ("graphics/berry_blender/outer.4bpp.lz", "gBerryBlenderOuter_Gfx"))
 # Graphics the German tree keeps as unnamed statics: the word in the literal
 # pool of a function both builds share (same size) points at the German one.
 CODE_REFERENCED = {
