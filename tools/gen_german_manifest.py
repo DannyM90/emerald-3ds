@@ -31,6 +31,7 @@ import collections
 import gzip
 import hashlib
 import json
+import re
 import struct
 import subprocess
 import sys
@@ -70,6 +71,10 @@ SKIP_GRAPHICS = {
     "graphics/credits/italian_the_end.bin.lz": "IT-only port asset",
 }
 FLOORS = ("sFloors_Normal", "sFloors_Variety", "sFloors_Unique", "sFloors_Expert")
+# The German branches of the port's patches declare the strings only the German
+# ROM has as empty literals under their decomp names; they are filled from it.
+GERMAN_BRANCH = "#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN"
+GERMAN_ONLY = re.compile(r'\b(\w+)\[\]\s*=\s*(_\(""\))')
 
 
 def elf_symbols(path: Path) -> dict[str, tuple[int, int, str]]:
@@ -332,6 +337,47 @@ def text_edits(builds: Builds, tree: Path):
     return {f: {"sha256": digests[f], "edits": v} for f, v in sorted(files.items())}, unmapped, stats
 
 
+def german_only_edits(builds: Builds, tree: Path, files: dict, stats) -> None:
+    """Spans for the empty strings the German branches declare."""
+    for path in sorted((tree / "src").glob("*.c")):
+        text = path.read_text(encoding="utf-8")
+        if GERMAN_BRANCH not in text:
+            continue
+        relative = path.relative_to(tree).as_posix()
+        edits, offset, stack = [], 0, []
+        for line in text.splitlines(keepends=True):
+            directive = line.strip()
+            if directive.startswith("#if"):
+                stack.append(directive == GERMAN_BRANCH)
+            elif directive.startswith("#el"):
+                if stack:
+                    stack[-1] = False
+            elif directive.startswith("#endif"):
+                if stack:
+                    stack.pop()
+            elif any(stack):
+                for match in GERMAN_ONLY.finditer(line):
+                    name = match.group(1)
+                    if name not in builds.de:
+                        raise SystemExit("%s: no German object %s" % (relative, name))
+                    address, size, _ = builds.de[name]
+                    start = address - ROM_BASE
+                    end = builds.de_rom.find(b"\xff", start, start + size)
+                    if end < 0:
+                        raise SystemExit("%s: German %s is not a string" % (relative, name))
+                    edits.append([offset + match.start(2), offset + match.end(2), start, end + 1 - start, "c"])
+            offset += len(line)
+        if not edits:
+            continue
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        entry = files.setdefault(relative, {"sha256": digest, "edits": []})
+        if entry["sha256"] != digest:
+            raise SystemExit("Source differs from the pinned patched tree: " + relative)
+        entry["edits"] = sorted(entry["edits"] + edits)
+        stats["german only"] += len(edits)
+        stats["text"] += len(edits)
+
+
 def graphics(builds: Builds):
     seen, out, skipped, decompressed = {}, [], [], 0
     for language in REFERENCES:
@@ -379,6 +425,8 @@ def main() -> None:
     args = parser.parse_args()
     builds = Builds(args.en_elf, args.en_rom, args.de_elf, args.de_rom)
     files, unmapped, stats = text_edits(builds, args.tree.resolve())
+    german_only_edits(builds, args.tree.resolve(), files, stats)
+    files = dict(sorted(files.items()))
     gfx, skipped, decompressed = graphics(builds)
     credits = builds.de["sCreditsEntryPointerTable"]
     floors = []
@@ -396,8 +444,8 @@ def main() -> None:
     (LOCALES / "german.json.gz").write_bytes(
         gzip.compress(json.dumps(manifest, separators=(",", ":")).encode(), mtime=0))
     (LOCALES / "german-symbols.s.gz").write_bytes(symbols_file(builds))
-    print("german.json.gz: %d text, %d data edits, %d unmapped, %d graphics (%d skipped)"
-          % (stats["text"], stats["data"], stats["unmapped"], len(gfx), len(skipped)))
+    print("german.json.gz: %d text (%d German-only), %d data edits, %d unmapped, %d graphics (%d skipped)"
+          % (stats["text"], stats["german only"], stats["data"], stats["unmapped"], len(gfx), len(skipped)))
 
 
 if __name__ == "__main__":
