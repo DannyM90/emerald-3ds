@@ -7327,3 +7327,62 @@ SPECS += [{"name": "trick_house_puzzle%d" % n,
      "interior": {"layout": "LAYOUT_ROUTE110_TRICK_HOUSE_CORRIDOR", "ground": [0x229],
                   "pieces": own_shell(trick_house_corridor())}},
 ]
+
+
+# The link rooms (the Colosseums, the Trade Center, the Record Corner, the
+# Union Room): a back wall, and side walls on the inner edge of the rims
+# down their sides, the rims behind them; the rim across the front, with
+# its doorway, is the front wall the GBA's camera looks over, and stays
+# drawn. And the truck the game starts in.
+
+def link_room(w, h, foot, x0, x1, z1, top=0):
+    """A link room: its back wall (x0 to x1, standing on `foot`) and its
+    side walls along x0 and x1 from it to z1, the front rim's edge."""
+    side = (x0 + 16, top, x0 + 32, foot)
+    return [
+        piece("wall", [(x0 - 16 if x0 else 0, top, x1 + 16 if x1 < w else w, foot)], foot - top,
+              fill=16, foot=foot, side=side),
+        piece("side_w", [], foot - top, side=side, walls=[((x0, z1), (x0, foot))]),
+        piece("side_e", [], foot - top, side=side, walls=[((x1, foot), (x1, z1))]),
+    ]
+
+
+def record_corner():
+    # the record mixer: its table and the four seats at its corners
+    return [
+        piece("seat_nw", [(112, 53, 128, 79)], 14),
+        piece("seat_sw", [(112, 85, 128, 111)], 14),
+        piece("seat_ne", [(192, 53, 208, 79)], 14),
+        piece("seat_se", [(192, 85, 208, 111)], 14),
+        piece("table", [(128, 67, 192, 112)], 12),
+    ] + link_room(320, 160, 32, 64, 256, 144)
+
+
+def inside_of_truck():
+    # the boxes stacked round it, along its back (hanging half a cell over
+    # the floor in front of it), its west side and its front, and the vent
+    # over its door; the door (4,1-3), which opens when the game starts,
+    # stays drawn, in no piece's rectangle
+    return [
+        piece("boxes_w", [(0, 0, 16, 80)], 24),
+        piece("boxes_n", [(16, 0, 64, 24)], 16),
+        piece("vent", [(64, 0, 80, 16)], 12),
+        piece("boxes_s", [(16, 48, 48, 80)], 24),
+        piece("boxes_se", [(48, 64, 80, 80)], 12),
+    ]
+
+
+LINK_ROOMS = [
+    ("battle_colosseum_2p", "LAYOUT_BATTLE_COLOSSEUM_2P", 0x255,
+     lambda: link_room(224, 144, 48, 16, 208, 128)),
+    ("battle_colosseum_4p", "LAYOUT_BATTLE_COLOSSEUM_4P", 0x255,
+     lambda: link_room(224, 144, 48, 16, 208, 128)),
+    # the trading machine between its two chairs, which stay drawn
+    ("trade_center", "LAYOUT_TRADE_CENTER", 0x208,
+     lambda: [piece("machine", [(82, 68, 110, 104)], 16)] + link_room(192, 144, 48, 16, 176, 128)),
+    ("record_corner", "LAYOUT_RECORD_CORNER", 0x2c4, record_corner),
+    ("union_room", "LAYOUT_UNION_ROOM", 0x213, lambda: link_room(240, 192, 32, 0, 240, 176)),
+    ("inside_of_truck", "LAYOUT_INSIDE_OF_TRUCK", 0x20a, inside_of_truck),
+]
+SPECS += [{"name": n, "interior": {"layout": lid, "ground": [g], "pieces": own_shell(f())}}
+          for (n, lid, g, f) in LINK_ROOMS]
