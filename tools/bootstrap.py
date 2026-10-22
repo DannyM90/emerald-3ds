@@ -95,7 +95,7 @@ def main() -> int:
     ap.add_argument("--python", default=sys.executable, help="Python the build calls (PYTHON=)")
     args = ap.parse_args()
     if args.port_lang == "pt_br" and (args.spanish_rom or args.french_rom or args.italian_rom or args.german_rom):
-        ap.error("--port-lang pt_br goes over the English game, not the Spanish, French or Italian one")
+        ap.error("--port-lang pt_br goes over the English game, not the Spanish, French, Italian or German one")
 
     lock = tomllib.loads((ROOT / "upstream.lock").read_text(encoding="utf-8"))
     repo, commit = lock["pokeemerald"]["repository"], lock["pokeemerald"]["commit"]
