@@ -51,7 +51,7 @@ static void GenderSign(int x, int y, u8 gender)
 static const u8 *LevelText(u8 level)
 {
     static u8 text[16];
-    u8 *end = StringCopy(text, Ascii(CTR_TEXT("LV", "NV", "N", "LV", "NV")));
+    u8 *end = StringCopy(text, Ascii(CTR_TEXT("LV", "NV", "N", "LV", "NV", "LV")));
 
     ConvertIntToDecimalStringN(end, level, STR_CONV_MODE_LEFT_ALIGN, 3);
     return text;
@@ -469,11 +469,11 @@ static const u8 *SummaryTabName(int page)
 {
     switch (page)
     {
-    case 0: return Ascii(CTR_TEXT("INFO", "INFO", "INFOS", "INFO", "INFO"));
-    case 1: return Ascii(CTR_TEXT("SKILLS", "HABILID.", "TALENTS", "ABILITÀ", "ATRIBUTOS"));
-    case 2: return Ascii(CTR_TEXT("MOVES", "MOVIM.", "CAPACITÉS", "MOSSE", "GOLPES"));
+    case 0: return Ascii(CTR_TEXT("INFO", "INFO", "INFOS", "INFO", "INFO", "INFO"));
+    case 1: return Ascii(CTR_TEXT("SKILLS", "HABILID.", "TALENTS", "ABILITÀ", "ATRIBUTOS", "WERTE"));
+    case 2: return Ascii(CTR_TEXT("MOVES", "MOVIM.", "CAPACITÉS", "MOSSE", "GOLPES", "ATTACKEN"));
     }
-    return Ascii(CTR_TEXT("CONTEST", "CONCURSO", "CONCOURS", "GARE", "CONCURSO"));
+    return Ascii(CTR_TEXT("CONTEST", "CONCURSO", "CONCOURS", "GARE", "CONCURSO", "WETTBEW."));
 }
 
 static bool8 SummaryMovesPage(const struct CtrSummaryView *v)
@@ -627,7 +627,7 @@ static void DrawSummaryInfo(const struct CtrSummaryView *v, int x, int y, int w,
 
     if (!v->isEgg)
     {
-        const u8 *item = v->item ? GetItemName(v->item) : Ascii(CTR_TEXT("NONE", "NINGUNO", "AUCUN", "NESSUNO", "NENHUM"));
+        const u8 *item = v->item ? GetItemName(v->item) : Ascii(CTR_TEXT("NONE", "NINGUNO", "AUCUN", "NESSUNO", "NENHUM", "KEINE"));
 
         for (int i = 0; i < 4; ++i)
         {
@@ -636,14 +636,14 @@ static void DrawSummaryInfo(const struct CtrSummaryView *v, int x, int y, int w,
             if (i)
                 FillRect(x + 8, ry, w - 16, 1, PackRgb(228, 218, 202));
         }
-        SummaryRow(x, w, y + 4, 20, Ascii(CTR_TEXT("TYPE", "TIPO", "TYPE", "TIPO", "TIPO")), NULL);
+        SummaryRow(x, w, y + 4, 20, Ascii(CTR_TEXT("TYPE", "TIPO", "TYPE", "TIPO", "TIPO", "TYP")), NULL);
         DrawTypeIcon(v->types[0], x + 90, y + 6);
         if (v->types[1] != v->types[0])
             DrawTypeIcon(v->types[1], x + 124, y + 6);
-        SummaryRow(x, w, y + 24, 20, Ascii(CTR_TEXT("OT", "EO", "DO", "AO", "TO")), v->ot);
-        SummaryRow(x, w, y + 44, 20, Ascii(CTR_TEXT("ID No.", "Nº ID", "No. ID", "N. ID", "Nº ID")),
+        SummaryRow(x, w, y + 24, 20, Ascii(CTR_TEXT("OT", "EO", "DO", "AO", "TO", "OT")), v->ot);
+        SummaryRow(x, w, y + 44, 20, Ascii(CTR_TEXT("ID No.", "Nº ID", "No. ID", "N. ID", "Nº ID", "ID-Nr.")),
                    Number(v->otId, 5, STR_CONV_MODE_LEADING_ZEROS));
-        SummaryRow(x, w, y + 64, 20, Ascii(CTR_TEXT("ITEM", "OBJETO", "OBJET", "STRUMENTO", "ITEM")), item);
+        SummaryRow(x, w, y + 64, 20, Ascii(CTR_TEXT("ITEM", "OBJETO", "OBJET", "STRUMENTO", "ITEM", "ITEM")), item);
     }
     else
     {
@@ -663,13 +663,13 @@ static const u8 *SummaryStatName(int i)
 {
     switch (i)
     {
-    case 0: return Ascii(CTR_TEXT("HP", "PS", "PV", "PS", "PS"));
-    case 1: return Ascii(CTR_TEXT("ATTACK", "ATAQUE", "ATTAQUE", "ATTACCO", "ATAQUE"));
-    case 2: return Ascii(CTR_TEXT("DEFENSE", "DEFENSA", "DÉFENSE", "DIFESA", "DEFESA"));
-    case 3: return Ascii(CTR_TEXT("SP. ATK", "AT. ESP.", "ATQ. SPÉ.", "ATT. SP.", "AT. ESP."));
-    case 4: return Ascii(CTR_TEXT("SP. DEF", "DEF. ESP.", "DÉF. SPÉ.", "DIF. SP.", "DEF. ESP."));
+    case 0: return Ascii(CTR_TEXT("HP", "PS", "PV", "PS", "PS", "KP"));
+    case 1: return Ascii(CTR_TEXT("ATTACK", "ATAQUE", "ATTAQUE", "ATTACCO", "ATAQUE", "ANGRIFF"));
+    case 2: return Ascii(CTR_TEXT("DEFENSE", "DEFENSA", "DÉFENSE", "DIFESA", "DEFESA", "VERTEID."));
+    case 3: return Ascii(CTR_TEXT("SP. ATK", "AT. ESP.", "ATQ. SPÉ.", "ATT. SP.", "AT. ESP.", "SP. ANGR."));
+    case 4: return Ascii(CTR_TEXT("SP. DEF", "DEF. ESP.", "DÉF. SPÉ.", "DIF. SP.", "DEF. ESP.", "SP. VERT."));
     }
-    return Ascii(CTR_TEXT("SPEED", "VELOC.", "VITESSE", "VELOCITÀ", "VELOC."));
+    return Ascii(CTR_TEXT("SPEED", "VELOC.", "VITESSE", "VELOCITÀ", "VELOC.", "TEMPO"));
 }
 
 static void DrawSummarySkills(const ViewState *s, int x, int y, int w, int h)
@@ -703,13 +703,13 @@ static void DrawSummarySkills(const ViewState *s, int x, int y, int w, int h)
     if (CtrExtras_Get("ivs_evs"))
         AddHit(x, y, w, 6 * 16 + 8, HIT_SUM_STATS);
     ry = y + 102 + (extra ? 4 : 0);
-    StyledStr(&sSmall, Ascii(CTR_TEXT("EXP. POINTS", "PUNTOS EXP.", "POINTS EXP.", "PUNTI ESP.", "PONTOS EXP.")), x + 8,
+    StyledStr(&sSmall, Ascii(CTR_TEXT("EXP. POINTS", "PUNTOS EXP.", "POINTS EXP.", "PUNTI ESP.", "PONTOS EXP.", "E.-PUNKTE")), x + 8,
               TextY(ry, 16, &sSmall), STYLE_GRAY);
     StyledRight(&sSmall, Number(v->exp, 7, STR_CONV_MODE_LEFT_ALIGN), x + w - 8, TextY(ry, 16, &sSmall), STYLE_INK);
     if (!extra)
     {
         ry += 15;
-        StyledStr(&sSmall, Ascii(CTR_TEXT("NEXT LV.", "SIG. NV.", "N. SUIV.", "LV SUCC.", "PRÓX. NV.")), x + 8,
+        StyledStr(&sSmall, Ascii(CTR_TEXT("NEXT LV.", "SIG. NV.", "N. SUIV.", "LV SUCC.", "PRÓX. NV.", "NÄCHST. LV")), x + 8,
                   TextY(ry, 16, &sSmall), STYLE_GRAY);
         StyledRight(&sSmall, Number(v->toNextLevel, 7, STR_CONV_MODE_LEFT_ALIGN), x + w - 8, TextY(ry, 16, &sSmall),
                     STYLE_INK);
@@ -847,9 +847,9 @@ static void DrawSummaryMoveRows(const ViewState *s, int x, int y, int w, int h)
     {
         const struct ContestEffect *effect = &gContestEffects[gContestMoves[cursorMove].effect];
 
-        StyledStr(&sSmall, Ascii(CTR_TEXT("APPEAL", "EXHIB.", "SÉDUC.", "ESIB.", "APELO")), x + 10, oy + 3, STYLE_GRAY);
+        StyledStr(&sSmall, Ascii(CTR_TEXT("APPEAL", "EXHIB.", "SÉDUC.", "ESIB.", "APELO", "EINDRUCK")), x + 10, oy + 3, STYLE_GRAY);
         StyledStr(&sSmall, Number(effect->appeal / 10, 1, STR_CONV_MODE_LEFT_ALIGN), x + 62, oy + 3, STYLE_INK);
-        StyledStr(&sSmall, Ascii(CTR_TEXT("JAM", "INTERF.", "PERTURB.", "INTRALC.", "INTERF.")), x + 90, oy + 3, STYLE_GRAY);
+        StyledStr(&sSmall, Ascii(CTR_TEXT("JAM", "INTERF.", "PERTURB.", "INTRALC.", "INTERF.", "STÖREN")), x + 90, oy + 3, STYLE_GRAY);
         StyledStr(&sSmall, Number(effect->jam / 10, 1, STR_CONV_MODE_LEFT_ALIGN), x + 150, oy + 3, STYLE_INK);
         TextLines(gContestEffectDescriptionPointers[gContestMoves[cursorMove].effect], x + 10, oy + 16, w - 20, 12, descLines,
                   &sSmall, STYLE_INK, TRUE);
@@ -858,10 +858,10 @@ static void DrawSummaryMoveRows(const ViewState *s, int x, int y, int w, int h)
     {
         u8 power = gBattleMoves[cursorMove].power, acc = gBattleMoves[cursorMove].accuracy;
 
-        StyledStr(&sSmall, Ascii(CTR_TEXT("POWER", "POTENCIA", "PUISS.", "POTENZA", "PODER")), x + 10, oy + 3, STYLE_GRAY);
+        StyledStr(&sSmall, Ascii(CTR_TEXT("POWER", "POTENCIA", "PUISS.", "POTENZA", "PODER", "STÄRKE")), x + 10, oy + 3, STYLE_GRAY);
         StyledStr(&sSmall, power > 1 ? Number(power, 3, STR_CONV_MODE_LEFT_ALIGN) : gText_ThreeDashes, x + 62, oy + 3,
                   STYLE_INK);
-        StyledStr(&sSmall, Ascii(CTR_TEXT("ACCURACY", "PRECISIÓN", "PRÉCISION", "PRECISIONE", "PRECISÃO")), x + 90, oy + 3,
+        StyledStr(&sSmall, Ascii(CTR_TEXT("ACCURACY", "PRECISIÓN", "PRÉCISION", "PRECISIONE", "PRECISÃO", "GENAUIGK.")), x + 90, oy + 3,
                   STYLE_GRAY);
         StyledStr(&sSmall, acc ? Number(acc, 3, STR_CONV_MODE_LEFT_ALIGN) : gText_ThreeDashes, x + 150, oy + 3, STYLE_INK);
         TextLines(gMoveDescriptionPointers[cursorMove - 1], x + 10, oy + 16, w - 20, 12, descLines, &sSmall, STYLE_INK, TRUE);
@@ -1249,16 +1249,16 @@ static void DrawDexList(const ViewState *s)
     DrawDexPic(v->species, AREA_X + DEX_LEFT_W / 2, AREA_Y + 52);
     AddHit(AREA_X, AREA_Y, DEX_LEFT_W, 104, HIT_DEX_LENS);
     oy = Plate(AREA_X, AREA_Y + 108, DEX_LEFT_W, 26, sLight, PLATE_STATE_NORMAL);
-    StyledStr(&sSmall, Ascii(CTR_TEXT("SEEN", "VISTOS", "VUS", "VISTI", "VISTOS")), AREA_X + 6, oy + 1, STYLE_GRAY);
+    StyledStr(&sSmall, Ascii(CTR_TEXT("SEEN", "VISTOS", "VUS", "VISTI", "VISTOS", "GESEHEN")), AREA_X + 6, oy + 1, STYLE_GRAY);
     StyledRight(&sSmall, Number(v->seen, 3, STR_CONV_MODE_LEFT_ALIGN), AREA_X + DEX_LEFT_W - 6, oy + 1, STYLE_INK);
-    StyledStr(&sSmall, Ascii(CTR_TEXT("OWN", "CAPTUR.", "PRIS", "PRESI", "CAPTUR.")), AREA_X + 6, oy + 12, STYLE_GRAY);
+    StyledStr(&sSmall, Ascii(CTR_TEXT("OWN", "CAPTUR.", "PRIS", "PRESI", "CAPTUR.", "GEFANGEN")), AREA_X + 6, oy + 12, STYLE_GRAY);
     StyledRight(&sSmall, Number(v->own, 3, STR_CONV_MODE_LEFT_ALIGN), AREA_X + DEX_LEFT_W - 6, oy + 12, STYLE_INK);
     {
         bool8 pressed = s->pressed == HIT_DEX_SEARCH;
 
         oy = Plate(AREA_X, AREA_Y + 137, DEX_LEFT_W, 27, pressed ? sEmerald : sSlate,
                    pressed ? PLATE_STATE_PRESSED : PLATE_STATE_NORMAL);
-        TextIn(Ascii(CTR_TEXT("SEARCH", "BUSCAR", "CHERCHER", "CERCA", "BUSCAR")), AREA_X, oy, DEX_LEFT_W, 27, &sNormal, 'c',
+        TextIn(Ascii(CTR_TEXT("SEARCH", "BUSCAR", "CHERCHER", "CERCA", "BUSCAR", "SUCHEN")), AREA_X, oy, DEX_LEFT_W, 27, &sNormal, 'c',
                STYLE_WHITE, 4);
         AddHit(AREA_X, AREA_Y + 137, DEX_LEFT_W, 27, HIT_DEX_SEARCH);
     }
@@ -1602,7 +1602,7 @@ static void DrawDexArea(const ViewState *s)
         if (v->areaUnknown)
         {
             StringAppend(text, Ascii(": "));
-            StringAppend(text, Ascii(CTR_TEXT("AREA UNKNOWN", "ZONA DESCONOCIDA", "ZONE INCONNUE", "ZONA SCONOSC.", "ÁREA DESCONHECIDA")));
+            StringAppend(text, Ascii(CTR_TEXT("AREA UNKNOWN", "ZONA DESCONOCIDA", "ZONE INCONNUE", "ZONA SCONOSC.", "ÁREA DESCONHECIDA", "GEBIET UNBEK.")));
         }
         TextIn(text, px, o, pw, ph, FitFont(&sSmall, text, pw - 12), 'l', STYLE_INK, 6);
     }
@@ -1623,7 +1623,7 @@ static void DrawDexCry(const ViewState *s)
         int by = AREA_Y + AREA_H - 40;
 
         oy = Plate(AREA_X, by, 100, 40, pressed ? sEmerald : sSlate, pressed ? PLATE_STATE_PRESSED : PLATE_STATE_NORMAL);
-        TextIn(Ascii(CTR_TEXT("PLAY CRY", "OÍR GRITO", "ÉCOUTER", "ASCOLTA", "OUVIR GRITO")), AREA_X, oy, 100, 40, &sNormal, 'c',
+        TextIn(Ascii(CTR_TEXT("PLAY CRY", "OÍR GRITO", "ÉCOUTER", "ASCOLTA", "OUVIR GRITO", "RUF ABSPIELEN")), AREA_X, oy, 100, 40, &sNormal, 'c',
                STYLE_WHITE, 4);
         AddHit(AREA_X, by, 100, 40, HIT_DEX_PLAY);
         AddHit(AREA_X, y, 100, 96, HIT_DEX_PLAY);
@@ -1647,7 +1647,7 @@ static void DrawDexCry(const ViewState *s)
     {
         int ph = AREA_Y + AREA_H - y - h - 4, sw = 12, sx = x + w - 10 * (sw + 2) - 8;
 
-        TextIn(Ascii(CTR_TEXT("VOLUME", "VOLUMEN", "VOLUME", "VOLUME", "VOLUME")), x + 6, oy, sx - x - 10, ph, &sSmall, 'l',
+        TextIn(Ascii(CTR_TEXT("VOLUME", "VOLUMEN", "VOLUME", "VOLUME", "VOLUME", "LAUTSTÄRKE")), x + 6, oy, sx - x - 10, ph, &sSmall, 'l',
                STYLE_GRAY, 4);
         for (int i = 0; i < 10; ++i)
             FillRect(sx + i * (sw + 2), oy + 8, sw, ph - 18,
