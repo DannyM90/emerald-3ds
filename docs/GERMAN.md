@@ -61,7 +61,7 @@ Datenfelder, 106 Grafiken, der Abspann und die Ebenen des Trainerhügels aus dei
 26 Textstellen ließen sich nicht eindeutig zuordnen und bleiben englisch; sie stehen im
 Manifest unter `unmapped_source_texts`.
 
-Deutsche Besonderheiten (Patch `0057-german-layout.patch`):
+Deutsche Besonderheiten (Patch `0080-german-layout.patch`):
 
 - breitere Fenster für die längeren deutschen Bezeichnungen: Kampf, Beutel,
   Beerenetikett, PokéNav-Listen, Kampfzone, Beerenmixer und mehr, nach den Werten des
