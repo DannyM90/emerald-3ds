@@ -7079,8 +7079,251 @@ SPECS = [
 ]
 
 
+# The Trick House's puzzle rooms (Route 110): the back wall, its scroll's
+# cell (13,1) left out of it - solving a puzzle lays the stairs down there
+# (setmetatile), so it stays drawn, under a lintel - and the maze's
+# partitions, a piece to each rectangle of their cells. Each map below is
+# the room from row 2 down: '#' a partition's cell, 'o' a cell the room's
+# script changes (a barrier, a button, a door, an arrow), which stays drawn
+# and stands in no piece's rectangle, nor in a side wall's.
+TRICK_SIDE = (16, 0, 32, 32)
+TRICK_PUZZLES = {
+    # cream partitions on wooden fronts, 12 px
+    1: (12, """
+############...
+..#...#.#..#...
+...........#...
+..#...#.#..#...
+.############.#
+....#......#...
+.#.............
+.#..#..##..#...
+###.##....#####
+..#..#..#..#...
+.....#..#......
+..#..#..#..#...
+..############.
+....#.#....#...
+...##..........
+....#......#...
+#############.#
+....#....#.....
+...............
+...............
+"""),
+    # gold strips, 6 px
+    2: (6, """
+.........#.....
+...####..#.....
+o..#.....#.####
+####.###...#..o
+.....o.#####...
+.#...#.........
+.#..#########..
+.#..#.......#..
+.#..#.###...#..
+.##.#.#o#.####.
+..#.#.#.#.#o.#o
+#o#.#...#.#..#.
+..#######.#..##
+.......o..#..##
+.#.#########...
+.#....#..#.##..
+.#....#..#.....
+.#.#.....#..##.
+...#######.....
+...............
+"""),
+    # cream partitions on wooden fronts round the barriers, 12 px
+    3: (12, """
+#..#..#.o#..#..
+#oo#..#..#..#oo
+#oo#..o..o..#oo
+......o..o..o..
+#oo#oo#..#oo#..
+#ooooo#..#ooo..
+...o.....#..o..
+#oo####oo#..#oo
+#oo####oo#..#oo
+...o...........
+#oo#oo#..#oo#..
+#ooooo#..#oo#..
+#..oo.......#..
+####oo####..#oo
+###ooo###o..#oo
+...o..#..o.....
+#..#oo#..#oo#..
+#..#oo#..#oo#..
+...............
+...............
+"""),
+    # gold strips, 6 px
+    4: (6, """
+....##.....#...
+.....#....##...
+..##.##.#.#....
+...#....#.#..##
+...#....#.##.#.
+###.....#......
+.....#..#......
+.....#...######
+.....#.........
+..########.....
+..#....#....###
+.##..#...#..#.#
+.#...#####.##..
+.#...#......#..
+.###.....#.....
+.#...#.........
+.##############
+...............
+...............
+...............
+"""),
+    # gold strips, 6 px
+    6: (6, """
+##...#......#..
+#....#..#...#..
+#.......#.#.##.
+.....#..#.#.#..
+...###......#..
+...#.....#..#.#
+.....###.#..#..
+......#....##..
+#.#.#.#...#....
+###.#.#...#....
+....#..##.##...
+....##..#..#...
+###..#..#.###.#
+#....#......#.#
+#.#..#..#......
+..#..##........
+.........##.#..
+............#..
+....##....###..
+....#....##....
+"""),
+    # gold strips, 6 px
+    7: (6, """
+#..#..#.......#
+#..#..#.....###
+#..#o.##o####.#
+#..#.##o#...#.#
+#.....o.###.#.#
+###..#......#.#
+....#######.#.#
+.####.......#.#
+.#...o.###..#.#
+.#.#####.##.o.#
+##.#..#o..#.###
+...#..##.##.o.#
+...#######....#
+............#.#
+###########.o.#
+#.....##..#.#o#
+###..###..#...#
+..####......#.#
+....##.#..#.#.#
+.......#..#####
+"""),
+}
+
+
+def trick_house_puzzle(n):
+    height, text = TRICK_PUZZLES[n]
+    rows = text.split()
+    cells = [(x, y + 2) for y, row in enumerate(rows) for x, c in enumerate(row) if c == "#"]
+    return rect_pieces("partition", runs_of(cells), height) + trick_house_shell(
+        {(x, y + 2) for y, row in enumerate(rows) for x, c in enumerate(row) if c == "o"})
+
+
+# the eighth's jars on its ice, one to each cell, to a pixel short of its
+# foot (the floor's own line there, grey as the jars are, runs under them):
+# the floor round them the ice's and the tatami's (not their dark outline,
+# the jars' too)
+TRICK_JAR_FLOOR = ("c59439", "d5a44a", "e6c562", "ffe67b", "fff6bd", "6a8b31", "83ac4a", "a4cd6a",
+                   "c5ffac")
+TRICK_JARS = """
+...#..........#
+..###.#########
+....#.#........
+.#.............
+.......#......#
+.........#.....
+.............#.
+...##..#####.#.
+#.#######.#..#.
+.#....##.......
+....#.....#....
+....#.....#....
+....#.....#....
+....#.....#....
+.#........#....
+..........#....
+..........#....
+..###.#...#....
+..###.#...#....
+..##..#........
+"""
+
+
+def trick_house_puzzle8():
+    return [piece("jar_%d_%d" % (x, y + 2), [(x * 16 + 2, y * 16 + 33, x * 16 + 14, y * 16 + 47)], 9,
+                  round="lathe", leave=TRICK_JAR_FLOOR)
+            for y, row in enumerate(TRICK_JARS.split()) for x, c in enumerate(row)
+            if c == "#"] + trick_house_shell()
+
+
+def trick_house_corridor():
+    """The corridor (240 x 384) runs as an L through the dark: its three
+    walls, each facing the stretch of it below, stand; the dark round it is
+    beyond the room."""
+    side = (64, 0, 80, 32)
+    return [
+        piece("wall", [(48, 0, 240, 32)], 32, fill=16, foot=32, side=side),
+        piece("wall_mid", [(0, 96, 48, 128)], 32, fill=16, foot=128, side=side),
+        piece("wall_low", [(48, 320, 96, 352)], 32, fill=16, foot=352, side=side),
+    ]
+
+
+def trick_house_shell(drawn=frozenset()):
+    """A puzzle room's walls (240 x 352): the back wall round its scroll's
+    cell, a lintel over it, and the side walls in stretches round the cells
+    the room's script changes along them (a stretch ends a pixel short of
+    the next cell, or its rectangle would take it)."""
+    side = TRICK_SIDE
+    out = [
+        piece("wall_w", [(0, 0, 208, 32)], 32, fill=16, foot=32, side=side),
+        piece("wall_e", [(224, 0, 240, 32)], 32, fill=16, foot=32, side=side),
+        piece("wall_lintel", [(208, 0, 224, 16)], 32, fill=16, foot=32, side=side),
+    ]
+    for name, x, col in (("side_w", 0, 0), ("side_e", 240, 14)):
+        rows = [y for y in range(2, 22) if (col, y) not in drawn]
+        for (_, y0, y1) in runs_of([(col, y) for y in rows]):
+            a, b = (x, y0 * 16), (x, (y1 + 1) * 16 - (1 if y1 < 21 else 0))
+            out.append(piece("%s_%d" % (name, y0), [], 32, side=side,
+                             walls=[(b, a) if col == 0 else (a, b)]))
+    return out
+
+
 # the Battle Frontier's battle rooms and corridors
 SPECS += [{"name": room[0], "interior": dict({"layout": room[1], "ground": [room[2]],
                                               "pieces": own_shell(room[3]())},
                                              **(room[4] if len(room) > 4 else {}))}
           for room in FRONTIER_ROOMS]
+
+
+# the Trick House's puzzle rooms; the fifth's dark is beyond the room, round
+# the paths drawn in it: its walls alone
+SPECS += [{"name": "trick_house_puzzle%d" % n,
+           "interior": {"layout": "LAYOUT_ROUTE110_TRICK_HOUSE_PUZZLE%d" % n, "ground": [0x208],
+                        "pieces": own_shell(trick_house_puzzle(n) if n in TRICK_PUZZLES
+                                            else trick_house_shell())}}
+          for n in (1, 2, 3, 4, 5, 6, 7)] + [
+    {"name": "trick_house_puzzle8",
+     "interior": {"layout": "LAYOUT_ROUTE110_TRICK_HOUSE_PUZZLE8", "ground": [0x26b],
+                  "pieces": own_shell(trick_house_puzzle8())}},
+    {"name": "trick_house_corridor",
+     "interior": {"layout": "LAYOUT_ROUTE110_TRICK_HOUSE_CORRIDOR", "ground": [0x229],
+                  "pieces": own_shell(trick_house_corridor())}},
+]
