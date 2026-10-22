@@ -1322,9 +1322,9 @@ static void DexTabCursor(int x, int oy, int w)
 
 static void DrawDexTabs(const ViewState *s)
 {
-    static const char *const names[][5] = {
-        {"INFO", "INFO", "INFO", "INFO", "INFO"}, {"AREA", "ÁREA", "ZONE", "AREA", "ÁREA"},
-        {"CRY", "GRITO", "CRI", "VERSO", "GRITO"}, {"SIZE", "TAMAÑO", "TAILLE", "ALTEZZA", "TAMANHO"}};
+    static const char *const names[][6] = {
+        {"INFO", "INFO", "INFO", "INFO", "INFO", "INFO"}, {"AREA", "ÁREA", "ZONE", "AREA", "ÁREA", "GEBIET"},
+        {"CRY", "GRITO", "CRI", "VERSO", "GRITO", "RUF"}, {"SIZE", "TAMAÑO", "TAILLE", "ALTEZZA", "TAMANHO", "GRÖSSE"}};
     int n = 4, gap = 2, tw = (AREA_W - 64 - gap * (n - 1)) / n, x = AREA_X, oy;
     u8 state = s->dx.state;
     int liveTab = state == CTR_DEX_VIEW_AREA ? 1 : state == CTR_DEX_VIEW_CRY ? 2 : state == CTR_DEX_VIEW_SIZE ? 3 : 0;
@@ -1339,7 +1339,7 @@ static void DrawDexTabs(const ViewState *s)
 
         oy = Plate(x, AREA_Y, tw, DEX_TAB_H, live || pressed ? sEmerald : off ? sGroupOff : sLight,
                    pressed ? PLATE_STATE_PRESSED : PLATE_STATE_NORMAL);
-        TextIn(Ascii(CTR_TEXT(names[i][0], names[i][1], names[i][2], names[i][3], names[i][4])), x, oy, tw, DEX_TAB_H, &sSmall, 'c',
+        TextIn(Ascii(CTR_TEXT(names[i][0], names[i][1], names[i][2], names[i][3], names[i][4], names[i][5])), x, oy, tw, DEX_TAB_H, &sSmall, 'c',
                live || pressed ? STYLE_WHITE : off ? STYLE_GRAY : STYLE_INK, 3);
         if (i == cursor && !live)
             DexTabCursor(x, oy, tw);
@@ -1406,12 +1406,12 @@ static void DrawDexInfo(const ViewState *s)
  * entries as plates, the cursor's dotted; a tap beside it closes it. */
 static void DrawDexMenu(const ViewState *s)
 {
-    static const char *const names[5][5] = {
-        {"BACK TO LIST", "VOLVER A LISTA", "RETOUR LISTE", "TORNA ALLA LISTA", "VOLTAR À LISTA"},
-        {"LIST TOP", "PRINCIPIO", "HAUT DE LISTE", "INIZIO LISTA", "INÍCIO DA LISTA"},
-        {"LIST BOTTOM", "FINAL", "BAS DE LISTE", "FINE LISTA", "FIM DA LISTA"},
-        {"BACK TO POKéDEX", "VOLVER A POKéDEX", "RETOUR POKéDEX", "TORNA AL POKéDEX", "VOLTAR À POKéDEX"},
-        {"CLOSE POKéDEX", "CERRAR POKéDEX", "FERMER POKéDEX", "CHIUDI POKéDEX", "FECHAR POKéDEX"},
+    static const char *const names[5][6] = {
+        {"BACK TO LIST", "VOLVER A LISTA", "RETOUR LISTE", "TORNA ALLA LISTA", "VOLTAR À LISTA", "ZUR LISTE"},
+        {"LIST TOP", "PRINCIPIO", "HAUT DE LISTE", "INIZIO LISTA", "INÍCIO DA LISTA", "LISTENANFANG"},
+        {"LIST BOTTOM", "FINAL", "BAS DE LISTE", "FINE LISTA", "FIM DA LISTA", "LISTENENDE"},
+        {"BACK TO POKéDEX", "VOLVER A POKéDEX", "RETOUR POKéDEX", "TORNA AL POKéDEX", "VOLTAR À POKéDEX", "ZUM POKéDEX"},
+        {"CLOSE POKéDEX", "CERRAR POKéDEX", "FERMER POKéDEX", "CHIUDI POKéDEX", "FECHAR POKéDEX", "POKéDEX SCHLIESSEN"},
     };
     const struct CtrDexView *v = &s->dx;
     int n = v->menuCount <= 5 ? v->menuCount : 5, pitch = 26, h = 23;
@@ -1432,8 +1432,8 @@ static void DrawDexMenu(const ViewState *s)
         oy = PlateEx(x, by, w, h, pressed ? sEmerald : colour, pressed ? PLATE_STATE_PRESSED : PLATE_STATE_NORMAL,
                      30, 30, PlateCut(h), 0);
         EntryDot(x + 14, oy + h / 2, i == v->menuCursor ? sEmerald : colour);
-        TextIn(Ascii(CTR_TEXT(names[name][0], names[name][1], names[name][2], names[name][3], names[name][4])), x + 30, oy, w - 32, h,
-               FitFont(&sNormal, Ascii(CTR_TEXT(names[name][0], names[name][1], names[name][2], names[name][3], names[name][4])), w - 40),
+        TextIn(Ascii(CTR_TEXT(names[name][0], names[name][1], names[name][2], names[name][3], names[name][4], names[name][5])), x + 30, oy, w - 32, h,
+               FitFont(&sNormal, Ascii(CTR_TEXT(names[name][0], names[name][1], names[name][2], names[name][3], names[name][4], names[name][5])), w - 40),
                'l', STYLE_WHITE, 4);
         AddHit(x, by, w, h, HIT_DEX_MENU + i);
     }
@@ -1444,10 +1444,10 @@ static void DrawDexMenu(const ViewState *s)
  * under them; searching, and its result, over them. */
 static void DrawDexSearch(const ViewState *s)
 {
-    static const char *const labels[CTR_DEX_PARAMS][5] = {
-        {"NAME", "NOMBRE", "NOM", "NOME", "NOME"}, {"COLOR", "COLOR", "COULEUR", "COLORE", "COR"},
-        {"TYPE 1", "TIPO 1", "TYPE 1", "TIPO 1", "TIPO 1"}, {"TYPE 2", "TIPO 2", "TYPE 2", "TIPO 2", "TIPO 2"},
-        {"ORDER", "ORDEN", "ORDRE", "ORDINE", "ORDEM"}, {"MODE", "MODO", "MODE", "MODO", "MODO"},
+    static const char *const labels[CTR_DEX_PARAMS][6] = {
+        {"NAME", "NOMBRE", "NOM", "NOME", "NOME", "NAME"}, {"COLOR", "COLOR", "COULEUR", "COLORE", "COR", "FARBE"},
+        {"TYPE 1", "TIPO 1", "TYPE 1", "TIPO 1", "TIPO 1", "TYP 1"}, {"TYPE 2", "TIPO 2", "TYPE 2", "TIPO 2", "TIPO 2", "TYP 2"},
+        {"ORDER", "ORDEN", "ORDRE", "ORDINE", "ORDEM", "ORDNUNG"}, {"MODE", "MODO", "MODE", "MODO", "MODO", "MODUS"},
     };
     const struct CtrDexView *v = &s->dx;
     int n = 0, rowH, panelH = AREA_H - 34, oy, i, row = 0;
@@ -1471,7 +1471,7 @@ static void DrawDexSearch(const ViewState *s)
             FillRgb(AREA_X + 8, ry, AREA_W - 16, 1, sRule);
         if (pressed || focus)
             FillRgb(AREA_X + 4, ry + 1, AREA_W - 8, rowH - 1, sGroupOff);
-        TextIn(Ascii(CTR_TEXT(labels[i][0], labels[i][1], labels[i][2], labels[i][3], labels[i][4])), AREA_X + 6, ry, 120, rowH,
+        TextIn(Ascii(CTR_TEXT(labels[i][0], labels[i][1], labels[i][2], labels[i][3], labels[i][4], labels[i][5])), AREA_X + 6, ry, 120, rowH,
                &sSmall, 'l', focus ? STYLE_GREEN : STYLE_INK, 6);
         if (v->paramText[i])
             StyledCentre(FitFont(&sSmall, v->paramText[i], wv - 24), v->paramText[i], left + wv / 2,
@@ -1487,9 +1487,9 @@ static void DrawDexSearch(const ViewState *s)
     }
     /* SEARCH, SHIFT, CANCEL. */
     {
-        static const char *const names[3][5] = {
-            {"SEARCH", "BUSCAR", "CHERCHER", "CERCA", "BUSCAR"}, {"SHIFT", "ORDENAR", "TRIER", "ORDINA", "ORDENAR"},
-            {"CANCEL", "SALIR", "RETOUR", "ESCI", "SAIR"},
+        static const char *const names[3][6] = {
+            {"SEARCH", "BUSCAR", "CHERCHER", "CERCA", "BUSCAR", "SUCHEN"}, {"SHIFT", "ORDENAR", "TRIER", "ORDINA", "ORDENAR", "SORTIEREN"},
+            {"CANCEL", "SALIR", "RETOUR", "ESCI", "SAIR", "ZURÜCK"},
         };
         int by = AREA_Y + AREA_H - 30, bw = (AREA_W - 8) / 3;
 
@@ -1501,7 +1501,7 @@ static void DrawDexSearch(const ViewState *s)
             Rgb colour = i == 0 ? sRedPlate : i == 1 ? sSlate : sCancelGrey;
 
             oy = Plate(bx, by, bw, 30, pressed ? sEmerald : colour, pressed ? PLATE_STATE_PRESSED : PLATE_STATE_NORMAL);
-            TextIn(Ascii(CTR_TEXT(names[i][0], names[i][1], names[i][2], names[i][3], names[i][4])), bx, oy, bw, 30, &sNormal, 'c',
+            TextIn(Ascii(CTR_TEXT(names[i][0], names[i][1], names[i][2], names[i][3], names[i][4], names[i][5])), bx, oy, bw, 30, &sNormal, 'c',
                    STYLE_WHITE, 4);
             if (v->searchState == CTR_DEX_SEARCH_CHOOSE)
                 AddHit(bx, by, bw, 30, id);
