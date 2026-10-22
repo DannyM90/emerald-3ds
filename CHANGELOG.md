@@ -14,9 +14,10 @@
   buttons wait. The PokéNav's HOENN MAP entry is gone: the bottom screen's MAP
   is that map, zoom included. Based on @luksgrin's pull request #108.
 
-- Battle speed: in a battle (wild or trainer) R speeds the game up and L
-  slows it down, 1x, 1.5x, 2x, 3x and 4x, and a badge in the top right corner
-  shows the speed for two seconds after each press.
+- Battle speed, by @maxxandres (pull request #149): in a battle (wild or
+  trainer) R speeds the game up and L slows it down, 1x, 1.5x, 2x, 3x and 4x,
+  and a badge in the top right corner shows the speed for two seconds after
+  each press.
   It is a speed of its own: until the first press the battle follows the
   SPEED the player uses in the overworld, and then keeps its own
   (`battle_speed=` in settings.txt). The bag, the party and the summary opened
