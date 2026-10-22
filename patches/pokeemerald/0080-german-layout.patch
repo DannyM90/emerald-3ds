@@ -1,5 +1,5 @@
 Emerald 3DS changes to pret/pokeemerald 76463dac15cad36aca5e2b3f6366abf9e53f814f: German layout, units, keyboard and grammar
-Applies after 0056-follower-pokemon.patch; apply with tools/bootstrap.py.
+Applies after 0079-rng-seeding.patch; apply with tools/bootstrap.py.
 
 The German variant (BPED) as the retail German ROM lays it out: wider windows
 for the longer labels (battle, bag, berry tag, PokéNav lists, Battle Frontier),
@@ -199,16 +199,16 @@ messages get German wording, as the French and Italian ones do.
  #else
  static const u8 sText_PkmnTeamGainedEXP[] = _("The rest of your team gained\nEXP. Points!\p");
  #endif
-@@ -1338,7 +1342,7 @@ static const u8 sText_ApostropheS[] = _("'s");
+@@ -1345,7 +1349,7 @@ static const u8 sText_ApostropheS[] = _("'s");
  
  // For displaying names of invalid moves.
  // This is large enough that the text for TYPE_ELECTRIC will exceed TEXT_BUFF_ARRAY_COUNT.
--#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN)
-+#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN)
+-#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || CTR_LANG_PT_BR)
++#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN || CTR_LANG_PT_BR)
  static const u8 sATypeMove_Table[NUMBER_OF_MON_TYPES][22] =
  #else
  static const u8 sATypeMove_Table[NUMBER_OF_MON_TYPES][17] =
-@@ -1977,6 +1981,10 @@ void BufferStringBattle(u16 stringID)
+@@ -1984,6 +1988,10 @@ void BufferStringBattle(u16 stringID)
  {
      s32 i;
      const u8 *stringPtr = NULL;
@@ -219,7 +219,7 @@ messages get German wording, as the French and Italian ones do.
  
      gBattleMsgDataPtr = (struct BattleMsgData *)(&gBattleBufferA[gActiveBattler][4]);
      gLastUsedItem = gBattleMsgDataPtr->lastItem;
-@@ -2262,7 +2270,15 @@ void BufferStringBattle(u16 stringID)
+@@ -2276,7 +2284,15 @@ void BufferStringBattle(u16 stringID)
          break;
      }
  
@@ -235,7 +235,7 @@ messages get German wording, as the French and Italian ones do.
  }
  
  u32 BattleStringExpandPlaceholdersToDisplayedString(const u8 *src)
-@@ -2582,6 +2598,32 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst)
+@@ -2599,6 +2615,32 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst)
                  toCpy = gAbilityNames[sBattlerAbilities[gEffectBattler]];
                  break;
              case B_TXT_TRAINER1_CLASS: // trainer class name
@@ -268,7 +268,7 @@ messages get German wording, as the French and Italian ones do.
                  if (gBattleTypeFlags & BATTLE_TYPE_SECRET_BASE)
                      toCpy = gTrainerClassNames[GetSecretBaseTrainerClass()];
                  else if (gTrainerBattleOpponent_A == TRAINER_UNION_ROOM)
-@@ -2597,6 +2639,7 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst)
+@@ -2614,6 +2656,7 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst)
                  else
                      toCpy = gTrainerClassNames[gTrainers[gTrainerBattleOpponent_A].trainerClass];
                  break;
@@ -276,7 +276,7 @@ messages get German wording, as the French and Italian ones do.
              case B_TXT_TRAINER1_NAME: // trainer1 name
                  if (gBattleTypeFlags & BATTLE_TYPE_SECRET_BASE)
                  {
-@@ -2730,6 +2773,24 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst)
+@@ -2747,6 +2790,24 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst)
                      toCpy = sText_FoePkmnPrefix4;
                  break;
              case B_TXT_TRAINER2_CLASS:
@@ -301,7 +301,7 @@ messages get German wording, as the French and Italian ones do.
                  if (gBattleTypeFlags & BATTLE_TYPE_FRONTIER)
                      toCpy = gTrainerClassNames[GetFrontierOpponentClass(gTrainerBattleOpponent_B)];
                  else if (gBattleTypeFlags & BATTLE_TYPE_TRAINER_HILL)
-@@ -2737,6 +2798,7 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst)
+@@ -2754,6 +2815,7 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst)
                  else
                      toCpy = gTrainerClassNames[gTrainers[gTrainerBattleOpponent_B].trainerClass];
                  break;
@@ -309,7 +309,7 @@ messages get German wording, as the French and Italian ones do.
              case B_TXT_TRAINER2_NAME:
                  if (gBattleTypeFlags & BATTLE_TYPE_FRONTIER)
                  {
-@@ -2782,8 +2844,17 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst)
+@@ -2799,8 +2861,17 @@ u32 BattleStringExpandPlaceholders(const u8 *src, u8 *dst)
                  }
                  break;
              case B_TXT_PARTNER_CLASS:
@@ -327,7 +327,7 @@ messages get German wording, as the French and Italian ones do.
              case B_TXT_PARTNER_NAME:
                  GetFrontierTrainerName(text, gPartnerTrainerId);
                  toCpy = text;
-@@ -2865,6 +2936,10 @@ static void ExpandBattleTextBuffPlaceholders(const u8 *src, u8 *dst)
+@@ -2890,20 +2961,32 @@ static void ExpandBattleTextBuffPlaceholders(const u8 *src, u8 *dst)
              if (GetBattlerSide(src[srcID + 1]) == B_SIDE_PLAYER)
              {
                  GetMonData(&gPlayerParty[src[srcID + 2]], MON_DATA_NICKNAME, nickname);
@@ -338,7 +338,12 @@ messages get German wording, as the French and Italian ones do.
              }
              else
              {
-@@ -2873,10 +2948,14 @@ static void ExpandBattleTextBuffPlaceholders(const u8 *src, u8 *dst)
++#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
++                GetMonData(&gEnemyParty[src[srcID + 2]], MON_DATA_NICKNAME, dst);
++                StringGet_Nickname(dst);
++#endif
+                 if (gBattleTypeFlags & BATTLE_TYPE_TRAINER)
+                     StringAppend(dst, sText_FoePkmnPrefix);
                  else
                      StringAppend(dst, sText_WildPkmnPrefix);
  
@@ -349,11 +354,13 @@ messages get German wording, as the French and Italian ones do.
 +#if !(defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN)
              StringGet_Nickname(nickname);
              StringAppend(dst, nickname);
+             if (GetBattlerSide(src[srcID + 1]) != B_SIDE_PLAYER)
+                 StringAppend(dst, (gBattleTypeFlags & BATTLE_TYPE_TRAINER) ? sText_FoePkmnSuffix : sText_WildPkmnSuffix);
 +#endif
              srcID += 3;
              break;
          case B_BUFF_STAT: // stats
-@@ -2905,10 +2984,21 @@ static void ExpandBattleTextBuffPlaceholders(const u8 *src, u8 *dst)
+@@ -2932,10 +3015,21 @@ static void ExpandBattleTextBuffPlaceholders(const u8 *src, u8 *dst)
              break;
          case B_BUFF_ITEM: // item name
              hword = T1_READ_16(&src[srcID + 1]);
@@ -375,7 +382,7 @@ messages get German wording, as the French and Italian ones do.
                      if (gLinkPlayers[gBattleScripting.multiplayerId].id == gPotentialItemEffectBattler)
                      {
                          StringCopy(dst, gEnigmaBerries[gPotentialItemEffectBattler].name);
-@@ -2918,6 +3008,7 @@ static void ExpandBattleTextBuffPlaceholders(const u8 *src, u8 *dst)
+@@ -2945,6 +3039,7 @@ static void ExpandBattleTextBuffPlaceholders(const u8 *src, u8 *dst)
                      {
                          StringAppend(dst, sText_EnigmaBerry);
                      }
@@ -1155,18 +1162,17 @@ messages get German wording, as the French and Italian ones do.
  #include "international_string_util.h"
  #include "list_menu.h"
  #include "pokedex.h"
-@@ -86,8 +88,10 @@ int Intl_GetListMenuWidth(const struct ListMenuTemplate *listMenu)
- void CopyMonCategoryText(int dexNum, u8 *dest)
+@@ -92,7 +94,9 @@ void CopyMonCategoryText(int dexNum, u8 *dest)
  {
-     u8 *str = StringCopy(dest, gPokedexEntries[dexNum].categoryName);
+     u8 *str = StringCopy(dest, sText_CategoryPrefix);
+     str = StringCopy(str, gPokedexEntries[dexNum].categoryName);
 +#if !(defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN)
-     *str = CHAR_SPACE;
-     StringCopy(str + 1, gText_Pokemon);
+     StringCopy(str, sText_CategorySuffix);
 +#endif
  }
  
  u8 *GetStringClearToWidth(u8 *dest, int fontId, const u8 *str, int totalStringWidth)
-@@ -231,3 +235,58 @@ void FillWindowTilesByRow(int windowId, int columnStart, int rowStart, int numFi
+@@ -236,3 +240,58 @@ void FillWindowTilesByRow(int windowId, int columnStart, int rowStart, int numFi
          }
      }
  }
@@ -1227,7 +1233,7 @@ messages get German wording, as the French and Italian ones do.
 +#endif
 --- a/src/item.c
 +++ b/src/item.c
-@@ -117,11 +117,16 @@ void GetBerryCountString(u8 *dst, const u8 *berryName, u32 quantity)
+@@ -118,11 +118,16 @@ void GetBerryCountString(u8 *dst, const u8 *berryName, u32 quantity)
      // Italian berry names already start with BACCA: one word, no space.
      txtPtr = StringCopy(dst, berryString);
      StringCopy(txtPtr, berryName);
@@ -1246,7 +1252,7 @@ messages get German wording, as the French and Italian ones do.
  bool8 IsBagPocketNonEmpty(u8 pocket)
 --- a/src/item_menu.c
 +++ b/src/item_menu.c
-@@ -294,6 +294,11 @@ static const struct ListMenuTemplate sItemListMenu =
+@@ -298,6 +298,11 @@ static const struct ListMenuTemplate sItemListMenu =
      .cursorKind = CURSOR_BLACK_ARROW
  };
  
@@ -1258,7 +1264,7 @@ messages get German wording, as the French and Italian ones do.
  static const struct MenuAction sItemMenuActions[] = {
      [ACTION_USE]               = {gMenuText_Use,      {ItemMenu_UseOutOfBattle}},
      [ACTION_TOSS]              = {gMenuText_Toss,     {ItemMenu_Toss}},
-@@ -305,7 +310,11 @@ static const struct MenuAction sItemMenuActions[] = {
+@@ -309,7 +314,11 @@ static const struct MenuAction sItemMenuActions[] = {
      [ACTION_WALK]              = {gMenuText_Walk,     {ItemMenu_UseOutOfBattle}},
      [ACTION_DESELECT]          = {gMenuText_Deselect, {ItemMenu_Register}},
      [ACTION_CHECK_TAG]         = {gMenuText_CheckTag, {ItemMenu_CheckTag}},
@@ -1394,7 +1400,7 @@ messages get German wording, as the French and Italian ones do.
      PutWindowTilemap(sNamingScreen->windows[WIN_TEXT_ENTRY_BOX]);
 --- a/src/option_menu.c
 +++ b/src/option_menu.c
-@@ -543,6 +543,9 @@ static void FrameType_DrawChoices(u8 selection)
+@@ -557,6 +557,9 @@ static void FrameType_DrawChoices(u8 selection)
      u8 text[16];
      u8 n = selection + 1;
      u16 i;
@@ -1404,17 +1410,17 @@ messages get German wording, as the French and Italian ones do.
  
      for (i = 0; gText_FrameTypeNumber[i] != EOS && i <= 5; i++)
          text[i] = gText_FrameTypeNumber[i];
-@@ -565,8 +568,14 @@ static void FrameType_DrawChoices(u8 selection)
+@@ -579,8 +582,14 @@ static void FrameType_DrawChoices(u8 selection)
  
      text[i] = EOS;
  
 +#if defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_GERMAN
 +    width = GetStringWidth(FONT_NORMAL, gText_FrameType, 0);
-+    DrawOptionMenuChoice(gText_FrameType, 104, YPOS_FRAMETYPE, 0);
-+    DrawOptionMenuChoice(text, width + 107, YPOS_FRAMETYPE, 1);
++    DrawOptionMenuChoice(gText_FrameType, CHOICES_LEFT, YPOS_FRAMETYPE, 0);
++    DrawOptionMenuChoice(text, CHOICES_LEFT + width + 3, YPOS_FRAMETYPE, 1);
 +#else
-     DrawOptionMenuChoice(gText_FrameType, 104, YPOS_FRAMETYPE, 0);
-     DrawOptionMenuChoice(text, 128, YPOS_FRAMETYPE, 1);
+     DrawOptionMenuChoice(gText_FrameType, CHOICES_LEFT, YPOS_FRAMETYPE, 0);
+     DrawOptionMenuChoice(text, CHOICES_LEFT + 24, YPOS_FRAMETYPE, 1);
 +#endif
  }
  
@@ -1435,7 +1441,7 @@ messages get German wording, as the French and Italian ones do.
      MailboxMenu_AddScrollArrows(&gPlayerPCItemPageInfo);
 --- a/src/pokedex.c
 +++ b/src/pokedex.c
-@@ -276,7 +276,7 @@ static void Task_HandleCaughtMonPageInput(u8);
+@@ -279,7 +279,7 @@ static void Task_HandleCaughtMonPageInput(u8);
  static void Task_ExitCaughtMonPage(u8);
  static void SpriteCB_SlideCaughtMonToCenter(struct Sprite *sprite);
  static void PrintMonInfo(u32 num, u32, u32 owned, u32 newEntry);
@@ -1444,7 +1450,7 @@ messages get German wording, as the French and Italian ones do.
  #define NATIVE_DEX_MEASUREMENT_X 0x90
  #else
  #define NATIVE_DEX_MEASUREMENT_X 0x81
-@@ -3064,12 +3064,20 @@ static void CreateInterfaceSprites(u8 page)
+@@ -3088,12 +3088,20 @@ static void CreateInterfaceSprites(u8 page)
              digitNum = (sPokedexView->ownCount % 100) % 10;
              StartSpriteAnim(&gSprites[spriteId], digitNum);
          }
@@ -1465,31 +1471,31 @@ messages get German wording, as the French and Italian ones do.
          gSprites[spriteId].invisible = TRUE;
      }
  }
-@@ -4282,11 +4290,11 @@ static void PrintMonInfo(u32 num, u32 value, u32 owned, u32 newEntry)
+@@ -4318,11 +4326,11 @@ static void PrintMonInfo(u32 num, u32 value, u32 owned, u32 newEntry)
  
  static void PrintMonHeight(u16 height, u8 left, u8 top)
  {
--#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN)
-+#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN)
+-#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || CTR_LANG_PT_BR)
++#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN || CTR_LANG_PT_BR)
      u8 buffer[16];
      u8 *end = ConvertIntToDecimalStringN(buffer, height / 10, STR_CONV_MODE_LEFT_ALIGN, 4);
  
--#if GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN
-+#if GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN
+-#if GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || CTR_LANG_PT_BR
++#if GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN || CTR_LANG_PT_BR
      *end++ = CHAR_COMMA;
  #else
      *end++ = CHAR_PERIOD;
-@@ -4331,11 +4339,11 @@ static void PrintMonHeight(u16 height, u8 left, u8 top)
+@@ -4367,11 +4375,11 @@ static void PrintMonHeight(u16 height, u8 left, u8 top)
  
  static void PrintMonWeight(u16 weight, u8 left, u8 top)
  {
--#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN)
-+#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN)
+-#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || CTR_LANG_PT_BR)
++#if defined(PORT_BRIDGE) && (GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN || CTR_LANG_PT_BR)
      u8 buffer[16];
      u8 *end = ConvertIntToDecimalStringN(buffer, weight / 10, STR_CONV_MODE_LEFT_ALIGN, 4);
  
--#if GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN
-+#if GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN
+-#if GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || CTR_LANG_PT_BR
++#if GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN || GAME_LANGUAGE == LANGUAGE_GERMAN || CTR_LANG_PT_BR
      *end++ = CHAR_COMMA;
  #else
      *end++ = CHAR_PERIOD;
@@ -1515,7 +1521,7 @@ messages get German wording, as the French and Italian ones do.
  const u8 *GetTrainerNameFromId(u16 trainerId)
 --- a/src/pokemon_summary_screen.c
 +++ b/src/pokemon_summary_screen.c
-@@ -660,10 +660,18 @@ static const struct WindowTemplate sPageInfoTemplate[] =
+@@ -663,10 +663,18 @@ static const struct WindowTemplate sPageInfoTemplate[] =
          .bg = 0,
          .tilemapLeft = 11,
          .tilemapTop = 14,
@@ -1534,7 +1540,7 @@ messages get German wording, as the French and Italian ones do.
      },
  };
  static const struct WindowTemplate sPageSkillsTemplate[] =
-@@ -793,6 +801,9 @@ static const u8 sStatsLeftColumnLayoutIvEv[] = _("{DYNAMIC 0}\n{DYNAMIC 2}\n{DYN
+@@ -796,6 +804,9 @@ static const u8 sStatsLeftColumnLayoutIvEv[] = _("{DYNAMIC 0}\n{DYNAMIC 2}\n{DYN
  #if GAME_LANGUAGE == LANGUAGE_SPANISH || GAME_LANGUAGE == LANGUAGE_FRENCH || GAME_LANGUAGE == LANGUAGE_ITALIAN
  static const u8 sText_SkillsIVs[] = _("IV  (0-31)");
  static const u8 sText_SkillsEVs[] = _("EV  (0-255)");
@@ -1544,7 +1550,7 @@ messages get German wording, as the French and Italian ones do.
  #else
  static const u8 sText_SkillsIVs[] = _("IVs  (0-31)");
  static const u8 sText_SkillsEVs[] = _("EVs  (0-255)");
-@@ -1224,6 +1235,9 @@ static const u8 sText_Category[] = _("CATÉG.");
+@@ -1227,6 +1238,9 @@ static const u8 sText_Category[] = _("CATÉG.");
  #elif defined(PORT_BRIDGE) && GAME_LANGUAGE == LANGUAGE_ITALIAN
  // Shortened the same way: CATEGORIA is wider than the label column.
  static const u8 sText_Category[] = _("CATEG.");
@@ -1554,7 +1560,7 @@ messages get German wording, as the French and Italian ones do.
  #else
  static const u8 sText_Category[] = _("CATEGORY");
  #endif
-@@ -4360,7 +4374,11 @@ static void PrintNewMoveDetailsOrCancelText(void)
+@@ -4561,7 +4575,11 @@ static void PrintNewMoveDetailsOrCancelText(void)
  static void AddAndFillMoveNamesWindow(void)
  {
      u8 windowId = AddWindowFromTemplateList(sPageMovesTemplate, PSS_DATA_WINDOW_MOVE_NAMES);
