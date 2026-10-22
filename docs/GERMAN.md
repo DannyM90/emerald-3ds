@@ -58,8 +58,10 @@ die BPEE und BPED Byte für Byte nachbaut. Die Textstellen sind die des französ
 italienischen und spanischen Manifests: Jede wird im englischen Build gefunden und über
 dasselbe Symbol im deutschen Build zugeordnet. So kommen etwa 17.000 Texte, 2.300
 Datenfelder, 106 Grafiken, der Abspann und die Ebenen des Trainerhügels aus deinem ROM.
-26 Textstellen ließen sich nicht eindeutig zuordnen und bleiben englisch; sie stehen im
-Manifest unter `unmapped_source_texts`.
+25 Textstellen ließen sich nicht eindeutig zuordnen und bleiben wie im Quelltext; sie
+stehen im Manifest unter `unmapped_source_texts`. Keine davon ist im Spiel als englischer
+Text zu sehen: Es sind Zeichen, die im Deutschen gleich sind (♂, ♀, !, ?, :, …, Pfeile),
+leere Platzhalter und ungenutzte Texte.
 
 Deutsche Besonderheiten (Patch `0080-german-layout.patch`):
 
