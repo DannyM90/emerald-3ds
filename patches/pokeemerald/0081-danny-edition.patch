@@ -33,6 +33,94 @@ index 1993aaf..7e00284 100644
 +EventScript_CtrMoveRelearnerEnd:
 +	releaseall
 +	end
+diff --git a/src/event_object_movement.c b/src/event_object_movement.c
+index 6f0c7a7..9c03445 100644
+--- a/src/event_object_movement.c
++++ b/src/event_object_movement.c
+@@ -38,6 +38,8 @@
+ #include "constants/union_room.h"
+ #if defined(PLATFORM_3DS)
+ #include "3ds_field_view.h"
++#include "3ds_daynight.h"
++#include "3ds_extras.h" // optional settings (OPTIONS pages)
+ #endif
+ 
+ #define SPECIAL_LOCALIDS_START (min(LOCALID_CAMERA, \
+@@ -1785,6 +1787,66 @@ static bool8 EvictFurthestObjectEvent(float score, s16 left, s16 right, s16 top,
+     return TRUE;
+ }
+ 
++// Town life (OPTIONS, EXTRAS; with DAY / NIGHT on): in a town or a city the
++// children are home from 8 pm to 7 am and every other grown-up from 10 pm to
++// 6 am, so the streets are busy by day and quiet at night. Only townsfolk
++// that no story flag shows or hides and that are no trainer; a script that
++// adds one (addobject) still finds it.
++static bool8 TownLifeAway(const struct ObjectEventTemplate *template)
++{
++    unsigned seconds, rate, hour;
++
++    if (gMapHeader.mapType != MAP_TYPE_TOWN && gMapHeader.mapType != MAP_TYPE_CITY)
++        return FALSE;
++    if (template->flagId != 0 || template->trainerType != TRAINER_TYPE_NONE || template->kind != OBJ_KIND_NORMAL)
++        return FALSE;
++    if (!CtrExtras_Get("town_life") || !CtrExtras_Get("day_night") || !CtrDayNight_Time(&seconds, &rate))
++        return FALSE;
++    hour = seconds / 3600 % 24;
++    switch (template->graphicsId)
++    {
++    case OBJ_EVENT_GFX_NINJA_BOY:
++    case OBJ_EVENT_GFX_TWIN:
++    case OBJ_EVENT_GFX_BOY_1:
++    case OBJ_EVENT_GFX_GIRL_1:
++    case OBJ_EVENT_GFX_BOY_2:
++    case OBJ_EVENT_GFX_GIRL_2:
++    case OBJ_EVENT_GFX_LITTLE_BOY:
++    case OBJ_EVENT_GFX_LITTLE_GIRL:
++    case OBJ_EVENT_GFX_BOY_3:
++    case OBJ_EVENT_GFX_GIRL_3:
++    case OBJ_EVENT_GFX_RICH_BOY:
++    case OBJ_EVENT_GFX_YOUNGSTER:
++    case OBJ_EVENT_GFX_BUG_CATCHER:
++    case OBJ_EVENT_GFX_SCHOOL_KID_M:
++    case OBJ_EVENT_GFX_TUBER_F:
++    case OBJ_EVENT_GFX_TUBER_M:
++        return hour >= 20 || hour < 7;
++    case OBJ_EVENT_GFX_WOMAN_1:
++    case OBJ_EVENT_GFX_FAT_MAN:
++    case OBJ_EVENT_GFX_POKEFAN_F:
++    case OBJ_EVENT_GFX_MAN_1:
++    case OBJ_EVENT_GFX_WOMAN_2:
++    case OBJ_EVENT_GFX_EXPERT_M:
++    case OBJ_EVENT_GFX_EXPERT_F:
++    case OBJ_EVENT_GFX_MAN_2:
++    case OBJ_EVENT_GFX_WOMAN_3:
++    case OBJ_EVENT_GFX_POKEFAN_M:
++    case OBJ_EVENT_GFX_WOMAN_4:
++    case OBJ_EVENT_GFX_OLD_MAN:
++    case OBJ_EVENT_GFX_OLD_WOMAN:
++    case OBJ_EVENT_GFX_MAN_3:
++    case OBJ_EVENT_GFX_WOMAN_5:
++    case OBJ_EVENT_GFX_LASS:
++    case OBJ_EVENT_GFX_GENTLEMAN:
++    case OBJ_EVENT_GFX_BEAUTY:
++    case OBJ_EVENT_GFX_MAN_4:
++    case OBJ_EVENT_GFX_MAN_5:
++        return (hour >= 22 || hour < 6) && (template->localId & 1);
++    }
++    return FALSE;
++}
++
+ void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
+ {
+     u8 i, j, objectCount, waiting = 0;
+@@ -1811,6 +1873,7 @@ void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
+         float npcScore;
+ 
+         if (!IsInObjectEventWindow(npcX, npcY, left, right, top, bottom) || FlagGet(template->flagId)
++         || TownLifeAway(template)
+          || GetObjectEventIdByLocalIdAndMap(template->localId, mapNum, mapGroup) != OBJECT_EVENTS_COUNT)
+             continue;
+         npcScore = ObjectEventViewScore(npcX, npcY);
 diff --git a/src/text.c b/src/text.c
 index 0799a09..5cae582 100644
 --- a/src/text.c

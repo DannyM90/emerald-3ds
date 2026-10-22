@@ -67,6 +67,7 @@ static const OptRowDef sRowsField[] = {
     EXTRA_ROW("follower"),
     EXTRA_ROW("run_indoors"),
     EXTRA_ROW("field_hms"),
+    EXTRA_ROW("town_life"),
 };
 static const OptRowDef sRowsHelpers[] = {
     EXTRA_ROW("map_encounters"),
