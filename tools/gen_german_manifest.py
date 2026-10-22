@@ -64,6 +64,12 @@ ROWS = {"u8rows22": lambda n: n == 18 * 22, "u8rows9": lambda n: n == 27,
 STRIDE = {"sKeyboardChars": (8, 9)}
 # German-only additions (the port's patches reference these paths).
 EXTRA_GRAPHICS = (("graphics/credits/german_the_end.bin.lz", "sCreditsCopyrightEnd_Tilemap"),)
+# Graphics the German tree keeps as unnamed statics: the word in the literal
+# pool of a function both builds share (same size) points at the German one.
+CODE_REFERENCED = {
+    "graphics/pokemon_jump/bonuses.4bpp.lz": ("LoadPokeJumpGfx", 0x13C),
+    "graphics/pokemon_jump/bonuses.bin.lz": ("LoadPokeJumpGfx", 0x140),
+}
 # The other languages' own "THE END" tilemaps are not German data.
 SKIP_GRAPHICS = {
     "graphics/credits/spanish_the_end.bin.lz": "ES-only port asset; the German tilemap is added as german_the_end.bin.lz",
@@ -378,6 +384,33 @@ def german_only_edits(builds: Builds, tree: Path, files: dict, stats) -> None:
         stats["text"] += len(edits)
 
 
+def lz77_size(rom: bytes, offset: int) -> int:
+    """Compressed length of the LZ77 stream at offset, padded to 4 as stored."""
+    size, out, pos = int.from_bytes(rom[offset + 1:offset + 4], "little"), 0, offset + 4
+    while out < size:
+        flags = rom[pos]
+        pos += 1
+        for bit in range(8):
+            if out >= size:
+                break
+            if flags & (0x80 >> bit):
+                out += (rom[pos] >> 4) + 3
+                pos += 2
+            else:
+                out += 1
+                pos += 1
+    return (pos - offset + 3) & ~3
+
+
+def code_referenced(builds: Builds, relative: str):
+    function, at = CODE_REFERENCED[relative]
+    en, de = builds.en.get(function), builds.de.get(function)
+    if not en or not de or en[1] != de[1]:
+        raise SystemExit("%s: %s differs between the builds" % (relative, function))
+    offset = struct.unpack_from("<I", builds.de_rom, (de[0] & ~1) - ROM_BASE + at)[0] - ROM_BASE
+    return [relative, offset, lz77_size(builds.de_rom, offset)]
+
+
 def graphics(builds: Builds):
     seen, out, skipped, decompressed = {}, [], [], 0
     for language in REFERENCES:
@@ -386,6 +419,9 @@ def graphics(builds: Builds):
         for relative, offset, _ in manifest["graphics"]:
             seen.setdefault(relative, index.containing(offset))
     for relative, hit in sorted(seen.items()):
+        if relative in CODE_REFERENCED:
+            out.append(code_referenced(builds, relative))
+            continue
         if relative in SKIP_GRAPHICS:
             skipped.append([relative, SKIP_GRAPHICS[relative]])
             continue
