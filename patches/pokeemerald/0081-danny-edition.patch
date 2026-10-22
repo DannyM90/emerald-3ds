@@ -34,10 +34,16 @@ index 1993aaf..7e00284 100644
 +	releaseall
 +	end
 diff --git a/src/event_object_movement.c b/src/event_object_movement.c
-index 6f0c7a7..9c03445 100644
+index 6f0c7a7..d6e7473 100644
 --- a/src/event_object_movement.c
 +++ b/src/event_object_movement.c
-@@ -38,6 +38,8 @@
+@@ -33,11 +33,14 @@
+ #include "constants/event_objects.h"
+ #include "constants/field_effects.h"
+ #include "constants/items.h"
++#include "constants/map_types.h"
+ #include "constants/mauville_old_man.h"
+ #include "constants/trainer_types.h"
  #include "constants/union_room.h"
  #if defined(PLATFORM_3DS)
  #include "3ds_field_view.h"
@@ -46,7 +52,7 @@ index 6f0c7a7..9c03445 100644
  #endif
  
  #define SPECIAL_LOCALIDS_START (min(LOCALID_CAMERA, \
-@@ -1785,6 +1787,66 @@ static bool8 EvictFurthestObjectEvent(float score, s16 left, s16 right, s16 top,
+@@ -1785,6 +1788,66 @@ static bool8 EvictFurthestObjectEvent(float score, s16 left, s16 right, s16 top,
      return TRUE;
  }
  
@@ -113,7 +119,7 @@ index 6f0c7a7..9c03445 100644
  void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
  {
      u8 i, j, objectCount, waiting = 0;
-@@ -1811,6 +1873,7 @@ void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
+@@ -1811,6 +1874,7 @@ void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
          float npcScore;
  
          if (!IsInObjectEventWindow(npcX, npcY, left, right, top, bottom) || FlagGet(template->flagId)
