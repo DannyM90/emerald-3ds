@@ -57,7 +57,7 @@ Dekompilierung [pokeemerald-german](https://github.com/WalterWoshid/pokeemerald-
 die BPEE und BPED Byte für Byte nachbaut. Die Textstellen sind die des französischen,
 italienischen und spanischen Manifests: Jede wird im englischen Build gefunden und über
 dasselbe Symbol im deutschen Build zugeordnet. So kommen etwa 17.000 Texte, 2.300
-Datenfelder, 104 Grafiken, der Abspann und die Ebenen des Trainerhügels aus deinem ROM.
+Datenfelder, 106 Grafiken, der Abspann und die Ebenen des Trainerhügels aus deinem ROM.
 22 Textstellen ließen sich nicht eindeutig zuordnen und bleiben englisch; sie stehen im
 Manifest unter `unmapped_source_texts`.
 
