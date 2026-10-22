@@ -7386,3 +7386,130 @@ LINK_ROOMS = [
 ]
 SPECS += [{"name": n, "interior": {"layout": lid, "ground": [g], "pieces": own_shell(f())}}
           for (n, lid, g, f) in LINK_ROOMS]
+
+
+# The S.S. Tidal: the corridor round its block of cabins, the cargo on its
+# lower deck and the cabins; and Trainer Hill's entrance.
+
+def ss_tidal_corridor():
+    side = (64, 0, 80, 32)
+    return [
+        # the cabins' block: its roof white, its face to the south their
+        # doors, 26 px
+        piece("block", [(48, 57, 240, 159)], 26, solid=True, side=(48, 132, 64, 158)),
+        piece("wall", [(16, 0, 288, 32)], 32, fill=16, foot=32, side=side),
+        # the corridor runs on east, past the room's edge; the dark down its
+        # west side is beyond it
+        piece("side_w", [], 32, side=side, walls=[((16, 192), (16, 32))]),
+    ]
+
+
+def kw_pieces(prefix, cells, height, extra):
+    """rect_pieces(prefix, runs_of(cells), height) with each piece's own
+    keywords besides: `extra` {name: {keyword: value}}."""
+    return [piece(name, [(x0, y0, x1, y1)], min(height, y1 - y0 - 4), **extra.get(name, {}))
+            for (x0, y0, x1, y1) in run_rects(runs_of(cells))
+            for name in ["%s_%d_%d" % (prefix, x0 // 16, y0 // 16)]]
+
+
+def crate_stacks(cells):
+    """The lower deck's cargo, a piece to each rectangle of its cells: the
+    crates' tops drawn a cell above them, their fronts 16 px. The stacks
+    against the back wall have their sides dressed with their front's grey
+    (projected, they would be their dark outline)."""
+    return [piece("crates_%d_%d" % (x0 // 16, y0 // 16), [(x0, y0 - 16, x1, y1)], 16,
+                  **({"solid": True, "side": (x0 + 4, y1 - 14, x0 + 10, y1 - 8)} if y0 == 32 else {}))
+            for (x0, y0, x1, y1) in run_rects(runs_of(cells))]
+
+
+SS_TIDAL_CARGO = cell_runs((2, 2, 3), (3, 2, 3), (6, 2, 3), (7, 2, 3), (10, 2, 3), (11, 2, 3),
+                           (12, 2, 3), (1, 6, 7), (2, 6, 7), (3, 6, 7), (4, 6, 7), (5, 6, 7),
+                           (6, 6, 7), (8, 6, 7), (9, 6, 7), (11, 6, 7), (12, 6, 7), (13, 6, 7),
+                           (1, 11, 12), (2, 11, 12), (3, 11, 12), (4, 11, 12), (5, 11, 12),
+                           (6, 11, 12), (8, 11, 11), (9, 11, 11), (11, 11, 11), (12, 11, 11),
+                           (15, 10, 12), (16, 10, 12))
+
+# the cabins, four above (entered through their back walls) and four below
+# (entered from the front), the dark between them beyond the rooms: each
+# its back wall, its side walls and its furniture - the beds, the tables and
+# chairs - a piece to each rectangle of their cells, 12 px
+SS_TIDAL_CABIN_X = (1, 10, 19, 28)
+# the beds whose sides would be their dark outline, projected: dressed with a
+# plain patch of their blanket instead; and a bin on the carpet, the carpet
+# round it left
+SS_TIDAL_BLANKET = {"n0_1_2": (29, 41), "n0_6_2": (102, 41), "n1_10_2": (173, 41),
+                    "n1_15_2": (246, 41), "n2_19_2": (317, 41), "n3_33_2": (534, 41),
+                    "s0_1_11": (29, 185), "s0_6_11": (102, 185), "s2_24_11": (390, 185)}
+SS_TIDAL_FURNITURE_KW = dict(
+    {"furniture_" + k: {"solid": True, "side": (x, y, x + 6, y + 6)}
+     for k, (x, y) in SS_TIDAL_BLANKET.items()},
+    furniture_n1_10_5={"leave": ("de7b52", "bd5a41", "bd7341", "dea462")})
+SS_TIDAL_FURNITURE = {
+    "n0": "1,2 2,2 6,2 7,2 1,3 2,3 6,3 7,3 5,6 6,6 5,7 6,7 7,7",
+    "s0": "1,11 2,11 6,11 7,11 1,12 2,12 6,12 7,12",
+    "n1": "10,2 11,2 15,2 16,2 10,3 11,3 15,3 16,3 10,5 13,5 14,5 13,6 14,6",
+    "s1": "15,11 16,11 11,12 12,12 15,12 16,12 11,13 12,13 16,13",
+    "n2": "19,2 20,2 19,3 20,3 22,5 23,5 22,6 23,6 23,7",
+    "s2": "19,11 20,11 24,11 25,11 19,12 20,12 24,12 25,12",
+    "n3": "28,2 29,2 33,2 34,2 28,3 29,3 33,3 34,3 28,4 33,6 34,6 33,7 34,7",
+    "s3": "28,11 29,11 28,12 29,12 31,12 32,12 33,12 34,12 28,13 31,13 32,13 33,13 34,13",
+}
+
+
+def ss_tidal_rooms():
+    out = []
+    for i, cx in enumerate(SS_TIDAL_CABIN_X):
+        x0, x1 = cx * 16, (cx + 7) * 16
+        for row, top, foot, end in (("n", 0, 32, 128), ("s", 144, 176, 272)):
+            name = "%s%d" % (row, i)
+            cells = [tuple(int(v) for v in c.split(",")) for c in SS_TIDAL_FURNITURE[name].split()]
+            side = (x0, top, x0 + 16, foot)
+            out += kw_pieces("furniture_" + name, cells, 12, SS_TIDAL_FURNITURE_KW)
+            out += [
+                piece("wall_" + name, [(x0, top, x1, foot)], 32, fill=16, foot=foot, side=side),
+                piece("side_%s_w" % name, [], 32, side=side, walls=[((x0, end), (x0, foot))]),
+                piece("side_%s_e" % name, [], 32, side=side, walls=[((x1, foot), (x1, end))]),
+            ]
+    return out
+
+
+# Trainer Hill's entrance: a passage up to the elevator between the arms of
+# two counters, which run along the lobby's short back wall, a back counter
+# and a front one, the receptionists between them; the dark either side of
+# the passage is beyond the room. The front counter's flap (17,10), which
+# its script opens, stays drawn
+TRAINER_HILL_COUNTERS = (
+    cell_runs((7, 4, 4), (8, 4, 10), (10, 4, 9), (11, 4, 4))
+    + [(x, 8) for x in range(0, 19) if x not in (8, 9, 10, 11)] + [(11, 8), (11, 9), (11, 10)]
+    + [(x, 9) for x in (0, 1, 2, 3, 6, 7, 15)]
+    + [(x, 10) for x in (0, 1, 2, 3, 4, 5, 6, 7, 12, 13, 14, 15, 16, 18)])
+
+
+def trainer_hill_entrance():
+    shaft = (128, 0, 144, 32)
+    lobby = (48, 112, 64, 128)
+    # the west arm's sides dressed with its own teal (projected, its dark
+    # outline)
+    return kw_pieces("counter", TRAINER_HILL_COUNTERS, 12,
+                     {"counter_8_4": {"solid": True, "side": (128, 64, 134, 70)}}) + rect_pieces(
+        "benches", runs_of(cell_runs((1, 15, 15), (2, 15, 15), (3, 15, 15), (15, 15, 15),
+                                     (16, 15, 15), (17, 15, 15))), 12) + [
+        piece("wall", [(112, 0, 192, 32)], 32, fill=16, foot=32, side=shaft),
+        piece("side_shaft_w", [], 32, side=shaft, walls=[((112, 112), (112, 32))]),
+        piece("side_shaft_e", [], 32, side=shaft, walls=[((192, 32), (192, 112))]),
+        piece("wall_w", [(0, 112, 112, 128)], 16, fill=8, foot=128, side=lobby),
+        piece("wall_e", [(192, 112, 304, 128)], 16, fill=8, foot=128, side=lobby),
+        piece("side_w", [], 16, side=lobby, walls=[((0, 272), (0, 128))]),
+        piece("side_e", [], 16, side=lobby, walls=[((304, 128), (304, 272))]),
+    ]
+
+
+SPECS += [{"name": n, "interior": {"layout": lid, "ground": [g], "pieces": own_shell(f())}}
+          for (n, lid, g, f) in (
+              ("ss_tidal_corridor", "LAYOUT_SS_TIDAL_CORRIDOR", 0x2ba, ss_tidal_corridor),
+              ("ss_tidal_lower_deck", "LAYOUT_SS_TIDAL_LOWER_DECK", 0x20d,
+               lambda: crate_stacks(SS_TIDAL_CARGO) + room_shell(272, 208, 32)),
+              ("ss_tidal_rooms", "LAYOUT_SS_TIDAL_ROOMS", 0x238, ss_tidal_rooms),
+              # (named apart from Route 111's building of the same name)
+              ("trainer_hill_entrance_room", "LAYOUT_TRAINER_HILL_ENTRANCE", 0x331,
+               trainer_hill_entrance))]
