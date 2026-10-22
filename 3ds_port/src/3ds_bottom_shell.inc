@@ -389,9 +389,16 @@ static void DrawRun(const ViewState *s)
         AddHit(RUN_X - 1, HEAD_Y - 2, W - RUN_X + 1, HEAD_H + 4, HIT_COLUMN + COL_RUN);
 }
 
+static void DrawFlyHeader(const ViewState *s);
+
 static void DrawHeader(const ViewState *s)
 {
     DrawHeaderY(s);
+    if (s->mapFly)
+    {
+        DrawFlyHeader(s);
+        return;
+    }
     DrawTitle(s);
     DrawRepel(s);
     if (!s->inBattle)
