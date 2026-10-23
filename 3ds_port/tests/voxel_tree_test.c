@@ -197,7 +197,11 @@ int main(void)
     for (unsigned i = 24; i < parts.count; ++i)
     {
         const VoxelVertex *v = &parts.vertices[i];
-        assert(v->u <= 0.25f && v->v < 0.32f && v->v > 0.15f && v->y < 0.6f);
+        const float dim = (float)VOXEL_TREE_TEXTURE_DIM;
+
+        /* The tall tuft, 16 by 10 pixels at (0, 44) of the tree texture. */
+        assert(v->u <= 16.0f / dim + 1e-4f && v->y < 0.6f);
+        assert(v->v <= 1.0f - 44.0f / dim + 1e-4f && v->v >= 1.0f - 54.0f / dim - 1e-4f);
     }
 
     /* Small trees: the canopy top keeps its ground; each trunk cell - edge of
