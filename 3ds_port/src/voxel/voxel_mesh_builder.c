@@ -1876,6 +1876,30 @@ static bool BorderWaterLevel(int x, int y, float *level, float *shift)
     return true;
 }
 
+/* The belt of water's height at a point of the world, as EmitBorder lays it
+ * (over instance 0's base, each cell shifted south by its relief), for the
+ * battle's staging: a coast's sea reads as water, not as the border's
+ * two-course wall. After @jacobcorbett's pull request #111. */
+bool VoxelMesh_BorderWaterAt(float worldX, float worldZ, float *height)
+{
+    const VoxelMapInstance *ring = VoxelWorld_Instance(0);
+    int x = (int)floorf(worldX), z = (int)floorf(worldZ);
+    float level, shift;
+
+    if (ring == NULL || VoxelWorld_GetInstanceAt(x, z) != NULL
+     || !BorderWaterLevel(x, z, &level, &shift))
+        return false;
+    /* The cell drawn here may be the one north of it, shifted south. */
+    if (shift > 0.0f && (int)floorf(worldZ - shift) != z)
+    {
+        z = (int)floorf(worldZ - shift);
+        if (VoxelWorld_GetInstanceAt(x, z) != NULL || !BorderWaterLevel(x, z, &level, &shift))
+            return false;
+    }
+    *height = VoxelRelief_Base(ring) + level;
+    return true;
+}
+
 void VoxelMesh_EmitBorder(VoxelBuilder *builder, int x0, int y0, int x1, int y1)
 {
     float u0, v0, u1, v1;

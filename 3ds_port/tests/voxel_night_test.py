@@ -405,6 +405,7 @@ static uint8_t __C3D_Context[512] __attribute__((aligned(16)));
 #define C3DI_CONTEXT_TEX 0x118u
 #define C3DI_FLAG_TEX(unit) (1u << (23 + (unit)))
 static C3D_Tex sTreeAtlas, *sGlowBound;
+static float sGlowStrength;
 static C3D_TexEnv sEnvs[6];
 static int sBinds;
 static int sAlphaScale;

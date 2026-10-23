@@ -202,4 +202,9 @@ void VoxelMesh_DraftCell(VoxelBuilder *b, const VoxelMapInstance *inst, int x, i
  * Instance 0 only, and nothing indoors, where the filler is the clear colour. */
 void VoxelMesh_EmitBorder(VoxelBuilder *builder, int x0, int y0, int x1, int y1);
 
+/* The flat belt of water's height at a point of the world outside every map,
+ * instance 0's base included; false anywhere else (maps, stood borders,
+ * indoors). For the battle's staging. */
+bool VoxelMesh_BorderWaterAt(float worldX, float worldZ, float *height);
+
 #endif

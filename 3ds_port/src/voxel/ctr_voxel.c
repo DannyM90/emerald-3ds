@@ -1178,6 +1178,9 @@ extern uint8_t __C3D_Context[];
 #define C3DI_CONTEXT_TEX 0x118u
 #define C3DI_FLAG_TEX(unit) (1u << (23 + (unit)))
 static C3D_Tex *sGlowBound;
+/* The windows' glow strength BuildingGlowEnv set, 0 while the glow is off:
+ * DrawStatics varies it building by building (WindowLife). */
+static float sGlowStrength;
 
 enum { STREAM_IDLE, STREAM_READING, STREAM_DONE, STREAM_FAILED };
 
@@ -7211,11 +7214,69 @@ static void TerrainTexEnv(const VoxelLight *dapples)
     C3D_TexEnvFunc(env, C3D_Alpha, GPU_REPLACE);
 }
 
+/*
+ * Life behind the lit windows (TOWN LIFE, with the windows' glow): building
+ * by building, now and then someone passes inside and the windows dim for
+ * a moment, and late at night most houses go to bed - their windows dark
+ * from between 23:00 and 1:30 until between 5:00 and 6:30. A third keep a
+ * light on all night. Each building's own times come from where it stands.
+ */
+#define WINDOW_PASS_FRAMES 48u
+
+static float WindowLife(float x, float z)
+{
+    static uint32_t sReadFrame = UINT32_MAX;
+    static bool sOn;
+    static unsigned sMinute;
+    uint32_t h = (uint32_t)(int32_t)floorf(x) * 73856093u ^ (uint32_t)(int32_t)floorf(z) * 19349663u;
+    uint32_t period, phase;
+
+    if (sReadFrame != sFrame)
+    {
+        unsigned seconds, rate;
+
+        sReadFrame = sFrame;
+        sOn = CtrSettings_GetInt("town_life", 1) == 1 && CtrDayNight_Time(&seconds, &rate);
+        sMinute = sOn ? seconds / 60u : 0u;
+    }
+    if (!sOn)
+        return 1.0f;
+    h ^= h >> 13;
+    h *= 0x5BD1E995u;
+    h ^= h >> 15;
+    if ((h >> 4) % 3u != 0u)
+    {
+        unsigned off = 1380u + (h >> 8) % 150u, on = 300u + (h >> 16) % 90u;
+
+        if (off < 1440u ? sMinute >= off || sMinute < on : sMinute >= off - 1440u && sMinute < on)
+            return 0.0f;
+    }
+    /* someone passing: every 6 to 14 seconds, a dip of under a second */
+    period = 360u + h % 480u;
+    phase = (sFrame + (h >> 3)) % period;
+    if (phase < WINDOW_PASS_FRAMES)
+    {
+        float t = (float)phase / (float)WINDOW_PASS_FRAMES;
+
+        return 1.0f - 0.65f * (t < 0.5f ? t * 2.0f : (1.0f - t) * 2.0f);
+    }
+    return 1.0f;
+}
+
+/* The glow of the next draw, for the building standing at x, z. */
+static void GlowLifeAt(float x, float z)
+{
+    if (sGlowStrength > 0.0f)
+        C3D_TexEnvColor(C3D_GetTexEnv(1),
+                        (uint32_t)(sGlowStrength * WindowLife(x, z) * 255.0f + 0.5f) << 24);
+}
+
 static void ReleaseGlowUnit(void)
 {
     uint32_t *flags = (uint32_t *)(void *)(__C3D_Context + C3DI_CONTEXT_FLAGS);
     C3D_Tex **bound = (C3D_Tex **)(void *)(__C3D_Context + C3DI_CONTEXT_TEX);
 
+    sGlowStrength = 0.0f;
     if (sGlowBound == NULL)
         return;
     if (bound[2] == sGlowBound)
@@ -7427,6 +7488,7 @@ static void BuildingGlowEnv(C3D_Tex *mask, float strength, const VoxelLight *dap
     }
     C3D_TexBind(2, mask);
     sGlowBound = mask;
+    sGlowStrength = strength;
     env = C3D_GetTexEnv(1);
     C3D_TexEnvSrc(env, C3D_Alpha, GPU_TEXTURE2, GPU_CONSTANT, GPU_CONSTANT);
     C3D_TexEnvOpAlpha(env, GPU_TEVOP_A_SRC_R, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA);
@@ -7894,6 +7956,8 @@ static void DrawStatics(const C3D_Mtx *view, const VoxelLight *dapples, bool glo
                 continue;
             }
             SetModelViewAt(view, x, s->y, z);
+            if (glowing)
+                GlowLifeAt(x, z);
 #if CTR_VOXEL_LIGHTING
             /* The dapples are worked out from the model's own frame: whole
              * tiles of its spot (a model stands on a whole cell), slid along

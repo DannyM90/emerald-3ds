@@ -22,6 +22,7 @@
 #include "ctr_battle_layout.h"
 #include "voxel_battle.h"
 #include "voxel_building.h"
+#include "voxel_mesh_builder.h"
 #include "voxel_relief.h"
 #include "voxel_tree.h"
 #include "voxel_world.h"
@@ -155,6 +156,14 @@ static void ReadCell(StageCell *cell, int x, int z, bool indoor)
     cell->lift = VoxelRelief_LiftAt(x + 0.5f, z + 0.5f);
     if (inst == NULL)
     {
+        /* A coast's belt of sea lies flat at the level the field draws it:
+         * water, not a wall two tiles high, though no one walks on it. */
+        if (!indoor && VoxelMesh_BorderWaterAt(x + 0.5f, z + 0.5f, &cell->lift))
+        {
+            cell->kind = GROUND_WATER;
+            cell->blocked = true;
+            return;
+        }
         /* Indoors the room ends in black; outdoors in the map's border,
          * which is mostly trees. */
         cell->kind = indoor ? GROUND_VOID : GROUND_PLAIN;
@@ -481,7 +490,8 @@ bool VoxelBattle_StepStage(unsigned cells, unsigned candidates, float *targetX, 
     }
     *targetX = sStage.bestX;
     *targetZ = sStage.bestZ;
-    *ground = VoxelRelief_LiftAt(sStage.bestX, sStage.bestZ);
+    if (!VoxelMesh_BorderWaterAt(sStage.bestX, sStage.bestZ, ground))
+        *ground = VoxelRelief_LiftAt(sStage.bestX, sStage.bestZ);
     return true;
 }
 
