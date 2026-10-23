@@ -370,6 +370,30 @@ void CtrSettings_StepSpeed(int direction, bool wrap)
     CtrLog_Write(CTR_LOG_FS, "settings: speed=%d%s", sSpeeds[sSpeed] / 2, sSpeeds[sSpeed] & 1 ? ".5" : "");
 }
 
+/*
+ * The battle scene's own fast-forward (L and R in battle, 3ds_platform.c):
+ * settings.txt's battle_speed=, in halves like sSpeeds. 0, as a new card
+ * has it, means the battle follows the SPEED the player uses in the
+ * overworld; the first L or R press in a battle sets one of its own.
+ */
+int CtrSettings_BattleSpeedHalves(void)
+{
+    int halves = CtrSettings_GetInt("battle_speed", 0);
+
+    return Find(sSpeeds, COUNT(sSpeeds), halves, -1) >= 0 ? halves : sSpeeds[sSpeed];
+}
+
+/* Stops at 1x and 4x like ZR and ZL, or goes round (4x to 1x) when `wrap`. */
+void CtrSettings_StepBattleSpeed(int direction, bool wrap)
+{
+    int next = Find(sSpeeds, COUNT(sSpeeds), CtrSettings_BattleSpeedHalves(), 0) + (direction < 0 ? -1 : 1);
+
+    if (wrap)
+        next = (next + COUNT(sSpeeds)) % COUNT(sSpeeds);
+    if (next >= 0 && next < COUNT(sSpeeds))
+        CtrSettings_SetInt("battle_speed", sSpeeds[next]);
+}
+
 bool CtrSettings_VoxelBlur(void)
 {
     return sBlurs[sBlur] > 0;
