@@ -231,6 +231,9 @@ static VoxelGpuVertex *sRays;
 static unsigned sRayCount;
 /* The sunlit dust's vertices, rewritten every frame, linear; see DrawMotes. */
 static VoxelGpuVertex *sMotes;
+/* The fireflies' (TOWN LIFE, at night), a buffer of their own: at dusk both
+ * are drawn in one frame. */
+static VoxelGpuVertex *sFireflies;
 /* This frame's bloom strength, for the 2D compositor (CtrVoxel_Bloom). */
 static float sBloomStrength;
 /* The fog's drifting banks and the dark of a cave (FogSheets, MakeGloom). */
@@ -2446,6 +2449,8 @@ void CtrVoxel_Shutdown(void)
     sRayCount = 0;
     linearFree(sMotes);
     sMotes = NULL;
+    linearFree(sFireflies);
+    sFireflies = NULL;
     if (sFogTex.data != NULL)
     {
         C3D_TexDelete(&sFogTex);
@@ -6850,6 +6855,9 @@ static void MakeMotes(void)
     sMotes = linearAlloc(VOXEL_MOTES * VOXEL_MOTE_VERTICES * sizeof(VoxelGpuVertex));
     if (sMotes == NULL)
         CtrLog_Write(CTR_LOG_ERROR, "VOXEL: no linear memory for the sunlit dust");
+    sFireflies = linearAlloc(VOXEL_MOTES * VOXEL_MOTE_VERTICES * sizeof(VoxelGpuVertex));
+    if (sFireflies == NULL)
+        CtrLog_Write(CTR_LOG_ERROR, "VOXEL: no linear memory for the fireflies");
 }
 
 /* A fixed pseudo-random number in 0..1 for mote i. */
@@ -6950,6 +6958,95 @@ static void DrawMotes(const C3D_Mtx *view, const VoxelLight *light, const VoxelL
     C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD,
                    GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ZERO, GPU_ONE);
+}
+
+/*
+ * Fireflies (TOWN LIFE, after Danny's own hack): on a clear night, small
+ * yellow-green lights low over the ground, each wandering round its own spot
+ * and blinking on and off in its own time. Drawn as the dust is, from a
+ * buffer of their own, with `strength` the night's (0 by day).
+ */
+#define VOXEL_FIREFLY_COLOUR 0xFF50FFC8u
+#define VOXEL_FIREFLY_SIZE 0.075f
+
+static void DrawFireflies(const C3D_Mtx *view, const VoxelLight *unlit, float strength)
+{
+    int originX = (int)floorf(sCamera.targetX), originZ = (int)floorf(sCamera.targetZ);
+    float seconds = (float)fmod((double)svcGetSystemTick() / SYSCLOCK_ARM11, 3600.0);
+    float rx = view->r[0].x * VOXEL_FIREFLY_SIZE, ry = view->r[0].y * VOXEL_FIREFLY_SIZE;
+    float rz = view->r[0].z * VOXEL_FIREFLY_SIZE;
+    float ux = view->r[1].x * VOXEL_FIREFLY_SIZE, uy = view->r[1].y * VOXEL_FIREFLY_SIZE;
+    float uz = view->r[1].z * VOXEL_FIREFLY_SIZE;
+    unsigned alpha = (unsigned)(strength * 255.0f + 0.5f);
+    VoxelGpuVertex *v = sFireflies;
+    C3D_TexEnv *env;
+
+    for (unsigned i = 0; i < VOXEL_MOTES; ++i)
+    {
+        float phase = MoteRandom(i, 11) * 6.2832f;
+        float speed = 0.25f + 0.25f * MoteRandom(i, 12);
+        /* a spot of its own in the anchored world, wandered round slowly */
+        float wx = MoteRandom(i, 13) * 64.0f + 0.9f * sinf(seconds * speed + phase);
+        float wz = MoteRandom(i, 14) * 64.0f + 0.7f * sinf(seconds * speed * 1.3f + phase * 1.7f);
+        float x = Wrap(wx - (float)(originX + sDappleAnchorX) + VOXEL_MOTE_HALF_X,
+                       2.0f * VOXEL_MOTE_HALF_X) - VOXEL_MOTE_HALF_X;
+        float z = Wrap(wz - (float)(originZ + sDappleAnchorZ) + VOXEL_MOTE_HALF_Z,
+                       2.0f * VOXEL_MOTE_HALF_Z) - VOXEL_MOTE_HALF_Z;
+        float y = sCamera.targetY + 0.2f + 1.1f * MoteRandom(i, 15)
+                + 0.25f * sinf(seconds * speed * 2.1f + phase);
+        /* on for a while, then dark: the positive half of a slow wave, sharpened */
+        float blink = sinf(seconds * (0.6f + 0.5f * MoteRandom(i, 16)) + phase);
+        float glow = blink > 0.0f ? blink * blink : 0.0f;
+
+        MoteVertex(&v[0], x, y, z, glow);
+        MoteVertex(&v[1], x + ux, y + uy, z + uz, 0.0f);
+        MoteVertex(&v[2], x + rx, y + ry, z + rz, 0.0f);
+        v[3] = v[0];
+        MoteVertex(&v[4], x + rx, y + ry, z + rz, 0.0f);
+        MoteVertex(&v[5], x - ux, y - uy, z - uz, 0.0f);
+        v[6] = v[0];
+        MoteVertex(&v[7], x - ux, y - uy, z - uz, 0.0f);
+        MoteVertex(&v[8], x - rx, y - ry, z - rz, 0.0f);
+        v[9] = v[0];
+        MoteVertex(&v[10], x - rx, y - ry, z - rz, 0.0f);
+        MoteVertex(&v[11], x + ux, y + uy, z + uz, 0.0f);
+        v += VOXEL_MOTE_VERTICES;
+    }
+    GSPGPU_FlushDataCache(sFireflies, VOXEL_MOTES * VOXEL_MOTE_VERTICES * sizeof(VoxelGpuVertex));
+
+    SetModelView(view, originX, originZ);
+    SetGrade(unlit);
+    env = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env);
+    C3D_TexEnvSrc(env, C3D_RGB, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
+    C3D_TexEnvFunc(env, C3D_RGB, GPU_REPLACE);
+    C3D_TexEnvSrc(env, C3D_Alpha, GPU_PRIMARY_COLOR, GPU_CONSTANT, GPU_CONSTANT);
+    C3D_TexEnvOpAlpha(env, GPU_TEVOP_A_SRC_R, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA);
+    C3D_TexEnvFunc(env, C3D_Alpha, GPU_MODULATE);
+    C3D_TexEnvScale(env, C3D_Alpha, GPU_TEVSCALE_2);
+    C3D_TexEnvColor(env, (alpha << 24) | (VOXEL_FIREFLY_COLOUR & 0xFFFFFFu));
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+    C3D_TexEnvInit(C3D_GetTexEnv(2));
+    FadeFor(false);
+
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
+    C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_COLOR);
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE, GPU_ZERO, GPU_ONE);
+    BindVertices(sFireflies);
+    C3D_DrawArrays(GPU_TRIANGLES, 0, VOXEL_MOTES * VOXEL_MOTE_VERTICES);
+    C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD,
+                   GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ZERO, GPU_ONE);
+}
+
+/* How strongly the fireflies show: TOWN LIFE on, outdoors and above ground,
+ * on a night whose weather would have the sunlit dust by day. */
+static float FireflyStrength(bool indoor)
+{
+    if (indoor || sFireflies == NULL || VoxelWorld_Underground()
+     || CtrSettings_GetInt("town_life", 1) != 1 || BaseLightFor(false).motes < 0.3f)
+        return 0.0f;
+    return 1.0f - CtrDayNight_Get()->daylight;
 }
 
 /*
@@ -8300,6 +8397,12 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
     /* Before the rays, which leave the orthographic projection behind. */
     if (sMotes != NULL && light.motes > 0.005f)
         DrawMotes(&view, &light, &unlit);
+    {
+        float fireflies = FireflyStrength(indoor) * (1.0f - neutral);
+
+        if (fireflies > 0.005f)
+            DrawFireflies(&view, &unlit, fireflies);
+    }
 #endif
 #if CTR_VOXEL_LIGHTING
     {

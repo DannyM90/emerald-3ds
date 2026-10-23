@@ -36,6 +36,25 @@ NIGHT_WINDOWS = {
                                  for xpos in (10, 18, 26, 34, 42, 114, 122, 130, 138, 146)),
 }
 
+# The lit signs (after Danny's own hack): the Pokémon Center's and the Mart's
+# sign board and the white of the Poké Ball over the door glow at night like
+# a lightbox, the letters staying dark on it. Only the drawing's near-white
+# pixels in each rectangle light.
+NIGHT_SIGNS = {
+    "pokemon_center": ((40, 46, 56, 56, 235), (26, 24, 39, 33, 190)),
+    "poke_mart": ((40, 46, 56, 56, 235), (26, 24, 39, 33, 190)),
+}
+
+
+def sign_mask(art, mask, signs):
+    width = art.width
+    for left, top, right, bottom, strength in signs:
+        for ypos in range(top, bottom):
+            for xpos in range(left, right):
+                red, green, blue, alpha = art.getpixel((xpos, ypos))
+                if alpha >= 128 and min(red, green, blue) > 200:
+                    mask[ypos * width + xpos] = max(mask[ypos * width + xpos], strength)
+
 
 def window_mask(art, rectangles):
     width, height = art.size
@@ -95,6 +114,8 @@ def building_mask(art, name):
                     red, green, blue, alpha = art.getpixel((xpos, ypos))
                     if alpha >= 128 and red >= 32 and green > red + 2 and blue > red + 12:
                         mask[ypos * art.width + xpos] = 180
+    if name in NIGHT_SIGNS:
+        sign_mask(art, mask, NIGHT_SIGNS[name])
     if rectangles and not any(mask):
         raise ValueError("%s has no glass pixels in its authored windows" % name)
     return mask
