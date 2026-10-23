@@ -72,6 +72,7 @@
 #include "item.h"
 #include "item_icon.h"
 #include "item_menu.h"
+#include "landmark.h"
 #include "menu.h"
 #include "new_game.h"
 #include "overworld.h"
@@ -97,6 +98,7 @@
 #include "wild_encounter.h"
 #include "constants/items.h"
 #include "constants/maps.h"
+#include "constants/moves.h"
 #include "constants/vars.h"
 #include "constants/map_types.h"
 #include "constants/party_menu.h"
@@ -2219,8 +2221,16 @@ typedef struct
     u8 dock, dockLocked;
     /* Party: SAVE's and NUZLOCKE's icons. */
     MonView party[PARTY_SIZE];
-    /* Region map, and the header's clock. */
+    /* Region map, and the header's clock. Zoomed in, the view's top left in
+     * map pixels; the picked section's kind (MAPSECTYPE_*), the cell's place
+     * in it and the landmarks its panel lists. The Fly map: the towns
+     * visited (a bit each from Littleroot), the Battle Frontier's outline,
+     * whether the pick is a place to fly to. */
     u8 mapsec, cursorX, cursorY, pickMapsec, pickX, pickY;
+    u8 mapZoom, pickType, pickPos, landmarks;
+    s16 mapViewX, mapViewY;
+    u8 mapFly, flyFrontier, flyCanFly;
+    u16 flyVisited;
     u8 clockShown, clockValid, clockRate, clockPhase;
     u16 clockMinute;
     /* Map extras (3ds_field_qol_extras.inc), all zero with them off: the
@@ -2365,7 +2375,13 @@ static bool8 RectsMeet(int ax0, int ay0, int ax1, int ay1, int bx0, int by0, int
 
 /* Per screen state, kept while another screen is shown. */
 
-static u8 sPickMapsec = MAPSEC_NONE, sPickX, sPickY;
+static u8 sPickMapsec = MAPSEC_NONE, sPickX, sPickY, sPickPos;
+/* MAP zoomed in (twice the size, the view's top left in map pixels); the Fly
+ * map: who flies, and the screen it came from (POKéMON or BAG), back there
+ * if cancelled. While it is up the game sees no buttons. */
+static bool8 sMapZoom, sMapFly;
+static u8 sFlySlot, sFlyFrom;
+static s16 sMapViewX, sMapViewY;
 /* Map extras: the wild list instead of the map, its page; the load
  * (CtrClockStore_LoadSerial) whose clock banner was dismissed. */
 static bool8 sEncView;
@@ -2405,6 +2421,10 @@ enum
     HIT_MAP_INFO,          /* the title: map <-> wild list (map extras) */
     HIT_MAP_PAGE,          /* the wild list: its next page */
     HIT_CLOCK_NOTICE,      /* the clock banner: hide it */
+    HIT_MAP_ZOOM,          /* zoom in or back out */
+    HIT_MAP_PANEL,         /* the place's panel: nothing under it */
+    HIT_MAP_FLY,           /* the Fly map's FLY */
+    HIT_MAP_FLY_CANCEL,    /* the Fly map's CANCEL */
     HIT_OPTION = 0xC0,     /* + option row; +HIT_OPTION_BACK for its back half */
     HIT_PAGE = 0xE0,       /* + OPTIONS category tab; + 8 + group tab */
 };
@@ -3355,6 +3375,7 @@ static void SnapshotClock(ViewState *s)
 }
 
 static void SnapshotOptionRows(ViewState *s);
+static u8 MapLandmarks(u8 mapsec, u8 type, u8 pos);
 
 static void Snapshot(ViewState *s, u8 mode, u8 pressed)
 {
@@ -3407,7 +3428,9 @@ static void Snapshot(ViewState *s, u8 mode, u8 pressed)
     s->dock = mode < MODE_BATTLE_INFO && s->screen < SCR_COUNT
            && (!s->inBattle || mode == MODE_SUMMARY
                || ((mode == MODE_PARTY_MENU || mode == MODE_BAG_MENU) && s->bagView == BAG_VIEW_SECTION));
-    s->dockLocked = s->dock && s->inBattle;
+    /* The Fly map: only MAP, which cancels it, as in a battle's menus. */
+    s->mapFly = sMapFly && mode == MODE_FIELD && s->screen == SCR_MAP && s->dock;
+    s->dockLocked = s->dock && (s->inBattle || s->mapFly);
     StringCopy(s->name, gSaveBlock2Ptr->playerName);
     /* The header's Y and RUN, and the focus on the dock or the header; in a
      * battle neither is for now. */
@@ -3426,12 +3449,34 @@ static void Snapshot(ViewState *s, u8 mode, u8 pressed)
             s->pickMapsec = sPickMapsec;
             s->pickX = sPickX;
             s->pickY = sPickY;
-            SnapshotMapExtras(s);
+            s->mapZoom = sMapZoom;
+            if (sMapZoom)
+            {
+                s->mapViewX = sMapViewX;
+                s->mapViewY = sMapViewY;
+            }
+            if (sPickMapsec != MAPSEC_NONE)
+            {
+                s->pickType = CtrRegionMap_MapSecType(sPickMapsec);
+                s->pickPos = sPickPos;
+                if (sMapZoom)
+                    s->landmarks = MapLandmarks(sPickMapsec, s->pickType, sPickPos);
+            }
+            if (s->mapFly)
+            {
+                for (int i = 0; i <= MAPSEC_EVER_GRANDE_CITY - MAPSEC_LITTLEROOT_TOWN; ++i)
+                    if (FlagGet(FLAG_VISITED_LITTLEROOT_TOWN + i))
+                        s->flyVisited |= 1 << i;
+                s->flyFrontier = FlagGet(FLAG_LANDMARK_BATTLE_FRONTIER) != 0;
+                s->flyCanFly = s->pickType == MAPSECTYPE_CITY_CANFLY || s->pickType == MAPSECTYPE_BATTLE_FRONTIER;
+            }
+            else
+                SnapshotMapExtras(s);
         }
         else
             s->cursorX = s->cursorY = 0;
         /* Read only: the step counter is the game's (UpdateRepelCounter). */
-        if (CtrExtras_Get("repel_steps") == 1 && !s->inBattle)
+        if (CtrExtras_Get("repel_steps") == 1 && !s->inBattle && !s->mapFly)
         {
             s->repelShown = TRUE;
             s->repelSteps = VarGet(VAR_REPEL_STEP_COUNT);
@@ -4678,7 +4723,7 @@ static void BuildBackgroundCaches(void)
     LoadMenuBackdrop(sCache[CACHE_MENU]);
     sDst = sCache[CACHE_WIDE];
     DrawPartyBackground(W / 8, H / 8);
-    BuildMapCache();
+    BuildMapCache(FALSE, 0, 0);
     if (sCache[CACHE_GAME])
     {
         memcpy(sCache[CACHE_GAME], sCache[CACHE_MENU], sizeof(sCanvas));
@@ -4918,6 +4963,8 @@ static void Render(const ViewState *s)
     }
     else
     {
+        if (!s->native && s->screen == SCR_MAP && !s->encView)
+            EnsureMapCache(s);
         CopyCache(SectionCache(s));
         phase[1] = CtrPlatform_Ticks();
         if (s->native)
@@ -5890,6 +5937,110 @@ static void MapExtrasTap(u8 id)
         sClockNoticeSerial = CtrClockStore_LoadSerial();
 }
 
+static bool8 OpenGameScreen(u8 screen);
+
+/*
+ * The Fly map, from public PR #108: FLY from the party or the bag's HM opens
+ * the MAP here, its icons on it, instead of the game's Fly map. Till FLY or
+ * CANCEL the game sees no buttons (CtrBottom_FilterKeys) and the dock is
+ * locked; A is FLY, B is CANCEL.
+ */
+void CtrBottom_OpenFlyMap(u8 slot, bool8 fromBag)
+{
+    u8 x, y;
+
+    sMapFly = TRUE;
+    sMapZoom = FALSE;
+    sFlySlot = slot;
+    sFlyFrom = fromBag ? SCR_BAG : SCR_POKEMON;
+    sScreen = SCR_MAP;
+    sEncView = FALSE;
+    sFocus = FOCUS_NONE;
+    sInside = INSIDE_NONE;
+    /* The cursor where the player is, as CB2_OpenFlyMap has it. */
+    sPickMapsec = PlayerRegionPosition(&x, &y);
+    sPickX = x;
+    sPickY = y;
+    sPickPos = sPickMapsec != MAPSEC_NONE ? CtrRegionMap_PosWithinMapSec(x, y, sPickMapsec) : 0;
+    CtrLog_Write(CTR_LOG_INPUT, "bottom screen: fly map by %u", slot);
+}
+
+static void EndFlyMap(void)
+{
+    sMapFly = FALSE;
+    sMapZoom = FALSE;
+    sPickMapsec = MAPSEC_NONE;
+    /* The A or B that ended it is not the game's. */
+    sSwallow = TRUE;
+}
+
+/* CANCEL: back to the party or the bag it came from, as the game's Fly map
+ * goes back; on the map if the field is not free for it. */
+static void CancelFlyMap(void)
+{
+    if (!sMapFly)
+        return;
+    EndFlyMap();
+    PlaySE(SE_SELECT);
+    OpenGameScreen(sFlyFrom);
+}
+
+/* FLY: CB_ExitFlyMap's destination, then the flight from the field as it is
+ * (CtrParty_Fly). Only where the game's Fly map would let it go, with the
+ * player standing in the field and nothing under way. */
+static void FlyFromMap(void)
+{
+    if (!sShown.mapFly || !sShown.flyCanFly || sPickMapsec == MAPSEC_NONE)
+        return;
+    if (!FieldIdle() || !Overworld_MapTypeAllowsTeleportAndFly(gMapHeader.mapType))
+    {
+        PlaySE(SE_FAILURE);
+        return;
+    }
+    PlaySE(SE_SELECT);
+    CtrLog_Write(CTR_LOG_INPUT, "bottom screen: fly to %u (%u) by %u", sPickMapsec, sPickPos, sFlySlot);
+    CtrParty_Fly(sFlySlot, sPickMapsec, sPickPos);
+    EndFlyMap();
+}
+
+static void MapTap(u8 id)
+{
+    switch (id)
+    {
+    case HIT_MAP:
+        PickMapCell(sTouch.lastX, sTouch.lastY);
+        break;
+    case HIT_MAP_ZOOM:
+        if (sShown.encView)
+            break;
+        sMapZoom = !sMapZoom;
+        if (sMapZoom)
+        {
+            u8 x, y;
+
+            if (sPickMapsec != MAPSEC_NONE)
+                MapZoomTo(sPickX, sPickY, PickPanelWidth(sPickMapsec, sPickPos));
+            else if (PlayerRegionPosition(&x, &y) != MAPSEC_NONE)
+                MapZoomTo(x, y, 0);
+            else
+                MapZoomTo(MAP_PIC_W / 16, MAP_PIC_H / 16, 0);
+        }
+        PlaySE(SE_SELECT);
+        break;
+    case HIT_MAP_FLY:
+        FlyFromMap();
+        break;
+    case HIT_MAP_FLY_CANCEL:
+        CancelFlyMap();
+        break;
+    case HIT_MAP_PANEL:
+        break;
+    default:
+        MapExtrasTap(id);
+        break;
+    }
+}
+
 /*
  * The game's bag, party menu or Pokédex for BAG, POKéMON or POKéDEX, opened from the field as the
  * start menu opens it. Chosen while another screen was up - the Pokédex, the
@@ -5982,6 +6133,13 @@ static void Activate(u8 id, u8 mode)
     {
         u8 screen = id - HIT_COLUMN;
 
+        /* The Fly map: the dock is locked; MAP, its own, cancels it. */
+        if (sShown.mapFly)
+        {
+            if (screen == SCR_MAP)
+                CancelFlyMap();
+            return;
+        }
         /* A battle's party menu, summary or bag: only its own button, their B. */
         if (gMain.inBattle && screen != sShown.screen)
             return;
@@ -6119,10 +6277,7 @@ static void Activate(u8 id, u8 mode)
     switch (sShown.screen)
     {
     case SCR_MAP:
-        if (id == HIT_MAP)
-            PickMapCell(sTouch.lastX, sTouch.lastY);
-        else
-            MapExtrasTap(id);
+        MapTap(id);
         break;
     case SCR_CARD:
         if (id == HIT_OK)
@@ -6411,7 +6566,7 @@ uint16_t CtrBottom_FilterKeys(uint16_t held)
      * forbids the reset (a link save). */
     if ((held & CTR_SOFT_RESET_KEYS) == CTR_SOFT_RESET_KEYS && !gSoftResetDisabled)
         return sFocus != FOCUS_NONE || sInside != INSIDE_NONE || sSwallow ? CTR_SOFT_RESET_KEYS : held;
-    return sFocus != FOCUS_NONE || sInside != INSIDE_NONE || sSwallow ? 0 : held;
+    return sFocus != FOCUS_NONE || sInside != INSIDE_NONE || sSwallow || sMapFly ? 0 : held;
 }
 
 /* Whether the dock is on screen: not in battle, not under the boxes or the
@@ -6568,6 +6723,14 @@ static void ProcessKeys(u8 mode)
             LeaveFocus();
         return;
     }
+    if (sMapFly)
+    {
+        if (sShown.mapFly && (down & A_BUTTON))
+            FlyFromMap();
+        else if (sShown.mapFly && (down & B_BUTTON))
+            CancelFlyMap();
+        return;
+    }
     /* A tap took the screen elsewhere. */
     if ((sInside == INSIDE_OPTIONS && sScreen != SCR_OPTION) || (sInside == INSIDE_SAVE && sScreen != SCR_SAVE))
     {
@@ -6670,6 +6833,8 @@ static bool8 MapCursorOnlyMoved(const ViewState *now, const ViewState *shown)
      || now->mapsec == MAPSEC_NONE || shown->mapsec == MAPSEC_NONE
      /* The wild list has no marks to move; the clock banner lies over them. */
      || now->encView || shown->encView || now->clockNotice || shown->clockNotice
+     /* Nothing walks on the Fly map; its icons are not in the cache. */
+     || now->mapFly || shown->mapFly
      || (now->cursorX == shown->cursorX && now->cursorY == shown->cursorY
          && now->mapsec == shown->mapsec))
         return FALSE;
@@ -6696,8 +6861,13 @@ static bool8 MoveMapCursor(const ViewState *from, const ViewState *to)
 
     if (sCache[CACHE_MAP] == NULL || icon == NULL || CtrVideo_BottomInUse() || CtrVideo_BottomWhole())
         return FALSE;
-    MarkRect(from->cursorX, from->cursorY, &r[0][0], &r[0][1], &r[0][2], &r[0][3]);
-    MarkRect(to->cursorX, to->cursorY, &r[1][0], &r[1][1], &r[1][2], &r[1][3]);
+    MarkRect(from, from->cursorX, from->cursorY, &r[0][0], &r[0][1], &r[0][2], &r[0][3]);
+    MarkRect(to, to->cursorX, to->cursorY, &r[1][0], &r[1][1], &r[1][2], &r[1][3]);
+    /* The zoom button and the place panel are drawn over the map, not in its
+     * cache: a mark under them is a whole redraw. */
+    for (int k = 0; k < 2; ++k)
+        if (MapOverlayMeets(to, r[k][0], r[k][1], r[k][2], r[k][3]))
+            return FALSE;
     /* The old square as the map cache has it (the canvas is its layout). */
     for (int x = r[0][0]; x < r[0][2]; ++x)
         memcpy(sCanvas + x * H + (H - r[0][3]), sCache[CACHE_MAP] + x * H + (H - r[0][3]),
@@ -6878,6 +7048,7 @@ void CtrBottom_SoftReset(void)
     sInside = INSIDE_NONE;
     sSwallow = FALSE;
     sScreen = SCR_MAP;
+    sMapZoom = sMapFly = FALSE;
     sOptPage = CAT_GENERAL;
     sOptSub = 0;
     sOptFocus = 0;
@@ -7158,6 +7329,8 @@ void CtrBottom_Frame(void)
         sCompAny = FALSE;
         sWarmKey = sWarmIdxKey = 0xFFFFFFFF;
     }
+    if (sMapFly && (gMain.inBattle || sScreen != SCR_MAP))
+        sMapFly = FALSE;
     if (BattleIntro(mode))
         return;
     /* A screen to leave for, not taken by the one on show as it closed: the
