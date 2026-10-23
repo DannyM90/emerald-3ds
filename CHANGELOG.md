@@ -2,12 +2,65 @@
 
 ## Unreleased
 
+- Bottom screen map: a magnifier button in the map's bottom right corner
+  zooms in on the player's place and back out. Touching a place on the map
+  picks it: zoomed in, a panel shows its name and, for a city or town, its
+  picture, or the landmarks there. Based on @luksgrin's pull request #108.
+
+- Fly on the bottom screen: FLY from the party menu, or the HM from the Bag,
+  opens the bottom screen's map as the Fly map, with the places you can fly
+  to marked. Touch a place, then FLY in the header, or A; CANCEL or B goes
+  back to the party or the Bag. Meanwhile the dock is locked and the game's
+  buttons wait. The PokéNav's HOENN MAP entry is gone: the bottom screen's MAP
+  is that map, zoom included. Based on @luksgrin's pull request #108.
+
+- Battle speed, by @maxxandres (pull request #149): in a battle (wild or
+  trainer) R speeds the game up and L slows it down, 1x, 1.5x, 2x, 3x and 4x,
+  and a badge in the top right corner shows the speed for two seconds after
+  each press.
+  It is a speed of its own: until the first press the battle follows the
+  SPEED the player uses in the overworld, and then keeps its own
+  (`battle_speed=` in settings.txt). The bag, the party and the summary opened
+  from a battle, and the field, keep the overworld's SPEED; a local wireless
+  session and the measured scenarios stay at 1x. In the battle L and R no
+  longer reach the game; with the game's L=A button mode L stays A and R
+  alone goes round the speeds, 4x back to 1x. The soft reset,
+  L+R+START+SELECT, still works. The bottom screen's focus ring and the intervals of its
+  background refreshes now go by the clock, so they keep their pace at any
+  speed. The quick ball moves from R to X
+  (patch 0006-quick-ball); the ball button on the bottom screen is as before.
+
+- Soft reset is now L+R+START+SELECT, as in the 3DS games, instead of the
+  GBA's A+B+START+SELECT.
+
+- Pokédex on the top screen: while the Pokédex is open on the bottom
+  screen, the top shows the device itself - the red shell, lens and lights,
+  a screen window - with the Pokémon of the info page, or under the list's
+  cursor, at 2x over the battle terrain of the place it is met (tall grass,
+  cave, water, pond, mountain; by type for one never met wild). With the 3D
+  slider up the Pokémon stands in front of the screen and the terrain
+  behind it. Its patch is 0058-pokedex-top-screen.
+
 - The camera can stop at the edge of a map: on the edges chosen map by map
   (for now Routes 103 to 107 and Rustboro City), in 2D and in voxel, the
   picture no longer shows the border tiled past the edge that the wider screen
   used to bring into view; only the player walks on. Where another map joins
   part of such an edge, the camera follows the player in front of it. Every
   other map keeps the camera on the player as before.
+
+- Brazilian Portuguese, by @carlosmozart (pull request #60): the whole game in
+  Portuguese over your own English ROM, as a build option (`tools/bootstrap.py
+  --make --port-lang pt_br`, docs/PORTUGUESE.md): every text of the game from
+  `tools/locales/pt_br` with Brazil's official names, the port's interface,
+  ã/õ in every font, and the graphics with words redrawn by the port from your
+  own files (icons, summary titles, POKéDEX and POKéNAV menus, contest titles,
+  the title logo). Translation by Carlos Mozart (AllGenWiki). Its patches are
+  0057-0066.
+
+- Portuguese title logo: VERSÃO over ESMERALDA, ESMERALDA as the Spanish
+  game's logo draws it, on its arc, and VERSÃO in the place and style of its
+  EDICIÓN (`tools/logo_ptbr.py` previews it, `make verify-logo-ptbr` checks
+  that the port draws it).
 
 - Japanese (experimental): the game in Japanese from your own Pocket Monsters
   Emerald (Japan) ROM. The web and Windows builders accept it and pick the

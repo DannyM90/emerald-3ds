@@ -796,14 +796,31 @@ def register_piece(piece_spec, layout, art, hidden=(), loose=False, own=None):
                     "loose": loose and len(pixels) >= LOOSE_PIXELS})
 
 
-def place_reused(layout, ground):
+def place_reused(layout, ground, pit=()):
     """Stand the known furniture in `layout`; returns the pixels it draws and
     the cells it covers. `ground` None: a room nobody modelled, whose every
-    other pixel the placements lay flat as ground patches."""
+    other pixel the placements lay flat as ground patches. `pit`: the room's
+    rectangles (x0, y0, x1, y1) that draw the floor below it (a balcony's
+    well): what the room below has there is not stood at this floor's level,
+    it stays drawn."""
     pixels, cells = set(), set()
+    painted = {cell & 0x3FF for cell in layout.blocks}
     for p, x, y, pts, exact in reuse_pieces(layout):
+        if any(x0 <= u < x1 and y0 <= v < y1 for (u, v) in pts for (x0, y0, x1, y1) in pit):
+            print("  reuse: %s not stood in %s at %d,%d: in its pit, the floor below"
+                  % (p["spec"]["name"], layout.id, x, y))
+            continue
         if exact:
-            p["spec"].setdefault("reused_at", []).append((layout.id, x, y, ground))
+            # every cell of it drawn as in its own room: the floor under it is
+            # its own room's, and it stands on that wherever this room paints
+            # it too (the contest stage's cushions on the stages' green, in a
+            # hall whose floor is a checker); where it does not, on this room's
+            # floor with each of its cells' own paint laid over it, as in a room
+            # nobody modelled (the Department Store's 4F shelves on 5F, their
+            # tiles drawn on 4F's floor)
+            own = p["spec"]["ground"][0]
+            on = None if ground is None or own not in painted else own
+            p["spec"].setdefault("reused_at", []).append((layout.id, x, y, on))
         else:
             # found by its own pixels on another floor: it stands there bare,
             # without the marks of its own room's floor, and the room's own
@@ -1785,7 +1802,7 @@ def interior_specs(spec):
     owner = [[None] * W for _ in range(H)]
     # the furniture an earlier room has modelled, standing here as it is:
     # its pixels are no piece's of this room's
-    reused, reused_cells = place_reused(layout, room["ground"][0])
+    reused, reused_cells = place_reused(layout, room["ground"][0], room.get("pit", ()))
     for (x, y) in reused:
         owner[y][x] = -1
     # each pixel's colour as `leave` names it
