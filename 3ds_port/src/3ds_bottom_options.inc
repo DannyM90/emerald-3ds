@@ -170,6 +170,7 @@ static const OptRowDef sRowsTools[] = {
     EXTRA_ROW("instant_text"),
     EXTRA_ROW("open_pc"),
     EXTRA_ROW("move_relearner"),
+    EXTRA_ROW("time_of_day"),
 };
 static const OptGroupDef sGroupsExtras[] = {
     GROUP(CTR_TEXT("TOOLS", "HERRAMIENTAS", "OUTILS", "STRUMENTI", "FERRAMENTAS", "HELFER"), sRowsTools),

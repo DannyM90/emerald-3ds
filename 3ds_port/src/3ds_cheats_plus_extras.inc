@@ -17,6 +17,8 @@
 {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("INSTANT TEXT", "TEXTO INSTANT.", "TEXTE IMMÉDIAT", "TESTO ISTANT.", "TEXTO INSTANT.", "SOFORT-TEXT"), "instant_text", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
 {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("PC BOXES", "CAJAS DEL PC", "BOÎTES PC", "BOX DEL PC", "CAIXAS DO PC", "PC-BOXEN"), "open_pc", 0, 0, sTapToOpen, OpenPc, NULL, NULL},
 {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("MOVE RELEARNER", "RECORDAR MOV.", "MAÎTRE CAPAC.", "RICORDA MOSSE", "LEMBRAR GOLPES", "ATTACKEN-ERINN."), "move_relearner", 0, 0, sTapToOpen, OpenMoveRelearner, NULL, NULL},
+/* Time of day (3ds_cheats_plus.inc): the clock to a part of the day. */
+{CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("TIME OF DAY", "HORA DEL DÍA", "MOMENT", "ORA DEL GIORNO", "HORA DO DIA", "TAGESZEIT"), "time_of_day", 6, 0, sTimesOfDay, SetTimeOfDay, NULL, NULL},
 /* Town life (event_object_movement.c, TownLifeAway): with DAY / NIGHT on,
  * fewer townsfolk out at night. On unless turned off. */
 {CTR_EXTRAS_ENHANCEMENTS, CTR_TEXT("TOWN LIFE", "VIDA URBANA", "VIE EN VILLE", "VITA IN CITTÀ", "VIDA NA CIDADE", "STADTLEBEN"), "town_life", 2, 1, gCtrExtrasOffOn, NULL, NULL, NULL},

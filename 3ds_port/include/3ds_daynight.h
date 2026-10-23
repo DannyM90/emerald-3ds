@@ -66,6 +66,7 @@ void CtrDayNight_Reset(void);
  * keeping the pending berry bonus. False, with nothing changed, when the
  * local time cannot be read. Kept on disk with the next in-game save. */
 bool CtrDayNight_SyncToConsole(void);
+bool CtrDayNight_SetTime(unsigned seconds);
 bool CtrDayNight_Snapshot(CtrDayNightSnapshot *snapshot);
 bool CtrDayNight_Restore(const CtrDayNightSnapshot *snapshot);
 

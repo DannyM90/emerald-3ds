@@ -265,6 +265,20 @@ bool CtrDayNight_SyncToConsole(void)
     return true;
 }
 
+/* TIME OF DAY: the port's clock jumps to a time and runs on from it at the
+ * speed set, apart from the console's clock, as a faster clock does (SYNC
+ * CLOCK brings it back). Only while the clock runs (DAY / NIGHT...). */
+bool CtrDayNight_SetTime(unsigned seconds)
+{
+    CtrDayNight_Update();
+    if (!sValid)
+        return false;
+    sClock.timeMs = (seconds % 86400u) * 1000u;
+    sClock.shifted = true;
+    CtrDayNight_Update();
+    return true;
+}
+
 bool CtrDayNight_Snapshot(CtrDayNightSnapshot *snapshot)
 {
     CtrDayNight_Update();

@@ -222,3 +222,24 @@ static void OpenMoveRelearner(void)
 {
     RunFieldScript(EventScript_CtrMoveRelearner);
 }
+
+/* TIME OF DAY: each step sets the clock to that part of the day. */
+static const char *const sTimesOfDay[] = {
+    CTR_TEXT("MORNING", "MAÑANA", "MATIN", "MATTINA", "MANHÃ", "MORGEN"),
+    CTR_TEXT("FORENOON", "MEDIA MAÑANA", "MATINÉE", "TARDA MATT.", "MEIO DA MANHÃ", "VORMITTAG"),
+    CTR_TEXT("AFTERNOON", "TARDE", "APRÈS-MIDI", "POMERIGGIO", "TARDE", "NACHMITTAG"),
+    CTR_TEXT("LATE AFTERN.", "TARDE TARDÍA", "FIN APRÈS-MIDI", "TARDO POM.", "FIM DA TARDE", "SPÄTER NACHM."),
+    CTR_TEXT("EVENING", "ATARDECER", "SOIR", "SERA", "ANOITECER", "ABEND"),
+    CTR_TEXT("NIGHT", "NOCHE", "NUIT", "NOTTE", "NOITE", "NACHT"),
+};
+/* 6:00 dawn, 10:00, 14:00, 16:30, 18:00 sunset, 22:00 (3ds_daynight.c's keys) */
+static const unsigned short sTimeOfDayMinutes[] = {360, 600, 840, 990, 1080, 1320};
+
+static void SetTimeOfDay(void)
+{
+    int value = CtrExtras_Get("time_of_day");
+
+    if (value < 0 || value >= (int)ARRAY_COUNT(sTimeOfDayMinutes))
+        value = 0;
+    PlaySE(CtrDayNight_SetTime(sTimeOfDayMinutes[value] * 60u) ? SE_SELECT : SE_FAILURE);
+}
