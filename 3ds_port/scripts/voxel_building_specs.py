@@ -7984,6 +7984,34 @@ def ship_hidden_rooms():
     return out
 
 
+# the deck's own greens and the shadows on it, seen between a railing's bars
+SHIP_DECK_SEE = ("acb494", "839473", "dedec5", "6a7b41")
+
+
+def ship_deck():
+    """The deck: its railings (the bars seen through, named as its edges -
+    the harbor's and the shipyard's railings share their tiles, and a deck
+    rail found there would take their pixels), the post at (7,4) - the
+    shipyard's pilaster with another top; the others, and the side rails,
+    are the shipyard's and the harbor's, found again - and the tall orange
+    stacks (the Aqua Hideout's cargo, drawn alike: two tubes to a cell,
+    banded at their feet), boxes 8 px deep with their drawing on them, the
+    two in the north-west running off the map's top edge. Its levels - the
+    hull, the cabins' fronts and the bridge, the stairs between them - stay
+    drawn: what stands on them is terrain."""
+    see = SHIP_DECK_SEE
+    rails = (("low_w", (0, 192, 208, 208)), ("low_e", (240, 192, 368, 208)),
+             ("mid_w", (48, 112, 160, 128)), ("mid_e", (192, 112, 224, 128)),
+             ("isle_n", (0, 48, 32, 64)), ("isle_s", (0, 112, 32, 128)),
+             ("bridge", (112, 48, 224, 64)), ("top", (144, 16, 192, 32)), ("east", (224, 80, 368, 96)))
+    stacks = ((80, 0, 96, 64, 56), (96, 0, 112, 80, 72), (256, 32, 272, 80, 40),
+              (272, 16, 288, 80, 56), (320, 32, 336, 80, 40))
+    return ([piece("edge_rail_" + n, [r], 12, through=True, leave=see) for n, r in rails]
+            + [piece("pilaster_7_4", [(112, 64, 128, 99)], 35, back=96, leave=see)]
+            + [piece("stack_%d" % (x0 // 16), [(x0, y0, x1, y1)], h)
+               for (x0, y0, x1, y1, h) in stacks])
+
+
 ABANDONED_SHIP_ROOMS = [
     ("abandoned_ship_corridors_1f", "LAYOUT_ABANDONED_SHIP_CORRIDORS_1F", 0x203, ship_corridors_1f),
     ("abandoned_ship_rooms_1f", "LAYOUT_ABANDONED_SHIP_ROOMS_1F", 0x238, ship_rooms_1f),
@@ -8010,6 +8038,13 @@ ABANDONED_SHIP_ROOMS = [
     ("abandoned_ship_captains_office", "LAYOUT_ABANDONED_SHIP_CAPTAINS_OFFICE", 0x202,
      lambda: [piece("locker", [(0, 47, 16, 80)], 20),
               piece("wall", [(0, 0, 144, 32)], 32, fill=16, foot=32, side=(32, 0, 48, 32))]),
+    ("abandoned_ship_deck", "LAYOUT_ABANDONED_SHIP_DECK", 0x228, ship_deck),
+    # the flooded rooms the player dives to: their back walls (Underwater 2's
+    # hole through to Underwater 1 painted on); the breaches stay drawn
+    ("abandoned_ship_underwater1", "LAYOUT_ABANDONED_SHIP_UNDERWATER1", 0x2c9,
+     lambda: [piece("wall", [(0, 0, 128, 32)], 32, fill=16, foot=32, side=(16, 0, 32, 32))]),
+    ("abandoned_ship_underwater2", "LAYOUT_ABANDONED_SHIP_UNDERWATER2", 0x2cf,
+     lambda: [piece("wall", [(0, 0, 336, 32)], 32, fill=16, foot=32, side=(16, 0, 32, 32))]),
 ]
 SPECS += [{"name": n, "interior": {"layout": lid, "ground": [g], "pieces": own_shell(f())}}
           for (n, lid, g, f) in ABANDONED_SHIP_ROOMS]
