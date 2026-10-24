@@ -159,14 +159,15 @@ int main(int argc, char **argv)
     g = VoxelRelief_Cell(&inst, 5, 4);
     assert(g != NULL && !VoxelRelief_IsSlope(g) && g[0] == 16);
     assert(VoxelRelief_Cell(&inst, 4, 8) == NULL);
-    /* the sea that leans a level, with no depth */
+    /* the sea that leans a level, as far south as it is high in the world,
+     * as every point stands: its west edge in Route 107's row, a level down */
     inst.layoutId = atoi(argv[4]);
     assert(!VoxelRelief_IsDrawn(&inst));
     g = VoxelRelief_Cell(&inst, 0, 10);
     assert(g != NULL && g[2 * VOXEL_RELIEF_SIDE] == -16);
-    assert(VoxelRelief_Depth(&inst, 0, 10) != NULL && VoxelRelief_CellShift(&inst, 0, 10) == 0.0f);
+    assert(VoxelRelief_Depth(&inst, 0, 10) != NULL);
     for (unsigned i = 0; i < VOXEL_RELIEF_SIDE * VOXEL_RELIEF_SIDE; ++i)
-        assert(VoxelRelief_Depth(&inst, 0, 10)[i] == 0);
+        assert(VoxelRelief_Depth(&inst, 0, 10)[i] == g[i]);
     sOnly = &inst;
     {
         float last = VoxelRelief_LiftAt(0.0f, 10.5f);
@@ -177,7 +178,7 @@ int main(int argc, char **argv)
             float lift = VoxelRelief_LiftAt(x, 10.5f);
 
             assert(lift >= last && lift - last <= 1.0f / 16.0f + 0.001f);
-            assert(VoxelRelief_ShiftAt(x, 10.5f) == 0.0f);
+            assert(fabsf(VoxelRelief_ShiftAt(x, 10.5f) - lift) < 0.001f);
             last = lift;
         }
         assert(fabsf(last) < 1.0f / 16.0f + 0.001f);

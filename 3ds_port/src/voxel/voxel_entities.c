@@ -1044,8 +1044,9 @@ static void EmitReflection(VoxelBuilder *reflections, const VoxelSpriteSlot *slo
     {
         /* across the card: t = 0 at its left edge (u0), 1 at its right (u1) */
         float a = halfW * (2.0f * s / strips - 1.0f), b = halfW * (2.0f * (s + 1) / strips - 1.0f);
-        float ax = cx + rightX * a, az = nearZ + rightZ * a + shift;
-        float bx = cx + rightX * b, bz = nearZ + rightZ * b + shift;
+        /* (the water under it by its cells, not where they are drawn) */
+        float ax = cx + rightX * a, az = nearZ + rightZ * a;
+        float bx = cx + rightX * b, bz = nearZ + rightZ * b;
 
         lengths[s] = 0.0f;
         for (float next = 0.25f; next <= fullLength + 0.0001f; next += 0.25f)
@@ -1362,10 +1363,19 @@ unsigned VoxelEntities_Emit(VoxelBuilder *builder, uint16_t *atlas, const VoxelC
             const VoxelMapInstance *inst = VoxelWorld_GetInstanceAt((int)floorf(worldX + 0.5f),
                                                                    (int)floorf(worldZ + 0.5f));
             outdoor = inst != NULL && !inst->indoor;
-            /* up on a bridge's deck, the light over the deck, not under it */
+            /* Where the card stands (EmitBillboard): on its cell's relief and
+             * its map's base, and up on a bridge's deck, the light over the
+             * deck, not under it. At 0.75 over the world's zero, a sprite on
+             * a raised map or a mountain was sampled inside the rock and
+             * drawn in its shadow. One sample, as ever: this runs every
+             * frame. */
             if (outdoor)
-                shade = VoxelLighting_Sample(worldX + 0.5f, 0.75f + card->deck,
-                                             worldZ + 0.5f + card->deck);
+            {
+                float cx = worldX + 0.5f, cz = worldZ + 0.5f;
+
+                shade = VoxelLighting_Sample(cx, VoxelRelief_LiftAt(cx, cz) + 0.75f + card->deck,
+                                             cz + VoxelRelief_ShiftAt(cx, cz) + card->deck);
+            }
         }
 #endif
         card->drawn = true;

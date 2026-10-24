@@ -85,12 +85,12 @@ void VoxelBuilder_SetStretch(VoxelBuilder *builder, const VoxelMapInstance *inst
 float VoxelBuilder_StretchZ(const VoxelBuilder *builder, float z)
 {
     if (builder->stretchAdd <= 0.0f || z <= builder->stretchFrom)
-        return z;
+        return z + builder->base;
     if (z >= builder->stretchTo)
-        return z + builder->stretchAdd;
+        return z + builder->stretchAdd + builder->base;
     return builder->stretchFrom + (z - builder->stretchFrom)
          * (builder->stretchTo - builder->stretchFrom + builder->stretchAdd)
-         / (builder->stretchTo - builder->stretchFrom);
+         / (builder->stretchTo - builder->stretchFrom) + builder->base;
 }
 
 void VoxelBuilder_Init(VoxelBuilder *builder, VoxelVertex *storage, unsigned capacity)
@@ -960,10 +960,13 @@ static void EmitSeamSkirt(VoxelBuilder *b, const VoxelMapInstance *inst, int x, 
              * level at the centre's height left slivers of the clear under
              * it. Its top is where the belt stands, unmoved. Not round a
              * belt laid as the drawing (VoxelRelief_Belt): that meets every
-             * edge at its height, and the map's faces close the steps.
+             * edge at its height, and the map's faces close the steps. The
+             * belt is drawn as far south as its base is high, as a map is
+             * (VoxelBuilder_StretchZ): its top's edge is that far from ours.
              */
             const VoxelMapInstance *ring = VoxelWorld_Instance(0);
             float belt = ring != NULL ? VoxelRelief_Base(ring) - VoxelRelief_Base(inst) : 0.0f;
+            const float beltZ = belt;
             const int16_t *grid = VoxelRelief_Cell(inst, x, y);
             const int16_t *depth = VoxelRelief_Depth(inst, x, y);
             const unsigned last = VOXEL_RELIEF_SIDE - 1;
@@ -1006,12 +1009,12 @@ static void EmitSeamSkirt(VoxelBuilder *b, const VoxelMapInstance *inst, int x, 
                     VoxelBuilder_Quad(b,
                         &(VoxelVertex){xa, footH[k],     footZ[k],     ua, v0 + (v1 - v0) * fA, SHADE_SOUTH},
                         &(VoxelVertex){xb, footH[k + 1], footZ[k + 1], ub, v0 + (v1 - v0) * fB, SHADE_SOUTH},
-                        &(VoxelVertex){xb, belt,         (float)y,     ub, v0,                  SHADE_SOUTH},
-                        &(VoxelVertex){xa, belt,         (float)y,     ua, v0,                  SHADE_SOUTH});
+                        &(VoxelVertex){xb, belt,         (float)y + beltZ, ub, v0,              SHADE_SOUTH},
+                        &(VoxelVertex){xa, belt,         (float)y + beltZ, ua, v0,              SHADE_SOUTH});
                 }
                 else
                 {
-                    float za = (float)y + along[k], zb = (float)y + along[k + 1];
+                    float za = (float)y + along[k] + beltZ, zb = (float)y + along[k + 1] + beltZ;
                     float va = v0 + (v1 - v0) * along[k], vb = v0 + (v1 - v0) * along[k + 1];
 
                     if (d == 2) /* faces east, on the west edge */
@@ -1046,6 +1049,8 @@ static void EmitSeamSkirt(VoxelBuilder *b, const VoxelMapInstance *inst, int x, 
             const int16_t *oursH = VoxelRelief_Cell(inst, x, y);
             const unsigned last = (VOXEL_RELIEF_SIDE - 1) * VOXEL_RELIEF_SIDE;
             float belt = (VoxelRelief_Base(ring) - VoxelRelief_Base(inst)) * 16.0f;
+            /* (the belt as far south as its base is high, as the map is) */
+            const float beltZ = (float)y + 1.0f + belt / 16.0f;
             float level, shift;
 
             if (oursH == NULL || VoxelRelief_Belt(ring) != 0)
@@ -1069,8 +1074,8 @@ static void EmitSeamSkirt(VoxelBuilder *b, const VoxelMapInstance *inst, int x, 
                 VoxelBuilder_Quad(b,
                     &(VoxelVertex){xa, hA / 16.0f,   zA,                ua, v1, SHADE_TOP},
                     &(VoxelVertex){xb, hB / 16.0f,   zB,                ub, v1, SHADE_TOP},
-                    &(VoxelVertex){xb, belt / 16.0f, (float)y + 1.0f,   ub, v0, SHADE_TOP},
-                    &(VoxelVertex){xa, belt / 16.0f, (float)y + 1.0f,   ua, v0, SHADE_TOP});
+                    &(VoxelVertex){xb, belt / 16.0f, beltZ,             ub, v0, SHADE_TOP},
+                    &(VoxelVertex){xa, belt / 16.0f, beltZ,             ua, v0, SHADE_TOP});
             }
             continue;
         }
@@ -1081,21 +1086,20 @@ static void EmitSeamSkirt(VoxelBuilder *b, const VoxelMapInstance *inst, int x, 
         if (d == 1)
         {
             /*
-             * A point stands as far south as it is high over its map's base
-             * (voxel_relief.h), and a map's base lifts it straight up. So two
-             * maps can meet at one level with their edges a row apart: Route
-             * 104's sea, a level under its land, ends a cell north of where
-             * Route 105's, the same sea on a base a level down, begins; so do
-             * the forest and the ridge's band on the seam beside it. The edge
-             * cell's drawing goes on south, 1:1, from our edge to theirs at
-             * every point of the lattice - the water's own animated tile, a
-             * band's slope as it falls -, never a gap onto the clear colour.
+             * A point stands as far south as it is high in the world
+             * (voxel_relief.h), its map's base and all, so two maps meeting
+             * at one level meet in the same row. Should their edges still lie
+             * a row apart, the edge cell's drawing goes on south, 1:1, from
+             * our edge to theirs at every point of the lattice - the water's
+             * own animated tile, a band's slope as it falls -, never a gap
+             * onto the clear colour.
              */
             const int16_t *ours = VoxelRelief_Depth(inst, x, y);
             const int16_t *theirs = VoxelRelief_Depth(other, nx, ny);
             const int16_t *oursH = VoxelRelief_Cell(inst, x, y);
             const int16_t *theirsH = VoxelRelief_Cell(other, nx, ny);
-            /* their heights over our base, in pixels */
+            /* their heights over our base, in pixels (and their depths: our
+             * builder draws our base's) */
             float rebase = (VoxelRelief_Base(other) - VoxelRelief_Base(inst)) * 16.0f;
             const unsigned last = (VOXEL_RELIEF_SIDE - 1) * VOXEL_RELIEF_SIDE;
             float hA[VOXEL_RELIEF_SIDE], zA[VOXEL_RELIEF_SIDE];
@@ -1110,7 +1114,7 @@ static void EmitSeamSkirt(VoxelBuilder *b, const VoxelMapInstance *inst, int x, 
                 hA[k] = oursH ? oursH[last + k] : 0.0f;
                 zA[k] = (float)y + 1.0f + (ours ? ours[last + k] : 0) / 16.0f;
                 hB[k] = (theirsH ? theirsH[k] : 0.0f) + rebase;
-                zB[k] = (float)y + 1.0f + (theirs ? theirs[k] : 0) / 16.0f;
+                zB[k] = (float)y + 1.0f + ((theirs ? theirs[k] : 0) + rebase) / 16.0f;
                 if (zB[k] - zA[k] > gap)
                     gap = zB[k] - zA[k];
                 if (fabsf(hB[k] - hA[k]) > 1.0f)
@@ -1661,12 +1665,17 @@ void VoxelMesh_EmitGroundRow(VoxelBuilder *builder, const VoxelMapInstance *inst
                             builder->shift = builder->lift;
                             /* lit as the ground it is seen beside, this
                              * tile's own at its foot: in full sun it was a
-                             * bright wedge in the shade the rock casts */
+                             * bright wedge in the shade the rock casts. A
+                             * world point, the map's base counted: without
+                             * it, on a raised map (Route 120) the sample lay
+                             * inside the rock and the fill was a dark square
+                             * on the water beside every cut tile */
                             builder->lightingConstant = 1.0f;
 #if CTR_VOXEL_LIGHTING
                             if (builder->lighting)
                                 builder->lightingConstant = VoxelLighting_Sample(
-                                    x + 0.5f, foot + 0.05f, VoxelBuilder_StretchZ(builder, y + 0.5f + foot));
+                                    x + 0.5f, foot + builder->base + 0.05f,
+                                    VoxelBuilder_StretchZ(builder, y + 0.5f + foot));
 #endif
                             EmitRunOn(builder, inst, nx, ny, nu0, nv0, nu1, nv1);
                             builder->lightingConstant = -1.0f;
