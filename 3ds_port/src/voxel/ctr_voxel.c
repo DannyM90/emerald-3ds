@@ -5030,8 +5030,7 @@ static bool HandleMapChange(int mapGroup, int mapNum, float playerX, float playe
     sDappleAnchorX = sDappleAnchorZ = 0;
     sBeltOriginX = sBeltOriginY = 0;
     ++sBeltGrid;
-    VoxelCamera_SetGround(&sCamera, VoxelRelief_LiftAt(playerX + 0.5f, playerZ + 0.5f)
-                                    + VoxelEntities_PlayerDeck(), 1);
+    VoxelCamera_SetGround(&sCamera, VoxelEntities_PlayerGround(), 1);
     VoxelCamera_Snap(&sCamera, playerX, playerZ);
     return false;
 }
@@ -5638,6 +5637,9 @@ bool CtrVoxel_Update(void)
         {
             sMapVersion = version;
             sInstanceSignature = signature;
+            /* the belt past the map at its edge's level, or at the base
+             * (settings.txt voxel_border_edge=0), read with each new map */
+            VoxelMesh_SetBorderFollowsEdge(CtrSettings_GetInt("voxel_border_edge", 1) != 0);
             ++sEpoch;
 #if CTR_VOXEL_LIGHTING
             VoxelLighting_Reset();
@@ -5696,8 +5698,7 @@ bool CtrVoxel_Update(void)
     }
     else if (!sBattle.on)
     {
-        VoxelCamera_SetGround(&sCamera, VoxelRelief_LiftAt(smoothX + 0.5f, smoothZ + 0.5f)
-                                        + VoxelEntities_PlayerDeck(), 0);
+        VoxelCamera_SetGround(&sCamera, VoxelEntities_PlayerGround(), 0);
         VoxelCamera_Update(&sCamera, smoothX, smoothZ);
     }
     /* The swoop to or from the 2D field, on top of the player's pose. */

@@ -12,6 +12,8 @@
 #include "global.h"
 #include "main.h"
 #include "overworld.h"
+#include "event_data.h"
+#include "constants/layouts.h"
 #include "fieldmap.h"
 #include "decompress.h"
 #include "metatile_behavior.h"
@@ -256,20 +258,58 @@ bool VoxelWorld_IsBattleMapAvailable(void)
 
 /* ── Instances ──────────────────────────────────────────────────────────── */
 
-static void FillInstance(VoxelMapInstance *inst, const struct MapHeader *header,
+/*
+ * Maps whose layout a script swaps on entering them (setmaplayoutindex in
+ * their ON_TRANSITION), as the swap stands while the player is elsewhere:
+ * a neighbour is drawn whole, and its header's layout showed what the game
+ * hides - the Mirage Tower over the desert from Mauville, every day, years
+ * after it fell. `flag` 0: always swapped; else swapped while it is clear.
+ */
+static const struct
+{
+    u8 mapGroup, mapNum;
+    u16 flag;
+    u16 layoutId;
+} sLayoutSwaps[] = {
+    { MAP_GROUP(MAP_ROUTE111), MAP_NUM(MAP_ROUTE111), FLAG_MIRAGE_TOWER_VISIBLE, LAYOUT_ROUTE111_NO_MIRAGE_TOWER },
+    { MAP_GROUP(MAP_ROUTE131), MAP_NUM(MAP_ROUTE131), 0, LAYOUT_ROUTE131_SKY_PILLAR },
+};
+
+static u16 NeighbourLayoutId(const struct MapHeader *header, int mapGroup, int mapNum)
+{
+    for (unsigned i = 0; i < ARRAY_COUNT(sLayoutSwaps); ++i)
+        if (sLayoutSwaps[i].mapGroup == mapGroup && sLayoutSwaps[i].mapNum == mapNum
+         && (sLayoutSwaps[i].flag == 0 || !FlagGet(sLayoutSwaps[i].flag))
+         && Port_GetMapLayoutById(sLayoutSwaps[i].layoutId) != NULL)
+            return sLayoutSwaps[i].layoutId;
+    return header->mapLayoutId;
+}
+
+/* `layoutId`: the layout the map is drawn with - the current map's is the
+ * save block's (a script may have swapped it: the header keeps the map's
+ * first), a neighbour's NeighbourLayoutId. */
+static void FillInstance(VoxelMapInstance *inst, const struct MapHeader *header, u16 layoutId,
                          int mapGroup, int mapNum, int originX, int originY)
 {
+    const struct MapLayout *layout = layoutId == header->mapLayoutId ? header->mapLayout
+                                   : Port_GetMapLayoutById(layoutId);
+
+    if (layout == NULL)
+    {
+        layout = header->mapLayout;
+        layoutId = header->mapLayoutId;
+    }
     inst->header = header;
-    inst->layout = header->mapLayout;
-    inst->primaryTileset = header->mapLayout->primaryTileset;
-    inst->secondaryTileset = header->mapLayout->secondaryTileset;
-    inst->layoutId = header->mapLayoutId;
+    inst->layout = layout;
+    inst->primaryTileset = layout->primaryTileset;
+    inst->secondaryTileset = layout->secondaryTileset;
+    inst->layoutId = layoutId;
     inst->mapGroup = mapGroup;
     inst->mapNum = mapNum;
     inst->originX = originX;
     inst->originY = originY;
-    inst->width = header->mapLayout->width;
-    inst->height = header->mapLayout->height;
+    inst->width = layout->width;
+    inst->height = layout->height;
     inst->indoor = header->mapType == MAP_TYPE_INDOOR
                 || header->mapType == MAP_TYPE_SECRET_BASE;
 }
@@ -344,7 +384,7 @@ static void AddConnections(const VoxelMapInstance *from, bool far)
         }
         if (!clash)
             FillInstance(&sInstances[sInstanceCount++], neighbour,
-                         conn->mapGroup, conn->mapNum, originX, originY);
+                         NeighbourLayoutId(neighbour, conn->mapGroup, conn->mapNum), conn->mapGroup, conn->mapNum, originX, originY);
     }
 }
 
@@ -387,7 +427,7 @@ void VoxelWorld_BuildInstances(void)
         return;
 
     /* Instance 0 is always the current map, at the origin. */
-    FillInstance(&sInstances[0], &gMapHeader,
+    FillInstance(&sInstances[0], &gMapHeader, gSaveBlock1Ptr->mapLayoutId,
                  gSaveBlock1Ptr->location.mapGroup,
                  gSaveBlock1Ptr->location.mapNum, 0, 0);
     /* Its layout is the save block's: a script that swaps it in
