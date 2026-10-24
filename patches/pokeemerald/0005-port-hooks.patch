@@ -238,16 +238,20 @@ index ebc6a6d0e2c7e639c32ef00e4ad6b1805ca85260..2e7557ec2eef7857dde6a94d779b9779
  u8 GetJumpMovementAction(u32);
  u8 ElevationToPriority(u8 elevation);
 diff --git a/include/field_camera.h b/include/field_camera.h
-index edbd2c09fa7b34782edf5e5e0f5b4f3f5d6d1969..3e6ac74740b8efac11a2bd9e2249f8d9d530f2a0 100644
+index edbd2c09fa7b34782edf5e5e0f5b4f3f5d6d1969..a5d69f0e6ff67e2b998fd8a799d0244142547227 100644
 --- a/include/field_camera.h
 +++ b/include/field_camera.h
-@@ -28,5 +28,9 @@ void SetCameraPanning(s16 horizontal, s16 vertical);
+@@ -28,5 +28,13 @@ void SetCameraPanning(s16 horizontal, s16 vertical);
  void InstallCameraPanAheadCallback(void);
  void UpdateCameraPanning(void);
  void FieldUpdateBgTilemapScroll(void);
 +#ifdef PLATFORM_3DS
 +// The current map's edges where the camera stops (3ds_field_view.h).
 +u32 GetMapClosedEdges(void);
++// The banks of the field's tilemap entries (3ds_tile_banks.h) go with the
++// tilemap buffers while they exist.
++void FieldCamera_RegisterTileBanks(void);
++void FieldCamera_UnregisterTileBanks(void);
 +#endif
  
  #endif //GUARD_FIELD_CAMERA_H
@@ -310,10 +314,10 @@ index 8ce0cc9e5052d5979de9d640b38571c2c02f1805..a539ff329a4b5a8a151d0aa784ec512e
  
  #endif // GUARD_WEATHER_H
 diff --git a/include/fieldmap.h b/include/fieldmap.h
-index 212dfb65a6868042e59f140df99fba7c8d134729..91bd6fed9ea957685af3d32b087ac913453b3c2a 100644
+index 212dfb65a6868042e59f140df99fba7c8d134729..1620b51d70efaed63d3971114001b3e7aa2da322 100644
 --- a/include/fieldmap.h
 +++ b/include/fieldmap.h
-@@ -19,11 +19,27 @@
+@@ -19,11 +19,34 @@
  #define MAP_OFFSET_W (MAP_OFFSET * 2 + 1)
  #define MAP_OFFSET_H (MAP_OFFSET * 2)
  
@@ -338,6 +342,13 @@ index 212dfb65a6868042e59f140df99fba7c8d134729..91bd6fed9ea957685af3d32b087ac913
 +// Port only: what the wide camera draws past the GBA's map padding.
 +u32 MapGridGetMetatileIdForCameraAt(int x, int y);
 +const u16 *MapGridGetCameraBorderAt(int x, int y, u8 *index);
++#ifdef PLATFORM_3DS
++// The bank (3ds_tile_banks.h) of the tileset the camera draws x, y with
++// (backup-layout coordinates), and that map's layout: 0 for the current
++// tilesets. The attributes of a metatile of that layout's tilesets.
++u8 MapGridGetCameraBankAt(int x, int y, const struct MapLayout **layout);
++u16 GetMetatileAttributesFromLayout(const struct MapLayout *layout, u16 metatile);
++#endif
  u32 MapGridGetMetatileBehaviorAt(int x, int y);
  void MapGridSetMetatileIdAt(int x, int y, u16 metatile);
  void MapGridSetMetatileEntryAt(int x, int y, u16 metatile);
@@ -3176,10 +3187,10 @@ index 6a9b196440316b908c0045d3cae3d4c04d42a22f..157e87487e2120dcbffb58cc69bfed98
  
  static void TryUpdateBerryBlenderRecord(void)
 diff --git a/src/bg.c b/src/bg.c
-index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..7e904e154b0a61748038382d622e827d9d04bec8 100644
+index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..f223de32bb398be8c65485fd201431db284d5c6d 100644
 --- a/src/bg.c
 +++ b/src/bg.c
-@@ -2,6 +2,11 @@
+@@ -2,6 +2,14 @@
  #include "global.h"
  #include "bg.h"
  #include "dma3.h"
@@ -3187,11 +3198,25 @@ index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..7e904e154b0a61748038382d622e827d
 +#ifdef PORT_BRIDGE
 +#include "port_platform.h"
 +#endif
++#ifdef PLATFORM_3DS
++#include "3ds_video.h"
++#endif
 +
  #include "gpu_regs.h"
  
  #define DISPCNT_ALL_BG_AND_MODE_BITS    (DISPCNT_BG_ALL_ON | 0x7)
-@@ -441,6 +446,19 @@ bool8 IsDma3ManagerBusyWithBgCopy(void)
+@@ -190,6 +198,10 @@ u8 LoadBgVram(u8 bg, const void *src, u16 size, u16 destOffset, u8 mode)
+     case 0x2:
+         offset = sGpuBgConfigs.configs[bg].mapBaseIndex * BG_SCREEN_SIZE;
+         offset = destOffset + offset;
++#ifdef PLATFORM_3DS
++        // The banks of the field's cells go with its tilemap (3ds_tile_banks.h).
++        CtrVideo_TilemapRequested(offset, src, size);
++#endif
+         cursor = RequestDma3Copy(src, (void *)(offset + BG_VRAM), size, 0);
+         if (cursor == -1)
+             return -1;
+@@ -441,6 +453,19 @@ bool8 IsDma3ManagerBusyWithBgCopy(void)
  {
      int i;
  
@@ -3211,7 +3236,7 @@ index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..7e904e154b0a61748038382d622e827d
      for (i = 0; i < 0x80; i++)
      {
          u8 div = i / 0x20;
-@@ -451,6 +469,10 @@ bool8 IsDma3ManagerBusyWithBgCopy(void)
+@@ -451,6 +476,10 @@ bool8 IsDma3ManagerBusyWithBgCopy(void)
              s8 reqSpace = CheckForSpaceForDma3Request(i);
              if (reqSpace == -1)
              {
@@ -3222,7 +3247,7 @@ index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..7e904e154b0a61748038382d622e827d
                  return TRUE;
              }
  
-@@ -875,6 +897,10 @@ void CopyToBgTilemapBuffer(u8 bg, const void *src, u16 mode, u16 destOffset)
+@@ -875,6 +904,10 @@ void CopyToBgTilemapBuffer(u8 bg, const void *src, u16 mode, u16 destOffset)
  {
      if (!IsInvalidBg32(bg) && !IsTileMapOutsideWram(bg))
      {
@@ -3233,7 +3258,7 @@ index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..7e904e154b0a61748038382d622e827d
          if (mode != 0)
              CpuCopy16(src, (void *)(sGpuBgConfigs2[bg].tilemap + (destOffset * 2)), mode);
          else
-@@ -912,6 +938,9 @@ void CopyToBgTilemapBufferRect(u8 bg, const void *src, u8 destX, u8 destY, u8 wi
+@@ -912,6 +945,9 @@ void CopyToBgTilemapBufferRect(u8 bg, const void *src, u8 destX, u8 destY, u8 wi
  
      if (!IsInvalidBg32(bg) && !IsTileMapOutsideWram(bg))
      {
@@ -3243,7 +3268,7 @@ index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..7e904e154b0a61748038382d622e827d
          switch (GetBgType(bg))
          {
          case BG_TYPE_NORMAL:
-@@ -957,6 +986,9 @@ void CopyRectToBgTilemapBufferRect(u8 bg, const void *src, u8 srcX, u8 srcY, u8
+@@ -957,6 +993,9 @@ void CopyRectToBgTilemapBufferRect(u8 bg, const void *src, u8 srcX, u8 srcY, u8
  
      if (!IsInvalidBg32(bg) && !IsTileMapOutsideWram(bg))
      {
@@ -3253,7 +3278,7 @@ index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..7e904e154b0a61748038382d622e827d
          screenSize = GetBgControlAttribute(bg, BG_CTRL_ATTR_SCREENSIZE);
          screenWidth = GetBgMetricTextMode(bg, 0x1) * 0x20;
          screenHeight = GetBgMetricTextMode(bg, 0x2) * 0x20;
-@@ -1238,10 +1270,9 @@ bool32 IsInvalidBg32(u8 bg)
+@@ -1238,10 +1277,9 @@ bool32 IsInvalidBg32(u8 bg)
  
  bool32 IsTileMapOutsideWram(u8 bg)
  {
@@ -4451,10 +4476,10 @@ index f09425720ab4ceb002215d1d01c27b5f3d365369..32e5800a8c110aa2b0d251548cc6e7a5
      }
  }
 diff --git a/src/field_camera.c b/src/field_camera.c
-index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4e27beae1 100644
+index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..5706ccc0d8ab8dd1556631af4c22b55d173575c5 100644
 --- a/src/field_camera.c
 +++ b/src/field_camera.c
-@@ -12,29 +12,75 @@
+@@ -12,29 +12,81 @@
  #include "sprite.h"
  #include "text.h"
  
@@ -4465,6 +4490,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
 +#if defined(PLATFORM_3DS)
 +#include "constants/maps.h"
 +#include "3ds_field_view.h"
++#include "3ds_video.h"
 +#include "3ds_platform.h"
 +#endif
 +
@@ -4526,11 +4552,16 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
 +// FIELD_CAMERA_VIEW_RIGHT / 2 and 16 rows from this one. They follow the
 +// picture rather than the camera, which the shift parts it from.
 +static s16 sMapWindowX, sMapWindowY;
++// The bank (3ds_tile_banks.h) of each entry of the three tilemaps, 1 + bank
++// or 0, handed over with them (FieldCamera_RegisterTileBanks), and the bank
++// of the metatile DrawMetatile is drawing.
++static u8 sTileBanks[3][BG_SCREEN_SIZE];
++static u8 sDrawBank;
 +#endif
  static s16 sVerticalCameraPan;
  static bool8 sBikeCameraPanFlag;
  static void (*sFieldCameraPanningCallback)(void);
-@@ -55,27 +101,45 @@ static void ResetCameraOffset(struct FieldCameraOffset *cameraOffset)
+@@ -55,27 +107,45 @@ static void ResetCameraOffset(struct FieldCameraOffset *cameraOffset)
  static void AddCameraTileOffset(struct FieldCameraOffset *cameraOffset, u32 xOffset, u32 yOffset)
  {
      cameraOffset->xTileOffset += xOffset;
@@ -4579,7 +4610,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
  
      SetGpuReg(REG_OFFSET_BG1HOFS, r5);
      SetGpuReg(REG_OFFSET_BG1VOFS, r4);
-@@ -87,39 +151,297 @@ void FieldUpdateBgTilemapScroll(void)
+@@ -87,39 +157,297 @@ void FieldUpdateBgTilemapScroll(void)
  
  void GetCameraOffsetWithPan(s16 *x, s16 *y)
  {
@@ -4627,9 +4658,14 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
 +    int tileX = sFieldCameraOffset.xTileOffset;
 +    int tileY = sFieldCameraOffset.yTileOffset;
 +#endif
-+
-+    for (i = 0; i < 32; i += 2)
-+    {
+ 
+     for (i = 0; i < 32; i += 2)
+     {
+-        temp = sFieldCameraOffset.yTileOffset + i;
+-        if (temp >= 32)
+-            temp -= 32;
+-        r6 = temp * 32;
+-        for (j = 0; j < 32; j += 2)
 +        for (j = FIELD_CAMERA_VIEW_LEFT; j < FIELD_CAMERA_VIEW_RIGHT; j += 2)
 +            DrawMetatileAtTilemapPos(mapLayout,
 +                                     tileX + j,
@@ -4692,8 +4728,8 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
 +    int tileX = sFieldCameraOffset.xTileOffset + (x - gSaveBlock1Ptr->pos.x) * 2;
 +    int tileY = sFieldCameraOffset.yTileOffset + (sMapWindowY - gSaveBlock1Ptr->pos.y) * 2;
 +    int i;
- 
-     for (i = 0; i < 32; i += 2)
++
++    for (i = 0; i < 32; i += 2)
 +        DrawMetatileAtTilemapPos(gMapHeader.mapLayout, tileX, tileY + i, x, sMapWindowY + i / 2);
 +}
 +
@@ -4806,12 +4842,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
 +    if (gMapHeader.mapLayout == NULL || GetFlashLevel() != 0)
 +        return 0;
 +    for (i = 0; i < (int)ARRAY_COUNT(sCameraEdgeMaps); i++)
-     {
--        temp = sFieldCameraOffset.yTileOffset + i;
--        if (temp >= 32)
--            temp -= 32;
--        r6 = temp * 32;
--        for (j = 0; j < 32; j += 2)
++    {
 +        if (sCameraEdgeMaps[i].map == map)
          {
 -            temp = sFieldCameraOffset.xTileOffset + j;
@@ -4831,8 +4862,8 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
 +    if ((closed & CTR_FIELD_EDGE_SOUTH) && FacesConnectedMap(CONNECTION_SOUTH))
 +        closed &= ~CTR_FIELD_EDGE_SOUTH;
 +    return closed;
- }
- 
++}
++
 +// How fast the picture closes in on where it belongs after that changed under
 +// it (a map joined by a crossing, the 2D/voxel option), in pixels a frame more than the
 +// camera moves: on a step at an edge, where it stays still, it keeps up.
@@ -4852,8 +4883,8 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
 +    if (target < shift - most)
 +        return shift - most;
 +    return target;
-+}
-+
+ }
+ 
 +/*
 + * Where the picture belongs: the map's own pixels (its grid starts MAP_OFFSET
 + * metatiles in) and the picture's place without the shift, the GBA's view
@@ -4892,7 +4923,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
  static void RedrawMapSlicesForCameraUpdate(struct FieldCameraOffset *cameraOffset, int x, int y)
  {
      const struct MapLayout *mapLayout = gMapHeader.mapLayout;
-@@ -137,69 +459,54 @@ static void RedrawMapSlicesForCameraUpdate(struct FieldCameraOffset *cameraOffse
+@@ -137,69 +465,54 @@ static void RedrawMapSlicesForCameraUpdate(struct FieldCameraOffset *cameraOffse
  
  static void RedrawMapSliceNorth(struct FieldCameraOffset *cameraOffset, const struct MapLayout *mapLayout)
  {
@@ -4991,7 +5022,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
  
  void CurrentMapDrawMetatileAt(int x, int y)
  {
-@@ -225,11 +532,22 @@ void DrawDoorMetatileAt(int x, int y, u16 *tiles)
+@@ -225,11 +538,30 @@ void DrawDoorMetatileAt(int x, int y, u16 *tiles)
  
  static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x, int y)
  {
@@ -5005,6 +5036,14 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
 +    bool8 isPrimary;
 +    u16 rawMetatileId = metatileId;
 +#endif
++#ifdef PLATFORM_3DS
++    // A neighbour with a bank of its own is drawn with its own tilesets.
++    const struct MapLayout *bankLayout = NULL;
++    u8 bank = MapGridGetCameraBankAt(x, y, &bankLayout);
++
++    if (bank != 0)
++        mapLayout = bankLayout;
++#endif
  
      if (metatileId > NUM_METATILES_TOTAL)
          metatileId = 0;
@@ -5014,7 +5053,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
      if (metatileId < NUM_METATILES_IN_PRIMARY)
      {
          metatiles = mapLayout->primaryTileset->metatiles;
-@@ -239,7 +557,48 @@ static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x,
+@@ -239,7 +571,54 @@ static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x,
          metatiles = mapLayout->secondaryTileset->metatiles;
          metatileId -= NUM_METATILES_IN_PRIMARY;
      }
@@ -5039,7 +5078,13 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
 +    }
 +#endif
 +
-+#ifdef PORT_BRIDGE
++#if defined(PLATFORM_3DS)
++    sDrawBank = bank;
++    DrawMetatile(UNPACK_LAYER_TYPE(bank != 0 ? GetMetatileAttributesFromLayout(bankLayout, rawMetatileId)
++                                             : GetMetatileAttributesById(rawMetatileId)),
++                 metatiles + metatileId * NUM_TILES_PER_METATILE, offset);
++    sDrawBank = 0;
++#elif defined(PORT_BRIDGE)
 +    // The id is already in hand; MapGridGetMetatileLayerTypeAt would look the
 +    // same cell up again (twice, with its asset resolution) for every metatile.
 +    DrawMetatile(UNPACK_LAYER_TYPE(GetMetatileAttributesById(rawMetatileId)),
@@ -5063,8 +5108,47 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
  }
  
  static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
-@@ -311,13 +670,20 @@ static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
+@@ -304,20 +683,59 @@ static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
+         gOverworldTilemapBuffer_Bg1[offset + 0x21] = tiles[7];
+         break;
+     }
++#if defined(PLATFORM_3DS)
++    {
++        // The empty and filler entries name no tile or palette of a bank, so
++        // all three layers take the metatile's bank as they are.
++        int bg;
++
++        for (bg = 0; bg < 3; bg++)
++        {
++            sTileBanks[bg][offset] = sDrawBank;
++            sTileBanks[bg][offset + 1] = sDrawBank;
++            sTileBanks[bg][offset + 0x20] = sDrawBank;
++            sTileBanks[bg][offset + 0x21] = sDrawBank;
++        }
++    }
++#endif
+     ScheduleBgCopyTilemapToVram(1);
+     ScheduleBgCopyTilemapToVram(2);
+     ScheduleBgCopyTilemapToVram(3);
+ }
  
++#if defined(PLATFORM_3DS)
++void FieldCamera_RegisterTileBanks(void)
++{
++    memset(sTileBanks, 0, sizeof(sTileBanks));
++    CtrVideo_RegisterTilemapBanks(gOverworldTilemapBuffer_Bg1, sTileBanks[0], BG_SCREEN_SIZE);
++    CtrVideo_RegisterTilemapBanks(gOverworldTilemapBuffer_Bg2, sTileBanks[1], BG_SCREEN_SIZE);
++    CtrVideo_RegisterTilemapBanks(gOverworldTilemapBuffer_Bg3, sTileBanks[2], BG_SCREEN_SIZE);
++}
++
++void FieldCamera_UnregisterTileBanks(void)
++{
++    CtrVideo_UnregisterTilemapBanks(gOverworldTilemapBuffer_Bg1);
++    CtrVideo_UnregisterTilemapBanks(gOverworldTilemapBuffer_Bg2);
++    CtrVideo_UnregisterTilemapBanks(gOverworldTilemapBuffer_Bg3);
++}
++#endif
++
  static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *cameraOffset, s32 x, s32 y)
  {
 +#if defined(PLATFORM_3DS)
@@ -5087,7 +5171,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
  
      y = (y - gSaveBlock1Ptr->pos.y) * 2;
      if (y >= 32 || y < 0)
-@@ -325,7 +691,12 @@ static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *cameraOffset, s32 x
+@@ -325,7 +743,12 @@ static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *cameraOffset, s32 x
      y = y + cameraOffset->yTileOffset;
      if (y >= 32)
          y -= 32;
@@ -5100,7 +5184,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
      return y * 32 + x;
  }
  
-@@ -400,9 +771,9 @@ void CameraUpdate(void)
+@@ -400,9 +823,9 @@ void CameraUpdate(void)
      if (curMovementOffsetY != 0 && curMovementOffsetY == -movementSpeedY)
      {
          if (movementSpeedY > 0)
@@ -5112,7 +5196,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
      }
  
      gFieldCamera.x += movementSpeedX;
-@@ -417,10 +788,40 @@ void CameraUpdate(void)
+@@ -417,10 +840,40 @@ void CameraUpdate(void)
          RotatingGatePuzzleCameraUpdate(deltaX, deltaY);
          SetBerryTreesSeen();
          AddCameraTileOffset(&sFieldCameraOffset, deltaX * 2, deltaY * 2);
@@ -5153,7 +5237,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..6cbc4c68f80333e936c845dfcb5c13a4
      gTotalCameraPixelOffsetX -= movementSpeedX;
      gTotalCameraPixelOffsetY -= movementSpeedY;
  }
-@@ -458,8 +859,15 @@ void UpdateCameraPanning(void)
+@@ -458,8 +911,15 @@ void UpdateCameraPanning(void)
      if (sFieldCameraPanningCallback != NULL)
          sFieldCameraPanningCallback();
      //Update sprite offset of overworld objects
@@ -6116,7 +6200,7 @@ index 10ce1bc37a9bdbd78c1601ca857fe67bf6fbac69..821dc7edce6e0b0262b8c72ac8f20a0e
 +}
 +#endif
 diff --git a/src/fieldmap.c b/src/fieldmap.c
-index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af5cc9c253 100644
+index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a54a8bfee5 100644
 --- a/src/fieldmap.c
 +++ b/src/fieldmap.c
 @@ -6,6 +6,7 @@
@@ -6127,13 +6211,18 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
  #include "mirage_tower.h"
  #include "overworld.h"
  #include "palette.h"
-@@ -17,6 +18,16 @@
+@@ -17,6 +18,21 @@
  #include "constants/rgb.h"
  #include "constants/metatile_behaviors.h"
  
 +#ifdef PORT_BRIDGE
 +#include "port_log.h"
 +#include "port_platform.h"
++#endif
++#ifdef PLATFORM_3DS
++#include "3ds_log.h"
++#include "3ds_tile_banks.h"
++#include "3ds_video.h"
 +#endif
 +#ifdef PORT_BRIDGE
 +#define PORT_PROF(label) Port_ProfileMark(label)
@@ -6144,7 +6233,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
  struct ConnectionFlags
  {
      u8 south:1;
-@@ -48,16 +59,20 @@ static const struct MapConnection *GetIncomingConnection(u8 direction, int x, in
+@@ -48,16 +64,20 @@ static const struct MapConnection *GetIncomingConnection(u8 direction, int x, in
  static bool8 IsPosInIncomingConnectingMap(u8 direction, int x, int y, const struct MapConnection *connection);
  static bool8 IsCoordInIncomingConnectingMap(int coord, int srcMax, int destMax, int offset);
  
@@ -6175,7 +6264,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
  
  #define AreCoordsWithinMapGridBounds(x, y) (x >= 0 && x < gBackupMapLayout.width && y >= 0 && y < gBackupMapLayout.height)
  
-@@ -120,6 +135,11 @@ static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height)
+@@ -120,6 +140,11 @@ static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height)
  {
      u16 *dest;
      int y;
@@ -6187,7 +6276,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
      dest = gBackupMapLayout.map;
      dest += gBackupMapLayout.width * 7 + MAP_OFFSET;
      for (y = 0; y < height; y++)
-@@ -176,7 +196,11 @@ static void FillConnection(int x, int y, struct MapHeader const *connectedMapHea
+@@ -176,7 +201,11 @@ static void FillConnection(int x, int y, struct MapHeader const *connectedMapHea
      int mapWidth;
  
      mapWidth = connectedMapHeader->mapLayout->width;
@@ -6200,7 +6289,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
      dest = &gBackupMapLayout.map[gBackupMapLayout.width * y + x];
  
      for (i = 0; i < height; i++)
-@@ -362,9 +386,305 @@ u8 MapGridGetCollisionAt(int x, int y)
+@@ -362,9 +391,524 @@ u8 MapGridGetCollisionAt(int x, int y)
      return UNPACK_COLLISION(block);
  }
  
@@ -6234,10 +6323,17 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
 +    s16 phaseX, phaseY; // origin its 2x2 border is phased on
 +    bool8 drawn;     // its ground is drawn here
 +    bool8 border;    // its border is drawable with the current tilesets
++#ifdef PLATFORM_3DS
++    u8 bank;         // 1 + the bank of its own secondary tileset, 0 for none
++#endif
 +};
 +
 +static struct CameraMap sCameraMaps[CAMERA_MAPS_MAX];
 +static u8 sCameraMapCount;
++#ifdef PLATFORM_3DS
++// Bumped whenever the maps are placed again; the banks are given out for it.
++static u32 sCameraMapsGeneration, sCameraBanksGeneration;
++#endif
 +static const struct MapLayout *sCameraMapsLayout;
 +static const struct MapConnections *sCameraMapsConnections;
 +static u16 sCameraMapsId;
@@ -6276,6 +6372,9 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
 +    map->y = map->phaseY = y;
 +    map->drawn = near || CameraTilesetsMatch(header->mapLayout);
 +    map->border = CameraBorderDrawable(header->mapLayout);
++#ifdef PLATFORM_3DS
++    map->bank = 0;
++#endif
 +}
 +
 +// The maps across the side connections of sCameraMaps[from]. The current map's
@@ -6352,6 +6451,9 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
 +    sCameraMapsConnections = gMapHeader.connections;
 +    sCameraMapsId = id;
 +    sCameraMapCount = 0;
++#ifdef PLATFORM_3DS
++    sCameraMapsGeneration++;
++#endif
 +    PlaceCameraMap(&gMapHeader, id, 0, 0, TRUE);
 +    AddCameraConnections(0, FALSE);
 +    near = sCameraMapCount;
@@ -6440,22 +6542,228 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
 +    return border[index] | MAPGRID_IMPASSABLE;
 +}
 +
++#ifdef PLATFORM_3DS
++// The tilesets that hold the banks (3ds_tile_banks.h), as last handed over.
++static const struct Tileset *sBankTilesets[CTR_TILE_BANKS];
++
++// A secondary tileset's own palettes 6-12, unfaded.
++static bool8 ReadTileBankPalettes(const struct Tileset *tileset, u16 *palettes)
++{
++    if (Port_GetAssetSizeExact(tileset->palettes) != 0)
++        return Port_LoadAssetRangeToBuffer(tileset->palettes, CTR_TILE_BANK_FIRST_PALETTE * PLTT_SIZE_4BPP,
++                                           palettes, CTR_TILE_BANK_PALETTES * PLTT_SIZE_4BPP);
++    else
++    {
++        const u16 (*source)[16] = Port_ResolveAssetPointer(tileset->palettes);
++
++        if (source == NULL)
++            return FALSE;
++        memcpy(palettes, source[CTR_TILE_BANK_FIRST_PALETTE], CTR_TILE_BANK_PALETTES * PLTT_SIZE_4BPP);
++        return TRUE;
++    }
++}
++
++// A secondary tileset's tiles and palettes 6-12 into bank `bank`.
++static void LoadCameraTileBank(u8 bank, const struct Tileset *tileset)
++{
++    u16 palettes[CTR_TILE_BANK_PALETTES * 16];
++    const void *tiles = tileset->tiles;
++    void *decompressed = NULL;
++    u32 size;
++
++    if (!ReadTileBankPalettes(tileset, palettes))
++        return;
++    if (tileset->isCompressed)
++    {
++        decompressed = malloc_and_decompress(tiles, &size);
++        tiles = decompressed;
++    }
++    else
++    {
++        size = Port_GetAssetSizeExact(tiles);
++        if (size == 0 || size > CTR_TILE_BANK_BYTES)
++            size = CTR_TILE_BANK_BYTES;
++        tiles = Port_ResolveAssetPointerSized(tiles, size);
++    }
++    if (tiles == NULL || size == 0)
++    {
++        CtrLog_Write(CTR_LOG_GAME, "2D tile bank %u: the tileset's tiles could not be read", bank);
++        if (decompressed != NULL)
++            Free(decompressed);
++        return;
++    }
++    CtrVideo_SetTileBank(bank, tiles, size, palettes);
++    sBankTilesets[bank] = tileset;
++    CtrLog_Write(CTR_LOG_GAME, "2D tile bank %u: %lu bytes of tiles, for map %u/%u", bank, (unsigned long)size,
++                 gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum);
++    if (decompressed != NULL)
++        Free(decompressed);
++}
++
++// Crossing into a map that a bank held: that bank is free from now on, and
++// the map left behind wants one, its secondary tileset still whole in VRAM
++// (the crossing loads the next one over it). Copied there, the bank is ready
++// without decompressing the tileset again, as crossing back and forth would.
++static void KeepOutgoingTileset(const struct MapHeader *incoming)
++{
++    const struct Tileset *outgoing = gMapHeader.mapLayout->secondaryTileset;
++    const struct Tileset *next;
++    u16 palettes[CTR_TILE_BANK_PALETTES * 16];
++    int bank;
++
++    if (incoming == NULL || incoming->mapLayout == NULL || outgoing == NULL)
++        return;
++    next = incoming->mapLayout->secondaryTileset;
++    if (next == outgoing || incoming->mapLayout->primaryTileset != gMapHeader.mapLayout->primaryTileset)
++        return;
++    for (bank = 0; bank < CTR_TILE_BANKS && sBankTilesets[bank] != next; bank++)
++        ;
++    if (bank == CTR_TILE_BANKS || !ReadTileBankPalettes(outgoing, palettes))
++        return;
++    CtrVideo_SetTileBank(bank, (const void *)(BG_VRAM + NUM_TILES_IN_PRIMARY * TILE_SIZE_4BPP),
++                         CTR_TILE_BANK_BYTES, palettes);
++    sBankTilesets[bank] = outgoing;
++    CtrLog_Write(CTR_LOG_GAME, "2D tile bank %u: kept from VRAM, leaving map %u/%u", bank,
++                 gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum);
++}
++
++// The banks for the maps placed: a map drawn with other tilesets than the
++// current map's - the same primary, another secondary - takes the bank of its
++// secondary tileset, nearest maps first, as many tilesets as there are banks.
++// A tileset keeps the bank it already holds, so crossing back and forth
++// loads only the one the current map gave up.
++static void AssignCameraBanks(void)
++{
++    const struct Tileset *wanted[CTR_TILE_BANKS];
++    u8 slot[CTR_TILE_BANKS];
++    bool8 held[CTR_TILE_BANKS] = {FALSE};
++    int count = 0, i, w, s;
++
++    if (sCameraBanksGeneration == sCameraMapsGeneration)
++        return;
++    sCameraBanksGeneration = sCameraMapsGeneration;
++    for (i = 1; i < sCameraMapCount; i++)
++    {
++        struct CameraMap *map = &sCameraMaps[i];
++        const struct MapLayout *layout = map->header->mapLayout;
++
++        map->bank = 0;
++        if (layout->primaryTileset != gMapHeader.mapLayout->primaryTileset
++         || layout->secondaryTileset == NULL
++         || layout->secondaryTileset == gMapHeader.mapLayout->secondaryTileset)
++            continue;
++        for (w = 0; w < count && wanted[w] != layout->secondaryTileset; w++)
++            ;
++        if (w == count)
++        {
++            if (count == CTR_TILE_BANKS)
++                continue;
++            wanted[count++] = layout->secondaryTileset;
++        }
++        map->bank = w + 1;
++    }
++    for (w = 0; w < count; w++)
++    {
++        slot[w] = CTR_TILE_BANKS;
++        for (s = 0; s < CTR_TILE_BANKS; s++)
++            if (!held[s] && sBankTilesets[s] == wanted[w])
++            {
++                slot[w] = s;
++                held[s] = TRUE;
++                break;
++            }
++    }
++    for (w = 0; w < count; w++)
++    {
++        if (slot[w] != CTR_TILE_BANKS)
++            continue;
++        for (s = 0; s < CTR_TILE_BANKS && held[s]; s++)
++            ;
++        slot[w] = s;
++        held[s] = TRUE;
++        sBankTilesets[s] = NULL;
++        LoadCameraTileBank(s, wanted[w]);
++    }
++    for (i = 1; i < sCameraMapCount; i++)
++    {
++        struct CameraMap *map = &sCameraMaps[i];
++
++        // A bank that could not be loaded leaves its maps as they were.
++        if (map->bank != 0)
++            map->bank = sBankTilesets[slot[map->bank - 1]] == wanted[map->bank - 1] ? slot[map->bank - 1] + 1 : 0;
++    }
++}
++
++u8 MapGridGetCameraBankAt(int x, int y, const struct MapLayout **layout)
++{
++    int i;
++
++    x -= MAP_OFFSET;
++    y -= MAP_OFFSET;
++    if (x >= 0 && x < gMapHeader.mapLayout->width && y >= 0 && y < gMapHeader.mapLayout->height)
++        return 0;
++    UpdateCameraMaps();
++    AssignCameraBanks();
++    for (i = 1; i < sCameraMapCount; i++)
++    {
++        const struct CameraMap *map = &sCameraMaps[i];
++        const struct MapLayout *mapLayout = map->header->mapLayout;
++        int mapX = x - map->x;
++        int mapY = y - map->y;
++
++        if (mapX >= 0 && mapX < mapLayout->width && mapY >= 0 && mapY < mapLayout->height)
++        {
++            if (map->bank == 0)
++                return 0;
++            *layout = mapLayout;
++            return map->bank;
++        }
++    }
++    return 0;
++}
++
++u16 GetMetatileAttributesFromLayout(const struct MapLayout *layout, u16 metatile)
++{
++    const struct Tileset *tileset = metatile < NUM_METATILES_IN_PRIMARY ? layout->primaryTileset
++                                                                         : layout->secondaryTileset;
++    const u16 *attributes;
++
++    if (metatile >= NUM_METATILES_TOTAL || tileset == NULL)
++        return 0;
++    if (metatile >= NUM_METATILES_IN_PRIMARY)
++        metatile -= NUM_METATILES_IN_PRIMARY;
++    attributes = Port_ResolveAssetPointer(tileset->metatileAttributes);
++    return attributes != NULL ? attributes[metatile] : 0;
++}
++#endif
++
 +// x, y in backup-layout coordinates, outside the ground the backup holds.
-+static u16 GetCameraConnectionBlockAt(int x, int y)
++// The camera draws a map with a bank of its own too (camera); the game's own
++// lookups see only the maps drawn with the current tilesets, as before.
++static u16 GetCameraConnectionBlockAt(int x, int y, bool8 camera)
 +{
 +    int i;
 +
 +    x -= MAP_OFFSET;
 +    y -= MAP_OFFSET;
 +    UpdateCameraMaps();
++#ifdef PLATFORM_3DS
++    if (camera)
++        AssignCameraBanks();
++#endif
 +    for (i = 1; i < sCameraMapCount; i++)
 +    {
 +        const struct CameraMap *map = &sCameraMaps[i];
 +        const struct MapLayout *layout = map->header->mapLayout;
 +        int mapX = x - map->x;
 +        int mapY = y - map->y;
++        bool8 drawn = map->drawn;
 +
-+        if (map->drawn && mapX >= 0 && mapX < layout->width && mapY >= 0 && mapY < layout->height)
++#ifdef PLATFORM_3DS
++        if (camera && map->bank != 0)
++            drawn = TRUE;
++#endif
++        if (drawn && mapX >= 0 && mapX < layout->width && mapY >= 0 && mapY < layout->height)
 +        {
 +            const u16 *blocks = Port_ResolveAssetPointer(layout->map);
 +            return blocks[mapY * layout->width + mapX];
@@ -6475,7 +6783,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
 +        : MAPGRID_UNDEFINED;
 +
 +    if (block == MAPGRID_UNDEFINED)
-+        block = GetCameraConnectionBlockAt(x, y);
++        block = GetCameraConnectionBlockAt(x, y, TRUE);
 +    return UNPACK_METATILE(block);
 +}
 +
@@ -6486,7 +6794,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
 +#ifdef PORT_BRIDGE
 +    u16 block = AreCoordsWithinMapGridBounds(x, y)
 +        ? gBackupMapLayout.map[x + gBackupMapLayout.width * y]
-+        : GetCameraConnectionBlockAt(x, y);
++        : GetCameraConnectionBlockAt(x, y, FALSE);
 +#else
      u16 block = GetMapGridBlockAt(x, y);
 +#endif
@@ -6506,7 +6814,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
  
      if (block == MAPGRID_UNDEFINED)
          return UNPACK_METATILE(GetBorderBlockAt(x, y));
-@@ -375,6 +695,9 @@ u32 MapGridGetMetatileIdAt(int x, int y)
+@@ -375,6 +919,9 @@ u32 MapGridGetMetatileIdAt(int x, int y)
  u32 MapGridGetMetatileBehaviorAt(int x, int y)
  {
      u16 metatile = MapGridGetMetatileIdAt(x, y);
@@ -6516,7 +6824,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
      return UNPACK_BEHAVIOR(GetMetatileAttributesById(metatile));
  }
  
-@@ -412,11 +735,47 @@ u16 GetMetatileAttributesById(u16 metatile)
+@@ -412,11 +959,47 @@ u16 GetMetatileAttributesById(u16 metatile)
      if (metatile < NUM_METATILES_IN_PRIMARY)
      {
          attributes = gMapHeader.mapLayout->primaryTileset->metatileAttributes;
@@ -6564,7 +6872,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
          return attributes[metatile - NUM_METATILES_IN_PRIMARY];
      }
      else
-@@ -660,19 +1019,23 @@ bool8 CameraMove(int x, int y)
+@@ -660,19 +1243,26 @@ bool8 CameraMove(int x, int y)
      }
      else
      {
@@ -6576,6 +6884,9 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
          old_y = gSaveBlock1Ptr->pos.y;
          connection = GetIncomingConnection(direction, gSaveBlock1Ptr->pos.x, gSaveBlock1Ptr->pos.y);
          SetPositionFromConnection(connection, direction, x, y);
++#ifdef PLATFORM_3DS
++        KeepOutgoingTileset(connection != NULL ? GetMapHeaderFromConnection(connection) : NULL);
++#endif
          LoadMapFromCameraTransition(connection->mapGroup, connection->mapNum);
 +        PORT_PROF("LoadMapFromCameraTransition");
          gCamera.active = TRUE;
@@ -6588,7 +6899,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
      }
      return gCamera.active;
  }
-@@ -854,10 +1217,22 @@ static void CopyTilesetToVramUsingHeap(struct Tileset const *tileset, u16 numTil
+@@ -854,10 +1444,22 @@ static void CopyTilesetToVramUsingHeap(struct Tileset const *tileset, u16 numTil
  {
      if (tileset)
      {
@@ -6611,7 +6922,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
      }
  }
  
-@@ -878,20 +1253,53 @@ static void LoadTilesetPalette(struct Tileset const *tileset, u16 destOffset, u1
+@@ -878,20 +1480,53 @@ static void LoadTilesetPalette(struct Tileset const *tileset, u16 destOffset, u1
  
      if (tileset)
      {
@@ -6668,7 +6979,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..bfdb5586ead1f092afe5f615c529b8af
              ApplyGlobalTintToPaletteEntries(destOffset, size >> 1);
          }
      }
-@@ -926,8 +1334,20 @@ void CopyMapTilesetsToVram(struct MapLayout const *mapLayout)
+@@ -926,8 +1561,20 @@ void CopyMapTilesetsToVram(struct MapLayout const *mapLayout)
  {
      if (mapLayout)
      {
@@ -10877,7 +11188,7 @@ index 80746561b03bc467f4554bfb988cdd3b889457d3..7a2153785f1936008475b9f826974300
  }
  
 diff --git a/src/overworld.c b/src/overworld.c
-index 87a833ac74431f843323e46062e5139e49c862c2..cc00a86bff8636290df89a97360b6e24c3dd5f8c 100644
+index 87a833ac74431f843323e46062e5139e49c862c2..6c4c8d16cfc5ce526594d639847a192fb6edba82 100644
 --- a/src/overworld.c
 +++ b/src/overworld.c
 @@ -27,6 +27,7 @@
@@ -11208,7 +11519,7 @@ index 87a833ac74431f843323e46062e5139e49c862c2..cc00a86bff8636290df89a97360b6e24
  {
      return Overworld_GetMapHeaderByGroupAndId(gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum)->regionMapSectionId;
  }
-@@ -1404,9 +1525,15 @@ static void InitOverworldBgs(void)
+@@ -1404,12 +1525,21 @@ static void InitOverworldBgs(void)
      SetBgAttribute(1, BG_ATTR_MOSAIC, 1);
      SetBgAttribute(2, BG_ATTR_MOSAIC, 1);
      SetBgAttribute(3, BG_ATTR_MOSAIC, 1);
@@ -11224,7 +11535,23 @@ index 87a833ac74431f843323e46062e5139e49c862c2..cc00a86bff8636290df89a97360b6e24
      SetBgTilemapBuffer(1, gOverworldTilemapBuffer_Bg1);
      SetBgTilemapBuffer(2, gOverworldTilemapBuffer_Bg2);
      SetBgTilemapBuffer(3, gOverworldTilemapBuffer_Bg3);
-@@ -1531,6 +1658,13 @@ static bool8 RunFieldCallback(void)
++#ifdef PLATFORM_3DS
++    FieldCamera_RegisterTileBanks();
++#endif
+     InitStandardTextBoxWindows();
+ }
+ 
+@@ -1417,6 +1547,9 @@ void CleanupOverworldWindowsAndTilemaps(void)
+ {
+     ClearMirageTowerPulseBlendEffect();
+     FreeAllOverworldWindowBuffers();
++#ifdef PLATFORM_3DS
++    FieldCamera_UnregisterTileBanks();
++#endif
+     TRY_FREE_AND_SET_NULL(gOverworldTilemapBuffer_Bg3);
+     TRY_FREE_AND_SET_NULL(gOverworldTilemapBuffer_Bg2);
+     TRY_FREE_AND_SET_NULL(gOverworldTilemapBuffer_Bg1);
+@@ -1531,6 +1664,13 @@ static bool8 RunFieldCallback(void)
  
  void CB2_NewGame(void)
  {
@@ -11238,7 +11565,7 @@ index 87a833ac74431f843323e46062e5139e49c862c2..cc00a86bff8636290df89a97360b6e24
      FieldClearVBlankHBlankCallbacks();
      StopMapMusic();
      ResetSafariZoneFlag_();
-@@ -1725,12 +1859,24 @@ void CB2_ContinueSavedGame(void)
+@@ -1725,12 +1865,24 @@ void CB2_ContinueSavedGame(void)
      UnfreezeObjectEvents();
      DoTimeBasedEvents();
      UpdateMiscOverworldStates();
@@ -11263,7 +11590,7 @@ index 87a833ac74431f843323e46062e5139e49c862c2..cc00a86bff8636290df89a97360b6e24
  
      PlayTimeCounter_Start();
      ScriptContext_Init();
-@@ -1888,6 +2034,13 @@ static bool32 LoadMapInStepsLink(u8 *state)
+@@ -1888,6 +2040,13 @@ static bool32 LoadMapInStepsLink(u8 *state)
  
  static bool32 LoadMapInStepsLocal(u8 *state, bool32 a2)
  {
@@ -11277,7 +11604,7 @@ index 87a833ac74431f843323e46062e5139e49c862c2..cc00a86bff8636290df89a97360b6e24
      switch (*state)
      {
      case 0:
-@@ -2072,6 +2225,11 @@ static void ResetMirageTowerAndSaveBlockPtrs(void)
+@@ -2072,6 +2231,11 @@ static void ResetMirageTowerAndSaveBlockPtrs(void)
  {
      ClearMirageTowerPulseBlend();
      MoveSaveBlocks_ResetHeap();
@@ -11289,7 +11616,7 @@ index 87a833ac74431f843323e46062e5139e49c862c2..cc00a86bff8636290df89a97360b6e24
  }
  
  static void ResetScreenForMapLoad(void)
-@@ -2164,17 +2322,62 @@ static void InitObjectEventsLocal(void)
+@@ -2164,17 +2328,62 @@ static void InitObjectEventsLocal(void)
  {
      u16 x, y;
      struct InitialPlayerAvatarState *player;
@@ -11352,7 +11679,7 @@ index 87a833ac74431f843323e46062e5139e49c862c2..cc00a86bff8636290df89a97360b6e24
  }
  
  static void InitObjectEventsReturnToField(void)
-@@ -2186,8 +2389,18 @@ static void InitObjectEventsReturnToField(void)
+@@ -2186,8 +2395,18 @@ static void InitObjectEventsReturnToField(void)
  
  static void SetCameraToTrackPlayer(void)
  {

@@ -115,6 +115,15 @@ static int GetTileSlot(unsigned address, unsigned palette, bool color256) {
     unsigned bg = address >= 0x8000u ? 2u : 3u;
     return (int)(bg * 1024u + (address - (bg == 2 ? 0x8000u : 0x4000u)) / 32u);
 }
+/* The field's banks of other tilesets: none on the Pokedex's screens. */
+static unsigned TilemapBankAt(unsigned entryAddress, unsigned entry) {
+    (void)entryAddress; (void)entry;
+    return 0;
+}
+static int BankedTileSlot(unsigned bank, unsigned entry, unsigned chars) {
+    (void)bank; (void)entry; (void)chars;
+    abort();
+}
 static void DrawSlot(int slot, int screenX, int screenY, bool flipX, bool flipY) {
     unsigned bg = (unsigned)slot / 1024u, tile = (unsigned)slot % 1024u;
     for (int row = 0; row < 8; ++row)

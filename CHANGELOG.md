@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Builder: the terrain relief is made after the buildings, whose cells it
+  reads. Made side by side, the relief depended on which finished first,
+  and a data pack could fail to match the release.
+
 - Juan's gym battle no longer crashes the game when it ends, by @DannyM90
   (pull request #182, issue #134). His defeat text is longer than the
   battle's text buffer; on the GBA the rest landed in an unused array, here

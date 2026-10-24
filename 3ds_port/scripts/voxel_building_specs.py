@@ -2396,7 +2396,8 @@ WALL_COLOURS = ("f6b473", "de7b31", "ffe6b4")   # the Center's orange wall
 
 def piece(name, shape, height, base=0, fill=None, leave=(), side=None, solid=None,
           back=None, card=False, top=None, foot=None, walls=(), cells=(), against=None,
-          claim=(), through=False, round=None, legs=None, run=(), plan=None):
+          claim=(), through=False, round=None, legs=None, run=(), plan=None, skip=(),
+          when=None, at=(), tiles=None, anim=None, ribbon=None, found=False, flat=False):
     """`back`: the Z its top runs back to, where the cartridge's collision
     says it ends (or the wall it stands against); `against`: that wall's Z,
     where a top drawn deeper than the room in front of it stops, flat, the
@@ -2426,12 +2427,30 @@ def piece(name, shape, height, base=0, fill=None, leave=(), side=None, solid=Non
     across and y up in the room's pixels, running back from z0 to z1 with
     the drawing projected on it (vb.ProjRun): an escalator's ramp and its
     balustrades. A `foot` below its drawing: a machine standing behind a
-    counter that hides its front's foot, not on it."""
+    counter that hides its front's foot, not on it. `skip`: cells (x, y)
+    of its rectangle it neither lays nor stands on, left to the map as the
+    game draws it - a switch a script presses beside a side wall. `when`:
+    (x, y, metatile) - it stands only while that cell of the room holds that
+    metatile (a beam a script switches, a switch it presses); `at`: cells
+    its rectangle's corner stands at again, the same piece (one post
+    drawn whole, standing for every post); `tiles`: (lo, hi), only the
+    pixels drawn from those tiles of the upper layer are its own (the beam,
+    not the posts it runs between); `anim`: ([the frames' .4bpp], their
+    first tile in BG VRAM) - its texels follow the game's animation of
+    those tiles (`tiles` names them); `ribbon`: ((za, ya), (zb, yb)) - a
+    strip running back from one post to the next (vb.Ribbon), not a card;
+    `found`: found in other rooms by its own pixels, however few (a
+    statue's ball: gen_voxel_buildings.LOOSE_PIXELS); `flat`: a block whose
+    drawing is its plan, laid on its top as drawn (not projected), its sides
+    its `walls` - the dark beside a room's entrance, its rim at its north
+    edge (its room's `redrawn` waives the 45-degree proof there)."""
     return {"name": name, "shape": shape, "height": height, "base": base,
             "fill": fill, "leave": leave, "side": side, "solid": solid,
             "back": back, "card": card, "top": top, "foot": foot, "walls": walls,
             "cells": cells, "against": against, "claim": claim, "through": through,
-            "round": round, "legs": legs, "run": run, "plan": plan}
+            "round": round, "legs": legs, "run": run, "plan": plan, "skip": skip,
+            "when": when, "at": at, "tiles": tiles, "anim": anim, "ribbon": ribbon,
+            "found": found, "flat": flat}
 
 
 def own_shell(pieces):
@@ -3261,35 +3280,66 @@ def flower_shop_room():
 # ── Dewford's gym ─────────────────────────────────────────────────────────
 #
 # A maze cut in rock two cells tall: every blocked cell is rock, its top or
-# the two rows of its face, so each column's run of blocked cells is a block
-# drawn from the run's first row to its foot. Runs side by side with the same
-# rows are one rectangle (cells: x0, y0, x1, y1), front first. The leader's
-# alcove and the statues, blocked too, are not rock and stay flat.
+# the two rows of its face, so each column's run of blocked cells (x, y0, y1,
+# y1 inclusive, read off the collision) is a block drawn from the run's first
+# row (and the lip of its top 8 rows north of it) to its foot, a piece to
+# each rectangle of them (run_rects). The rock
+# down the west and east edges, the leader's alcove and the statues are not
+# among them.
 
-DEWFORD_GYM_BLOCKS = [
-    (0, 0, 1, 28), (1, 18, 2, 28), (2, 23, 3, 28), (3, 24, 4, 28), (8, 23, 12, 28),
-    (13, 23, 16, 28), (16, 19, 17, 28), (17, 0, 18, 28), (3, 17, 6, 22), (6, 15, 8, 22),
-    (9, 15, 10, 21), (10, 16, 11, 21), (12, 16, 13, 19), (13, 9, 14, 19), (8, 15, 9, 18),
-    (14, 13, 16, 18), (3, 11, 5, 16), (1, 12, 2, 15), (5, 7, 6, 14), (6, 6, 7, 14),
-    (10, 9, 12, 14), (7, 9, 9, 13), (14, 7, 16, 12), (1, 6, 2, 10), (3, 7, 5, 10),
-    (16, 0, 17, 9), (13, 0, 15, 6), (7, 0, 10, 5), (12, 0, 13, 5), (11, 0, 12, 4),
-    (2, 0, 3, 3), (5, 0, 6, 3), (10, 0, 11, 3), (15, 0, 16, 3),
+DEWFORD_GYM_RUNS = [
+    (1, 6, 9), (1, 12, 14), (1, 18, 27), (2, 7, 8), (2, 19, 20), (2, 23, 27), (3, 7, 9),
+    (3, 11, 15), (3, 17, 21), (3, 24, 27), (4, 7, 9), (4, 11, 15), (4, 17, 21), (4, 26, 27),
+    (5, 7, 13), (5, 17, 21), (6, 6, 13), (6, 15, 21), (7, 0, 4), (7, 6, 7), (7, 9, 12),
+    (7, 15, 21), (7, 26, 27), (8, 0, 4), (8, 6, 7), (8, 9, 12), (8, 15, 17), (8, 23, 27),
+    (9, 0, 4), (9, 6, 7), (9, 15, 20), (9, 23, 27), (10, 0, 2), (10, 6, 7), (10, 9, 13),
+    (10, 16, 20), (10, 23, 27), (11, 0, 3), (11, 6, 7), (11, 9, 13), (11, 23, 27),
+    (12, 0, 4), (12, 16, 18), (12, 26, 27), (13, 0, 5), (13, 9, 18), (13, 20, 21),
+    (13, 23, 27), (14, 0, 5), (14, 7, 11), (14, 13, 17), (14, 20, 21), (14, 23, 27),
+    (15, 0, 2), (15, 7, 11), (15, 13, 17), (15, 20, 21), (15, 23, 27), (16, 0, 8),
+    (16, 19, 27),
 ]
-DEWFORD_GYM_FLOOR = [0x201, 0x202, 0x203, 0x205, 0x206, 0x209, 0x20A, 0x20B, 0x20D, 0x211,
-                     0x212, 0x213, 0x215, 0x216, 0x218, 0x21A, 0x21B, 0x222, 0x223]
+# the floor's shadow: its shaded metatiles carry the lips of the blocks'
+# tops too, the blocks' own
+DEWFORD_GYM_FLOOR = ["737352"]
 
 
 def dewford_gym():
-    side = (128, 416, 144, 448)     # a stretch of the front wall's face
+    # A block's front is its face alone, 24 px from its foot: the white lip
+    # above it is its top's edge, as down its sides and along its back, and
+    # the rock's brown lies behind it. Its sides (solid) are that face too:
+    # projected off its drawing, they were its outline's navy drawn out
+    # across them.
+    side = (128, 424, 144, 448)     # a stretch of the front wall's face
     # The rock the room is cut in, down its west and east edges, is a wall's
     # face each side and not a block: a block's art is its drawing three times
     # over (its hidden top and sides), and those two columns' would put the
     # layout's page past the console's 512x512.
-    return [piece("block_%d" % i, [(x0 * 16, y0 * 16, x1 * 16, y1 * 16)], 32)
-            for i, (x0, y0, x1, y1) in enumerate(DEWFORD_GYM_BLOCKS)
-            if x0 not in (0, 17)] + [
-        piece("edge_w", [], 32, side=side, walls=[((16, 448), (16, 32))]),
-        piece("edge_e", [], 32, side=side, walls=[((272, 32), (272, 448))]),
+    return [
+        # the leader's alcove: the bookcases either side of the dais, their
+        # sides a plain patch of their olive, against its back wall, whole
+        # behind them with its emblem
+        piece("shelf_w", [(16, 32, 32, 64)], 24, against=48, side=(19, 41, 29, 47)),
+        piece("shelf_e", [(96, 32, 112, 64)], 24, against=48, side=(99, 41, 109, 47)),
+        piece("block_alcove", [(16, 0, 112, 48)], 24, side=side),
+    ] + [
+        # each drawn from 8 rows into the cell north of it, as Rustboro's
+        # blocks: the white lip of its top lies there, on the floor in
+        # front of the block north. A run a single cell tall stands 4 px
+        # lower than its cell, or it would be all front and no top
+        piece("block_%d_%d" % (x0 // 16, y0 // 16), [(x0, y0 - 8 if y0 else 0, x1, y1)],
+              min(24, y1 - y0 - 4), side=side, solid=True)
+        for (x0, y0, x1, y1) in run_rects(DEWFORD_GYM_RUNS)
+    ] + [
+        # the rock down the west and east edges, in three stretches each
+        # (one the room's length would take a page of its own), each
+        # stretch's top run back over the one north of it, where that one's
+        # front stands, hidden - laid with its own first rows of rock, not
+        # the lip its top ends in
+        piece("block_edge_%d_%d" % (x, y0), [(x * 16, y0 * 16, x * 16 + 16, y1 * 16)], 24,
+              side=side, solid=True, back=y0 * 16 if y0 else None,
+              top=(x * 16, y0 * 16, x * 16 + 16, y0 * 16 + 24) if y0 else None)
+        for x in (0, 17) for (y0, y1) in ((0, 10), (10, 19), (19, 28))
     ]
 
 
@@ -3418,9 +3468,10 @@ def rustboro_gym():
         # the statues by the door: a ball on a pedestal. Every gym has them,
         # on its own floor: they stand in each as they are (reuse_pieces),
         # so they must not take the floor showing at their feet
-        piece("statue_w_ball", [("ellipse", 40, 279, 7, 7)], 8, base=16),
+        # (the ball found by its own few pixels, standing on the pedestal)
+        piece("statue_w_ball", [("ellipse", 40, 279, 7, 7)], 8, base=16, found=True),
         piece("statue_w", gym_statue(32), 16, back=288),
-        piece("statue_e_ball", [("ellipse", 136, 279, 7, 7)], 8, base=16),
+        piece("statue_e_ball", [("ellipse", 136, 279, 7, 7)], 8, base=16, found=True),
         piece("statue_e", gym_statue(128), 16, back=288),
         # the maze, front first
         gym_block("block_sw", [(2, 13, 4, 15), (2, 15, 5, 16)]),
@@ -4561,36 +4612,183 @@ def hall_of_fame():
 
 
 
-# Mauville's gym: the corridor's two walls running down from the back wall
-# into the wall blocks they turn into, the block further down the east side,
-# and the back wall. The beams' puzzle stays drawn: MauvilleGymPressSwitch and
-# MauvilleGymSetDefaultBarriers switch its beams, its switches and some of
-# its coils' tiles (setmetatile), and every coil is left drawn so that they
-# look alike. So do the leader's dais, a step the floor can't take, and the
-# entrance hall's rims round the dark, drawn as their tops alone.
+# Mauville's gym: the blocks either side of the corridor up to the back
+# wall, their tops the dark beyond the room and the rims round it, the block
+# further down the east side, the two either side of the entrance hall, and
+# the back wall; the coils stand, turned, one drawn whole standing for all
+# twelve (three in a row up each side of the corridor, each hiding most of
+# the one behind it). The puzzle's barriers stand and go as the game
+# switches them (setmetatile: MauvilleGymPressSwitch, the barriers' two
+# states, MauvilleGymDeactivatePuzzle once Wattson is beaten): each beam a
+# piece that stands only while its cell holds its lit metatile (`when`),
+# its texels following the electric gates' animation (tileset_anims.c,
+# secondary tiles 144-159) - a sheet between two coils, or a strip from
+# the foot of one coil up to the head of the next where it runs down the
+# room. The switches stay drawn, raised or pressed as the game has them: a
+# plate in an S of three strokes, which a piece read column by column would
+# stand as a block with the floor showing through its top. The red
+# beams are lit only in the barriers' other state: they are read off the
+# room as MauvilleCity_Gym_EventScript_SetAltBarriers leaves it
+# (mauville_gym_alt). The leader's dais, a step the floor can't take,
+# stays drawn.
 
 MAUVILLE_GYM_SIDE = (0, 120, 16, 142)
+# the floor and its checks, and the walls' shadow across it
+MAUVILLE_GYM_FLOOR = ("f6f6ac", "cdcd83", "f6e641", "ffff10", "b4b483", "dec541")
+# every coil by its head's cell, the one drawn whole first: drawn from 3
+# rows into it to the foot of the cell below. The heads a vertical beam runs
+# down to are drawn with its end on them while it is lit (PoleTop_On):
+# those two coils stand twice, each the coil the drawing has in that state.
+# Those whose feet are drawn on the lower layer (PoleBottom: the feet a
+# vertical beam runs from) stand as drawn, a pixel or two of their own -
+# each read where its beam is out, which is drawn over it
+MAUVILLE_GYM_COILS = [(0, 10), (6, 13), (9, 10), (3, 7), (3, 6), (6, 6), (3, 5), (6, 5)]
+MAUVILLE_GYM_POLE_TOP = (0x251, 0x250)      # PoleTop_Off, PoleTop_On
+MAUVILLE_GYM_BEAM_TILES = (512 + 144, 512 + 159)
+MAUVILLE_GYM_GATES = (["data/tilesets/secondary/mauville_gym/anim/electric_gates/%d.4bpp" % f
+                       for f in (0, 1)], 512 + 144)
+# The metatiles (include/constants/metatile_labels.h): a horizontal beam
+# by its top-left cell lit, green or red; the middle of a vertical one
+MAUVILLE_GYM_GREEN_H, MAUVILLE_GYM_RED_H = 0x220, 0x222
+MAUVILLE_GYM_GREEN_V, MAUVILLE_GYM_RED_V = 0x248, 0x249
+# the barriers' other state (MauvilleCity_Gym_EventScript_SetAltBarriers):
+# the red beams lit, the green ones out
+MAUVILLE_GYM_ALT = {(3, 11): 0x241, (3, 12): 0x249, (3, 13): 0x250,
+                    (4, 10): 0x222, (5, 10): 0x223, (4, 11): 0x22A, (5, 11): 0x22B,
+                    (7, 10): 0x222, (8, 10): 0x223, (7, 11): 0x22A, (8, 11): 0x22B,
+                    (4, 13): 0x230, (5, 13): 0x231, (4, 14): 0x238, (5, 14): 0x239,
+                    (1, 10): 0x230, (2, 10): 0x231, (1, 11): 0x238, (2, 11): 0x239,
+                    (6, 8): 0x242, (6, 9): 0x21A, (6, 10): 0x251,
+                    (4, 6): 0x230, (5, 6): 0x231, (4, 7): 0x238, (5, 7): 0x239}
+
+
+def mauville_beam(x, y, lit):
+    """The horizontal beam whose top-left cell is (x, y): a sheet standing
+    at its foot, between the two coils' axes."""
+    return piece("beam_%d_%d" % (x, y), [(x * 16, y * 16, x * 16 + 32, y * 16 + 32)], 16,
+                 card=True, tiles=MAUVILLE_GYM_BEAM_TILES, anim=MAUVILLE_GYM_GATES,
+                 when=(x, y, lit))
+
+
+def mauville_beam_down(x, y, lit):
+    """The vertical beam from the coil whose foot is cell (x, y) down to the
+    head of the next: a strip from the first's axis, low on it, up to the
+    second's, at its head - as the drawing runs it, 32 rows from (x, y)."""
+    # from the first coil's front, its drawn foot at its axis, to the
+    # second's axis at its head
+    za, zb = y * 16 + 16, y * 16 + 57
+    return piece("beam_%d_%d" % (x, y), [(x * 16, y * 16, x * 16 + 16, y * 16 + 32)], 1,
+                 tiles=MAUVILLE_GYM_BEAM_TILES, anim=MAUVILLE_GYM_GATES,
+                 when=(x, y + 1, lit), ribbon=((za, za - y * 16), (zb, zb - y * 16 - 32)),
+                 skip=[(x, y)])
+
+
+def mauville_coil(x, y, head=None):
+    """The coil whose head is cell (x, y), as the drawing has it (while that
+    cell holds `head`)."""
+    return piece("coil_%d_%d" % (x, y), [(x * 16, y * 16 + 3, x * 16 + 16, y * 16 + 32)], 22,
+                 round="lathe", leave=MAUVILLE_GYM_FLOOR,
+                 when=head and (x, y, head))
 
 
 def mauville_gym():
     side = MAUVILLE_GYM_SIDE
+    (cx, cy), copies = MAUVILLE_GYM_COILS[0], MAUVILLE_GYM_COILS[1:]
     return [
-        # each corridor wall and the block it turns into cut between columns:
-        # a piece's rectangle takes the beams' cells within it
-        piece("wall_w", [(40, 0, 48, 144)], 24, side=side),
-        piece("block_w", [(0, 112, 40, 144)], 24, side=side),
-        piece("wall_e", [(112, 0, 120, 128)], 24, side=side),
-        piece("block_e", [(120, 96, 160, 128)], 24, side=side),
-        piece("block_se", [(112, 200, 160, 240)], 24, side=side),
+        # front first: the beams over the coils' feet
+        mauville_beam(4, 13, MAUVILLE_GYM_GREEN_H),
+        mauville_beam(1, 10, MAUVILLE_GYM_GREEN_H),
+        mauville_beam(4, 6, MAUVILLE_GYM_GREEN_H),
+        mauville_beam_down(6, 8, MAUVILLE_GYM_GREEN_V),
+        piece("coil", [(cx * 16, cy * 16 + 3, cx * 16 + 16, cy * 16 + 32)], 22, round="lathe",
+              leave=MAUVILLE_GYM_FLOOR, at=copies),
+        mauville_coil(3, 10),
+        # the green beam's end on its head, and the red one's not
+        mauville_coil(6, 10, MAUVILLE_GYM_POLE_TOP[1]),
+        mauville_coil(3, 13, MAUVILLE_GYM_POLE_TOP[0]),
+    ] + [
+        # each block solid, its sides the wall's face, standing as drawn
+        piece("block_w", [(0, 0, 48, 144)], 24, side=side, solid=True),
+        piece("block_e", [(112, 0, 160, 128)], 24, side=side, solid=True),
+        piece("block_se", [(112, 200, 160, 240)], 24, side=side, solid=True),
+        # the dark either side of the entrance hall: its rims are drawn at
+        # the floor's level, round its north and inner edges, where its walls
+        # end - so its top is its drawing as drawn
+        piece("block_hall_w", [(0, 272, 32, 336)], 24, side=side, flat=True,
+              walls=[((32, 336), (32, 272))]),
+        piece("block_hall_e", [(128, 272, 160, 336)], 24, side=side, flat=True,
+              walls=[((128, 272), (128, 336))]),
         piece("wall", [(48, 0, 112, 31)], 31, fill=16, foot=31, side=side),
-        # in two, round the switch at (0, 15): a wall's rectangle would lay
-        # the switch in its model, and MauvilleGymPressSwitch presses it
-        piece("side_w", [], 24, side=side, walls=[((0, 239), (0, 144))]),
-        piece("side_w2", [], 24, side=side, walls=[((0, 272), (0, 256))]),
-        piece("side_e", [], 24, side=side, walls=[((160, 128), (160, 200))]),
-        piece("side_e2", [], 24, side=side, walls=[((160, 240), (160, 272))]),
-        piece("side_sw", [], 24, side=side, walls=[((32, 336), (32, 272))]),
-        piece("side_se", [], 24, side=side, walls=[((128, 272), (128, 336))]),
+        # the switch at (0, 15) beside the west wall is the map's
+        piece("side_w", [], 24, side=side, walls=[((0, 272), (0, 144))], skip=[(0, 15)]),
+        # the east wall whole, behind the block down that side too: no gap
+        # between the wall and the block's north face
+        piece("side_e", [], 24, side=side, walls=[((160, 128), (160, 272))]),
+    ]
+
+
+def mauville_gym_alt():
+    """The red beams, lit in the barriers' other state, and the two coils
+    as it draws them."""
+    return [
+        mauville_beam(4, 10, MAUVILLE_GYM_RED_H),
+        mauville_beam(7, 10, MAUVILLE_GYM_RED_H),
+        mauville_beam_down(3, 11, MAUVILLE_GYM_RED_V),
+        mauville_coil(6, 10, MAUVILLE_GYM_POLE_TOP[0]),
+        mauville_coil(3, 13, MAUVILLE_GYM_POLE_TOP[1]),
+        mauville_coil(6, 7),
+    ]
+
+
+
+# Lavaridge's gym, 1F and B1F: rooms walled off from each other, the walls
+# a cell thick or a row of them, each column's run of blocked cells (read
+# off the collision) a block drawn from its first row to its foot - its pale
+# top, and its brick face 16 px - a piece to each rectangle of them
+# (run_rects). The dark ledges across some rooms' floors stand as curbs,
+# 7 px. The sand the trainers hide in, the holes down to B1F and the
+# leader's dais lie on the floor, and stay drawn; the statues are Rustboro's.
+
+LAVARIDGE_GYM_SIDE = (16, 8, 32, 24)       # a stretch of the top wall's face
+LAVARIDGE_GYM_1F_RUNS = [
+    (0, 0, 1), (0, 7, 8), (1, 0, 1), (1, 7, 8), (2, 0, 1), (2, 7, 8), (3, 0, 1), (3, 7, 8),
+    (4, 0, 1), (4, 7, 16), (5, 0, 1), (5, 7, 8), (6, 0, 8), (7, 0, 1), (7, 7, 18), (8, 0, 1),
+    (8, 7, 8), (9, 0, 1), (9, 7, 8), (10, 0, 1), (10, 7, 13), (11, 0, 8), (12, 0, 1),
+    (12, 7, 8), (13, 0, 1), (13, 7, 8), (14, 0, 1), (14, 7, 8), (15, 0, 1), (15, 7, 8),
+    (16, 0, 13),
+]
+LAVARIDGE_GYM_B1F_RUNS = [
+    (0, 0, 1), (0, 4, 5), (1, 0, 1), (1, 4, 5), (2, 0, 1), (2, 4, 5), (3, 0, 1), (3, 4, 5),
+    (4, 0, 2), (4, 4, 15), (5, 0, 1), (5, 4, 5), (6, 0, 1), (6, 4, 5), (7, 0, 1), (7, 4, 15),
+    (8, 0, 1), (8, 4, 5), (9, 0, 1), (9, 4, 18), (10, 0, 2), (10, 4, 5), (11, 0, 1),
+    (11, 4, 5), (12, 0, 1), (12, 4, 5), (13, 0, 1), (13, 4, 16), (14, 0, 1), (14, 4, 5),
+    (15, 0, 1), (15, 4, 5), (16, 0, 1), (16, 4, 5),
+]
+# the side walls down the room's west and east edges, where no wall is drawn
+# (where one is, a block)
+LAVARIDGE_GYM_1F_SIDES = [(((0, 304), (0, 32)), ()),
+                          (((272, 224), (272, 304)), [(16, 14), (16, 15)])]
+LAVARIDGE_GYM_B1F_SIDES = [(((0, 304), (0, 32)), ()), (((272, 32), (272, 304)), ())]
+# the ledges, (x0, x1, y) in cells: drawn in the cell's lower half
+LAVARIDGE_GYM_1F_CURBS = [(11, 16, 13), (5, 7, 15)]
+LAVARIDGE_GYM_B1F_CURBS = [(0, 4, 12), (5, 7, 11), (10, 13, 10), (14, 17, 10), (10, 13, 15)]
+LAVARIDGE_GYM_FLOOR = ("a47b62", "c59c7b", "e6c594", "835a4a", "624a41")
+
+
+def lavaridge_gym(runs, curbs, sides):
+    """`sides`: the room's side walls, (wall, cells it leaves) - a wall as a
+    piece's `walls`, the cells the statue beside it stands on."""
+    side = LAVARIDGE_GYM_SIDE
+    return [
+        # front first: the curbs, then the walls. A curb is the room's own
+        # (a block's, own_shell): its dark band and outline are found by
+        # their pixels in half the rooms of Hoenn
+        piece("block_curb_%d_%d" % (x0, y), [(x0 * 16, y * 16 + 8, x1 * 16, y * 16 + 16)], 7,
+              leave=LAVARIDGE_GYM_FLOOR)
+        for (x0, x1, y) in curbs
+    ] + rect_pieces("block", runs, 16, side=lambda *r: side, solid=True) + [
+        piece("side_%d" % n, [], 16, side=side, walls=[wall], skip=leaves)
+        for n, (wall, leaves) in enumerate(sides)
     ]
 
 
@@ -6984,7 +7182,19 @@ SPECS = [
     {
         "name": "mauville_gym",
         "interior": {"layout": "LAYOUT_MAUVILLE_CITY_GYM", "ground": [0x20a],
-                     "pieces": own_shell(mauville_gym())},
+                     "pieces": own_shell(mauville_gym()),
+                     # the entrance hall's dark stands as a block, its rims
+                     # at its top's north edge (block_hall_w/e, `flat`): the
+                     # GBA draws them at the floor's level, a block's height
+                     # south of where they stand
+                     "redrawn": [((0, 248, 32, 336), "the hall's dark, west"),
+                                 ((128, 248, 160, 336), "the hall's dark, east")]},
+    },
+    {
+        # its red beams, read off the room in the barriers' other state
+        "name": "mauville_gym_alt",
+        "interior": {"layout": "LAYOUT_MAUVILLE_CITY_GYM", "ground": [0x20a],
+                     "draw": MAUVILLE_GYM_ALT, "pieces": mauville_gym_alt()},
     },
     {
         "name": "mossdeep_gym",
@@ -6995,6 +7205,22 @@ SPECS = [
         "name": "fortree_gym",
         "interior": {"layout": "LAYOUT_FORTREE_CITY_GYM", "ground": [0x202],
                      "pieces": own_shell(fortree_gym())},
+    },
+    {
+        "name": "lavaridge_gym_1f",
+        "interior": {"layout": "LAYOUT_LAVARIDGE_TOWN_GYM_1F", "ground": [0x208],
+                     "shade": ["624a41"],
+                     "pieces": own_shell(lavaridge_gym(LAVARIDGE_GYM_1F_RUNS,
+                                                       LAVARIDGE_GYM_1F_CURBS,
+                                                       LAVARIDGE_GYM_1F_SIDES))},
+    },
+    {
+        "name": "lavaridge_gym_b1f",
+        "interior": {"layout": "LAYOUT_LAVARIDGE_TOWN_GYM_B1F", "ground": [0x208],
+                     "shade": ["624a41"],
+                     "pieces": own_shell(lavaridge_gym(LAVARIDGE_GYM_B1F_RUNS,
+                                                       LAVARIDGE_GYM_B1F_CURBS,
+                                                       LAVARIDGE_GYM_B1F_SIDES))},
     },
     {
         "name": "sootopolis_gym_1f",
