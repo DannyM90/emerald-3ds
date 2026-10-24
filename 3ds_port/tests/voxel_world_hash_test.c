@@ -37,7 +37,6 @@ const struct Tileset gTileset_GenericBuilding = {0};
 bool VoxelAtlas_IsVoid(const VoxelMapInstance *inst, int metatile) { (void)inst; (void)metatile; return false; }
 
 const void *Port_ResolveAssetPointer(const void *p) { return p; }
-const struct MapLayout *Port_GetMapLayoutById(u16 id) { (void)id; return NULL; }
 static const void *sSizedAsset;
 static u32 sSizedBytes;
 u32 Port_GetAssetSizeExact(const void *p) { return p == sSizedAsset ? sSizedBytes : 0; }
@@ -54,6 +53,9 @@ int VoxelTree_Part(const void *secondaryTileset, int metatileId)
 int VoxelTree_GroundMetatile(const void *secondaryTileset, int metatileId)
 { (void)secondaryTileset; return metatileId; }
 bool VoxelRelief_IsDrawn(const VoxelMapInstance *inst) { (void)inst; return false; }
+void VoxelRelief_ForEachCut(const VoxelMapInstance *inst, VoxelReliefCutVisit visit, void *ctx)
+{ (void)inst; (void)visit; (void)ctx; }
+const struct MapLayout *Port_GetMapLayoutById(u16 mapLayoutId) { (void)mapLayoutId; return NULL; }
 const u16 *MapGridGetCameraBorderAt(int x, int y, u8 *index)
 { (void)x; (void)y; *index = 0; return NULL; }
 u32 GetMapClosedEdges(void) { return 0; }

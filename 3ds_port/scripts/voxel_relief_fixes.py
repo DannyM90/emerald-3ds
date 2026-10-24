@@ -71,7 +71,7 @@ MAGIC = b"VXL4"
 SIDE = 5
 DRAWN = 0x8000
 UNIT2 = 0x4000
-LEVEL = 0x8000          # of the width: heights with no depth, lifted straight up as a base is
+LEVEL = 0x8000          # of the width: once a level map (no depth); kept, no longer set or read
 WIDE = 0x4000           # of the width: the cells' heights are s16 pixels (a mountain past 16 levels)
 BELT_SHIFT = 10         # bits 10-13 of the height: the belt's courses
 BELT_MAX = 15
@@ -199,14 +199,14 @@ def ease_rows(ease, height):
 
 def seam_eases(relief):
     """{layout index: ease, units of 8 px}. A point stands as far south as it
-    is high over its own map's base (u, h, v + h), so a map whose south edge
-    is ground under its base - Route 111's, two levels under the plateau it
-    stands on - meets the map south of it at one height but rows short of
-    it. The ease is those rows, spread over the map's last rows (EaseRows):
-    each a little longer, its drawing and all on it, and the edges meet with
-    nothing between them (voxel_relief.c VoxelRelief_Depth). The commonest
-    shortfall along the seams where the heights meet; none past a level map
-    (no depth) or under 8 px."""
+    is high in the world, its map's base and its relief over it (u, h, v + h;
+    voxel_relief.h), so two maps meeting at one height meet in the same row
+    and there is no shortfall to ease: this finds none. It once stood as far
+    south as it was high over its own map's base, and a map whose south edge
+    was ground under its base - Route 111's, two levels under the plateau it
+    stands on - met the map south of it rows short of it; the ease spread
+    those rows over the map's last rows (EaseRows). The commonest shortfall
+    along the seams where the heights meet; none under 8 px."""
     if not _LINKS:
         import gen_voxel_relief
         _LINKS.extend(gen_voxel_relief.map_links())
@@ -216,7 +216,7 @@ def seam_eases(relief):
             continue
         ia, ib = layout_index(a), layout_index(b)
         ta = relief["layouts"].get(ia)
-        if ta is None or ta.get("level"):
+        if ta is None:
             continue
         tb = relief["layouts"].get(ib)
         ea, eb = layout_entry(a), layout_entry(b)
@@ -226,9 +226,10 @@ def seam_eases(relief):
             ha, hb = (ga[22] if ga else 0), (gb[2] if gb else 0)
             if abs(ta["base"] + ha - ((tb["base"] if tb else 0) + hb)) > 1:
                 continue        # a step: the skirt closes it
-            db = 0 if tb is None or tb.get("level") else hb
+            # depths in the world: base and relief
+            da, db = ta["base"] + ha, (tb["base"] if tb else 0) + hb
             c = tally.setdefault(ia, {})
-            c[db - ha] = c.get(db - ha, 0) + 1
+            c[db - da] = c.get(db - da, 0) + 1
     out = {}
     for ia, c in tally.items():
         gap, n = max(c.items(), key=lambda kv: kv[1])

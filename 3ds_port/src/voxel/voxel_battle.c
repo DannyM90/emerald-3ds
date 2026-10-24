@@ -489,7 +489,8 @@ bool VoxelBattle_StepStage(unsigned cells, unsigned candidates, float *targetX, 
                      sStage.indoor ? " indoor" : "");
     }
     *targetX = sStage.bestX;
-    *targetZ = sStage.bestZ;
+    /* where its ground is drawn, as the player is (VoxelRelief_ShiftAt) */
+    *targetZ = sStage.bestZ + VoxelRelief_ShiftAt(sStage.bestX, sStage.bestZ);
     if (!VoxelMesh_BorderWaterAt(sStage.bestX, sStage.bestZ, ground))
         *ground = VoxelRelief_LiftAt(sStage.bestX, sStage.bestZ);
     return true;

@@ -1158,7 +1158,7 @@ def unknown_levels(c, comp, level, U):
         # split by the counts of the faces over it into three levels, the
         # trees stood on walls with the void between them)
         if ground and not use_wet and max(ground) - min(ground) < 0.5 and all(
-                c.metatile(cell) in TREE_CARDS - SMALL_TRUNKS for cell in patch):
+                tree_card(c, cell) and not small_trunk(c, cell) for cell in patch):
             for cell in patch:
                 out[cell] = ground[0]
             continue
@@ -1185,8 +1185,8 @@ def unknown_levels(c, comp, level, U):
             # the terrace over the face and stood a level over the front
             # row, a wall between their trunks). Whether the wood spans more
             # than a step is still read with them (`spread`).
-            top = (c.metatile((x, y)) not in TREE_CARDS and (x, y + 1) in c.src
-                   and c.metatile((x, y + 1)) in SMALL_TRUNKS)
+            top = (not tree_card(c, (x, y)) and (x, y + 1) in c.src
+                   and small_trunk(c, (x, y + 1)))
             behind = []
             for n in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
                 if (in_face and n == (x, y - 1)) or backs((x, y), n):
@@ -1231,8 +1231,8 @@ def unknown_levels(c, comp, level, U):
             front = nxt
         # the top of a small tree stands where its trunk does
         for (x, y) in sorted(patch, key=lambda cl: -cl[1]):
-            if (c.metatile((x, y)) not in TREE_CARDS and (x, y + 1) in res
-                    and c.metatile((x, y + 1)) in SMALL_TRUNKS):
+            if (not tree_card(c, (x, y)) and (x, y + 1) in res
+                    and small_trunk(c, (x, y + 1))):
                 res[(x, y)] = res[(x, y + 1)]
         for cell in patch:
             out[cell] = res.get(cell, v)
@@ -2455,11 +2455,28 @@ def facing_ns(c, pieces, flat, kept, n, mine):
 
 
 # voxel_tree.c VoxelTree_Part: the General tileset's trees drawn as cards
-# (a large tree's four parts, a small tree's trunk); and the small trees'
-# trunks, whose cell alone the tree stands on.
+# (a large tree's four parts, the secret base's, a small tree's trunk); and
+# the small trees' trunks, whose cell alone the tree stands on.
 SMALL_TRUNKS = {0x016, 0x017, 0x0C6, 0x0C7, 0x1F4, 0x1F5}
 TREE_CARDS = SMALL_TRUNKS | {0x1D4, 0x1D5, 0x1D6, 0x1D7, 0x1DC, 0x1DD, 0x1DE, 0x1DF, 0x1E4, 0x1E5,
-                             0x1E6, 0x1E7, 0x1EC, 0x1ED, 0x1F2, 0x1F3, 0x1FC, 0x1FD}
+                             0x1E6, 0x1E7, 0x1EC, 0x1ED, 0x1F2, 0x1F3, 0x1FC, 0x1FD,
+                             0x01E, 0x01F, 0x026, 0x027, 0x036, 0x037}
+# the small trunks a secondary tileset draws, the General's tree over its own
+# ground (its ids are its own): voxel_tree.c draws them the same way
+OWN_TRUNKS = {"gTileset_Dewford": {0x23A, 0x243}, "gTileset_Fortree": {0x253, 0x22A},
+              "gTileset_Mauville": {0x226}, "gTileset_Lavaridge": {0x218, 0x21A, 0x3B8, 0x203}}
+
+
+def small_trunk(c, cell):
+    """Does a small tree's trunk stand on the cell (the whole tree drawn
+    from it)?"""
+    m = c.metatile(cell)
+    return m in SMALL_TRUNKS or m in OWN_TRUNKS.get(c.arts[c.src[cell][0]].secondary, ())
+
+
+def tree_card(c, cell):
+    """Is the cell a tree's, drawn as voxel_tree.c's cards?"""
+    return c.metatile(cell) in TREE_CARDS or small_trunk(c, cell)
 
 
 def behind_trees(c, flat, grids, pieces=None, marked=()):
@@ -2491,8 +2508,8 @@ def behind_trees(c, flat, grids, pieces=None, marked=()):
             # a face that runs on behind it, not at a face's end)
             p = pieces.get(n) if pieces is not None else None
             return p is not None and (p[0] == "S" or p[0] in CORNERS) and abs(p[1] - top[0]) < 0.5
-        if (pieces is not None and c.metatile(cell) not in TREE_CARDS and trunk in c.src
-                and c.metatile(trunk) in SMALL_TRUNKS and max(top) - min(top) < 0.5
+        if (pieces is not None and not tree_card(c, cell) and trunk in c.src
+                and small_trunk(c, trunk) and max(top) - min(top) < 0.5
                 and abs(top[0] - LEVEL - flat.get(trunk, low)) < 0.5
                 and (face_beside((x - 1, y)) or face_beside((x + 1, y)))):
             # the top of a small tree drawn in the row of a face, one level
@@ -4051,15 +4068,20 @@ def tree_ground(c, cell):
     layer; a canopy's tile outside the crown). None if it shows none."""
     lid, x, y = c.src[cell]
     art, m = c.arts[lid], c.metatile(cell)
-    if m in TREE_CARDS:
+    if tree_card(c, cell):
         px = list(art.cell_image(m, (0,)).convert("RGB").getdata())
     else:
         img = list(art.cell_image(m).convert("RGB").getdata())
         rows = canopy_mask(art, m) or [0] * 16
         px = [p for k, p in enumerate(img) if not (rows[k // 16] >> (k % 16)) & 1]
-    px = [p for p in px if p not in gr.ROCK_ALL and p not in OUTLINE_GREY]
+    drawn = [p for p in px if p not in OUTLINE_GREY]
+    px = [p for p in drawn if p not in gr.ROCK_ALL]
     if len(px) < 8:
-        return None
+        # a canopy drawn over a terrace's top, all of it the rock's colours
+        # (Route 112's woods on its volcanic soil): the plainest top round it
+        if tree_card(c, cell) or len(drawn) < 8:
+            return None
+        return gr.plain_ground(art, c.roles_of[lid], set(), x, y, None, gr.commonest(drawn))
     rock_of = c.__dict__.setdefault("_rock_of", {})
     if lid not in rock_of:
         rock_of[lid] = {c.src[r][1:] for r, k in c.kind.items() if k in (ROCK, TOP) and c.src[r][0] == lid}
@@ -4691,8 +4713,8 @@ def records(sol):
         lid, x, y = c.src[cell]
         art = c.arts[lid]
         below = (cell[0], cell[1] + 1)
-        if (hasattr(art, "own_metatile") or c.metatile(cell) < vb.NUM_PRIMARY or cell in c.keep
-                or below not in c.src or c.metatile(below) not in SMALL_TRUNKS):
+        if (c.metatile(cell) < vb.NUM_PRIMARY or cell in c.keep
+                or below not in c.src or not small_trunk(c, below)):
             continue
         rows = canopy_mask(art, c.metatile(cell))
         rec = out.get(cell)
@@ -4787,7 +4809,9 @@ def merge(sol, relief):
             mask, foot, ground, wall, sides, flags = recs[cell]
             if aliased:
                 ground = own(ground)
-                if wall is not None and recoloured(*xy):
+                # (a canopy's plate is the ground under its crown, always
+                # the map's own)
+                if wall is not None and (recoloured(*xy) or flags & CANOPY):
                     wall = own(wall)
             if mask is None or mask == "fill":
                 k = vrf.NO_VARIANT

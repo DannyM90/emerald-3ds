@@ -2206,7 +2206,7 @@ static void BrightenCrowns(uint16_t *texels)
     static const struct
     {
         unsigned x, y, w, h;
-    } crowns[] = {{0, 0, 32, 36}, {32, 32, 16, 32}, {64, 0, 16, 32}};
+    } crowns[] = {{0, 0, 32, 36}, {32, 32, 16, 32}, {64, 0, 16, 32}, {0, 64, 64, 32}};
 
     for (unsigned c = 0; c < sizeof(crowns) / sizeof(crowns[0]); ++c)
         for (unsigned y = crowns[c].y; y < crowns[c].y + crowns[c].h; ++y)
@@ -2604,6 +2604,14 @@ static void AtlasFailed(int mapGroup, int mapNum, const void *primary, const voi
  * false for a map that is only in the prefetch ring: it may take an empty
  * slot, never the atlas of something else - which could be a map on screen.
  */
+/* How many rows south of its cells a map is drawn: its base (a point stands
+ * as far south as it is high in the world, VoxelBuilder_StretchZ). The view
+ * (sViewRect) is where things are drawn; a map's chunks are its cells. */
+static int DrawnRows(const VoxelMapInstance *inst)
+{
+    return (int)floorf(VoxelRelief_Base(inst) + 0.5f);
+}
+
 /* Bound all atlas pages together to the original six-texture budget. */
 static bool AtlasInView(const VoxelAtlasSlot *slot)
 {
@@ -2612,7 +2620,8 @@ static bool AtlasInView(const VoxelAtlasSlot *slot)
         const VoxelMapInstance *m = VoxelWorld_Instance(i);
         if (m->primaryTileset == slot->primaryTileset && m->secondaryTileset == slot->secondaryTileset
          && (i == 0 || (m->originX < sViewRect[2] && m->originX + m->width > sViewRect[0]
-                    && m->originY < sViewRect[3] && m->originY + m->height > sViewRect[1])))
+                    && m->originY + DrawnRows(m) < sViewRect[3]
+                    && m->originY + m->height + DrawnRows(m) > sViewRect[1])))
             return true;
     }
     return false;
@@ -3896,8 +3905,9 @@ static bool SiteVisible(const ChunkSite *site, const VoxelChunk *chunk)
                           (float)(site->baseX + chunk->gx1), chunk->gy1 + 0.05f,
                           (float)(site->baseY + chunk->gz1));
     base = VoxelRelief_Base(site->inst);
-    return BoxVisible((float)site->x0, base + VOXEL_UNBUILT_LOW, (float)site->y0,
-                      (float)site->x1, base + VOXEL_UNBUILT_HIGH, (float)site->y1);
+    /* (as high as its base, and as far south: VoxelBuilder_StretchZ) */
+    return BoxVisible((float)site->x0, base + VOXEL_UNBUILT_LOW, (float)site->y0 + base,
+                      (float)site->x1, base + VOXEL_UNBUILT_HIGH, (float)site->y1 + base);
 }
 
 static void Draw(VoxelChunk *chunk, int worldX, int worldZ)
@@ -4145,12 +4155,15 @@ static void VisitView(float playerX, float playerZ, unsigned *missing, bool atla
         for (unsigned i = 0; i < instances; ++i)
         {
             const VoxelMapInstance *inst = VoxelWorld_Instance(i);
-            int ex = inst->originX + inst->width, ey = inst->originY + inst->height;
-            bool inView = Overlaps(inst->originX, inst->originY, ex, ey, vx0, vy0, vx1, vy1);
+            /* (its rows where they are drawn, as far south as its base is
+             * high: VoxelBuilder_StretchZ) */
+            int drawn = DrawnRows(inst);
+            int ex = inst->originX + inst->width, ey = inst->originY + inst->height + drawn;
+            bool inView = Overlaps(inst->originX, inst->originY + drawn, ex, ey, vx0, vy0, vx1, vy1);
 
             if (pass == 0)
             {
-                inRing[i] = Overlaps(inst->originX, inst->originY, ex, ey, px0, py0, px1, py1);
+                inRing[i] = Overlaps(inst->originX, inst->originY + drawn, ex, ey, px0, py0, px1, py1);
                 atlases[i] = inView ? AcquireAtlas(inst, true) : NULL;
             }
             else if (inRing[i] && !inView)
@@ -4171,10 +4184,12 @@ static void VisitView(float playerX, float playerZ, unsigned *missing, bool atla
 
         if (!inRing[i])
             continue;
+        /* the ring in its rows (DrawnRows) */
         ix0 = px0 > inst->originX ? px0 : inst->originX;
-        iy0 = py0 > inst->originY ? py0 : inst->originY;
+        iy0 = py0 - DrawnRows(inst) > inst->originY ? py0 - DrawnRows(inst) : inst->originY;
         ix1 = px1 < inst->originX + inst->width ? px1 : inst->originX + inst->width;
-        iy1 = py1 < inst->originY + inst->height ? py1 : inst->originY + inst->height;
+        iy1 = py1 - DrawnRows(inst) < inst->originY + inst->height ? py1 - DrawnRows(inst)
+                                                                 : inst->originY + inst->height;
         for (int cy = (iy0 - inst->originY) / VOXEL_CHUNK;
              cy <= (iy1 - 1 - inst->originY) / VOXEL_CHUNK; ++cy)
             for (int cx = (ix0 - inst->originX) / VOXEL_CHUNK;
@@ -4196,7 +4211,8 @@ static void VisitView(float playerX, float playerZ, unsigned *missing, bool atla
         VoxelAtlasSlot *atlas = FindAtlas(current);
         /* A belt laid as drawn stands its squares' blocks rows south of them
          * (VoxelMesh_EmitBorder): the squares that far north reach the ring. */
-        int oy0 = py0 - (int)VoxelRelief_Belt(current) - sBeltOriginY, oy1 = py1 - 1 - sBeltOriginY;
+        int oy0 = py0 - (int)VoxelRelief_Belt(current) - DrawnRows(current) - sBeltOriginY;
+        int oy1 = py1 - 1 - DrawnRows(current) - sBeltOriginY;
         int ox0 = px0 - sBeltOriginX, ox1 = px1 - 1 - sBeltOriginX;
         int cy0 = (int)floorf(oy0 / (float)VOXEL_CHUNK), cy1 = (int)floorf(oy1 / (float)VOXEL_CHUNK);
         int cx0 = (int)floorf(ox0 / (float)VOXEL_CHUNK), cx1 = (int)floorf(ox1 / (float)VOXEL_CHUNK);
@@ -4373,9 +4389,19 @@ static unsigned LightSurfaceTests(void)
 
 static void NoteBuildCost(VoxelChunk *chunk, const ChunkSite *site, float ms, uint32_t frames)
 {
-    static unsigned sSlowLogged;
+    static unsigned sSlowLogged, sBuilds, sRaysAll, sStepsAll, sSurfacesAll;
+    static float sMsAll;
 
     chunk->buildMs = ms;
+    /* Running totals, to compare two builds over one recorded walk. */
+    ++sBuilds;
+    sMsAll += ms;
+    sRaysAll += sJob.rays;
+    sStepsAll += sJob.steps;
+    sSurfacesAll += sJob.surfaces;
+    if (sBuilds % 32 == 0)
+        CtrLog_Write(CTR_LOG_VIDEO, "VOXEL builds %u: %.1f ms, %u rays %u steps %u surface",
+                     sBuilds, sMsAll, sRaysAll, sStepsAll, sSurfacesAll);
     /* Where the time goes on hardware, which an emulator cannot say. */
     if (ms >= 8.0f && sSlowLogged < 64)
     {
@@ -5361,9 +5387,11 @@ static void UpdateNightLamps(void)
         sLampView[1] = sViewRect[1] - pad;
         sLampView[2] = sViewRect[2] + pad;
         sLampView[3] = sViewRect[3] + pad;
+        /* (each map's lamps by its rows: DrawnRows) */
         for (unsigned index = 0; index < VoxelWorld_InstanceCount(); ++index)
             VoxelSign_EmitNight(&glass, &ground, VoxelWorld_Instance(index),
-                               sLampView[0], sLampView[1], sLampView[2], sLampView[3]);
+                               sLampView[0], sLampView[1] - DrawnRows(VoxelWorld_Instance(index)),
+                               sLampView[2], sLampView[3] - DrawnRows(VoxelWorld_Instance(index)));
         /* Near full: some lamp may have been left out (EmitNight stops at
          * the capacity). Over the view alone, as before the padding. */
         if (pad == 3 || (glass.capacity - glass.count >= 64u && ground.capacity - ground.count >= 64u))
@@ -5690,11 +5718,12 @@ bool CtrVoxel_Update(void)
      * one, because that is the granularity at which the geometry changes.
      */
     VoxelWorld_GetPlayerWorldCoords(&playerX, &playerZ);
-    /* In a battle the player's sprite is one of the battle's. */
+    /* In a battle the player's sprite is one of the battle's: its tile,
+     * where its ground is drawn (VoxelRelief_ShiftAt). */
     if (sBattle.on)
     {
         smoothX = playerX;
-        smoothZ = playerZ;
+        smoothZ = playerZ + VoxelRelief_ShiftAt(playerX + 0.5f, playerZ + 0.5f);
     }
     else
         VoxelEntities_GetPlayerWorldPos(&smoothX, &smoothZ);
@@ -5792,12 +5821,12 @@ bool CtrVoxel_Update(void)
             {
                 const VoxelMapInstance *map = VoxelWorld_Instance(i);
                 int margin = ring ? VOXEL_PREFETCH : 0;
-                bool near = Overlaps(map->originX, map->originY, map->originX + map->width,
-                                     map->originY + map->height,
+                /* (where its rows are drawn: DrawnRows) */
+                int y0 = map->originY + DrawnRows(map), y1 = y0 + map->height;
+                bool near = Overlaps(map->originX, y0, map->originX + map->width, y1,
                                      sViewRect[0] - margin, sViewRect[1] - margin,
                                      sViewRect[2] + margin, sViewRect[3] + margin);
-                bool inView = Overlaps(map->originX, map->originY, map->originX + map->width,
-                                       map->originY + map->height,
+                bool inView = Overlaps(map->originX, y0, map->originX + map->width, y1,
                                        sViewRect[0], sViewRect[1], sViewRect[2], sViewRect[3]);
 
                 if (!near || (ring != 0) == inView)

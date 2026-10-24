@@ -91,6 +91,7 @@ typedef struct { unsigned maxEntries, numEntries; } gxCmdQueue_s;
 static gxCmdQueue_s *sFrameQueue;
 static unsigned sUploadCommands, sRenderReserve;
 static bool sPrefetchBlocked;
+static int DrawnRows(const VoxelMapInstance *inst) { (void)inst; return 0; }
 '''
     for signature in ['static unsigned WaitBucket(', 'static unsigned RequestWait(', 'static bool RequestOverdue(', 'static int CompareRequests(', 'static bool StartNextJob(', 'static bool JobSort(', 'static float PhaseCost(', 'static float PhaseCostInFrame(', 'static void NotePhaseCost(']:
         source += function(voxel, signature)

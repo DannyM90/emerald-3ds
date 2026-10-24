@@ -73,6 +73,10 @@ PAGE_ARENA = 1088 * 1024          # ctr_voxel.c VOXEL_PAGE_VRAM_BUDGET
 SHAPE_FLAT, SHAPE_WATER = 0, 7    # voxel_world.h VoxelVisualShape
 SUN_DX, SUN_DZ, AMBIENT = 0.85, 0.55, 0.70
 TREE_DIM = 128
+# the secondary tilesets voxel_tree.c tells apart, as voxel_scene_dump.c reads them
+TREE_TILESETS = {"gTileset_Dewford": 1, "gTileset_Fortree": 2, "gTileset_Mauville": 3,
+                 "gTileset_Lavaridge": 4, "gTileset_Rustboro": 5, "gTileset_Lilycove": 6,
+                 "gTileset_EverGrande": 7, "gTileset_BattleFrontierOutsideWest": 8}
 
 
 def build_dump():
@@ -252,7 +256,7 @@ def dump(layout_id):
     primary, secondary = entry["primary_tileset"], entry["secondary_tileset"]
     indoor = primary != "gTileset_General"
     flags = (1 if indoor else 0) | (2 if primary == "gTileset_General" else 0) \
-        | (4 if secondary == "gTileset_Dewford" else 0)
+        | TREE_TILESETS.get(secondary, 0) << 2
     tmp = os.path.join(PORT, "build", "scene_%s_%d" % (layout_id, os.getpid()))
     with open(tmp + ".in", "wb") as f:
         f.write(struct.pack("<HHHH", index, w, h, flags))

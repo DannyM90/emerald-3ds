@@ -29,6 +29,13 @@ static unsigned sTileReads;
  * recognise Dewford's tree art; this test never builds trees, so an empty
  * tileset is enough for the link. */
 const struct Tileset gTileset_Dewford = {0};
+const struct Tileset gTileset_Fortree = {0};
+const struct Tileset gTileset_Mauville = {0};
+const struct Tileset gTileset_Lavaridge = {0};
+const struct Tileset gTileset_Rustboro = {0};
+const struct Tileset gTileset_Lilycove = {0};
+const struct Tileset gTileset_EverGrande = {0};
+const struct Tileset gTileset_BattleFrontierOutsideWest = {0};
 
 unsigned VoxelWorld_InstanceCount(void) { return 2; }
 const VoxelMapInstance *VoxelWorld_Instance(unsigned i) { return i < 2 ? &sMaps[i] : NULL; }

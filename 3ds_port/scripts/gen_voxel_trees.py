@@ -14,9 +14,15 @@ SOURCES = (("tree_crown.png", (32, 36), (0, 0)),
            ("tree_small_trunk.png", (16, 16), (48, 32)),
            ("tree_2_small_crown.png", (16, 32), (64, 0)),
            ("tree_2_small_trunk.png", (16, 16), (80, 0)),
+           ("tree_small_trunk_jungle.png", (16, 16), (48, 48)),
+           ("tree_small_trunk_grass_road.png", (16, 16), (80, 16)),
+           ("tree_small_trunk_volcan.png", (16, 16), (64, 32)),
+           ("tree_crown_base_floor.png", (32, 32), (96, 0)),
+           ("tree_crown_base.png", (32, 32), (0, 64)),
+           ("tree_crown_base_open.png", (32, 32), (32, 64)),
            ("grass_tuft.png", (16, 10), (0, 44)),
            ("grass_long_tuft.png", (16, 16), (16, 44)),
-           ("grass_ash_tuft.png", (16, 10), (48, 50)),
+           ("grass_ash_tuft.png", (16, 10), (80, 32)),
            ("flowers.png", (16, 10), (0, 54)))
 
 

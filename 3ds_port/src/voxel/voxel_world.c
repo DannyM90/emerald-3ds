@@ -30,6 +30,7 @@
 #include "voxel_regions.h"
 #include "voxel_tree.h"
 #include "voxel_atlas.h"
+#include "voxel_relief.h"
 #ifdef PLATFORM_3DS
 #include "voxel_building.h"
 #include "field_weather.h"
@@ -979,6 +980,32 @@ static void MarkEdgeFills(const VoxelMapInstance *inst, uint8_t *used)
             used[sEdgeFills[i].metatile] = 2;
 }
 
+/* The cut records' grounds and walls, in the window MarkUsedMetatiles reads
+ * the cells in, as important as the cells there. */
+typedef struct
+{
+    const VoxelMapInstance *inst;
+    int x0, y0, x1, y1;
+    uint8_t *used;
+} CutMark;
+
+static void MarkCut(int x, int y, int ground, int wall, void *ctx)
+{
+    const CutMark *mark = ctx;
+    const VoxelMapInstance *inst = mark->inst;
+    unsigned priority;
+
+    if (x < mark->x0 || y < mark->y0 || x >= mark->x1 || y >= mark->y1)
+        return;
+    priority = !sMaterialViewSet ||
+        (x + inst->originX >= sMaterialView[0] && x + inst->originX < sMaterialView[2]
+      && y + inst->originY >= sMaterialView[1] && y + inst->originY < sMaterialView[3]) ? 2u : 1u;
+    if (ground >= 0 && ground < (int)VOXEL_METATILE_IDS && mark->used[ground] < priority)
+        mark->used[ground] = (uint8_t)priority;
+    if (wall >= 0 && wall < (int)VOXEL_METATILE_IDS && mark->used[wall] < priority)
+        mark->used[wall] = (uint8_t)priority;
+}
+
 void VoxelWorld_MarkUsedMetatiles(const void *primaryTileset, const void *secondaryTileset,
                                   uint8_t *used)
 {
@@ -1021,6 +1048,17 @@ void VoxelWorld_MarkUsedMetatiles(const void *primaryTileset, const void *second
                       && y + inst->originY >= sMaterialView[1] && y + inst->originY < sMaterialView[3]) ? 2u : 1u;
                     if (used[m] < priority) used[m] = priority;
                 }
+        /* What the mesh draws from the relief's records besides the cells'
+         * own metatiles: the ground a cut tile runs on, its cliff's face.
+         * Read off the layout, they are not always in the live grid - a
+         * script's setmetatile (Route 120's bridge once its Kecleon is
+         * gone) took the only cell drawing that ground, and the bridge's
+         * water under its deck was a hole showing the black behind. */
+        {
+            CutMark mark = {inst, x0, y0, x1, y1, used};
+
+            VoxelRelief_ForEachCut(inst, MarkCut, &mark);
+        }
     }
     /* The belt is drawn with the current map's atlas, and from a neighbour's
      * border as well as its own (VoxelWorld_BorderMetatile): any border whose
