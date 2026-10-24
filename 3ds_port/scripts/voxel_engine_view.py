@@ -117,15 +117,17 @@ class Buildings:
     def __init__(self, path=None):
         with open(path or os.path.join(PORT, "romfs", "voxel", "buildings.bin"), "rb") as source:
             b = self.blob = source.read()
-        if b[:4] != b"VXB8":
+        if b[:4] not in (b"VXB8", b"VXB9"):
             raise ValueError("unsupported buildings format: %r" % b[:4])
         (npages, nmodels, npm, nplaces, hbytes, nmasks) = struct.unpack_from("<6H", b, 4)
         nverts, nvar, ndecks = struct.unpack_from("<IHH", b, 16)
-        o = 24
+        # VXB9: the placements' conditions (voxel_building.c PlacementLive)
+        nconds = struct.unpack_from("<H", b, 24)[0] if b[:4] == b"VXB9" else 0
+        head = o = 28 if b[:4] == b"VXB9" else 24
         raw_pages = [struct.unpack_from("<HHI", b, o + 8 * i) for i in range(npages)]
-        self.page_glow = [b[:4] == b"VXB8" and bool(height & 0x8000)
+        self.page_glow = [b[:4] in (b"VXB8", b"VXB9") and bool(height & 0x8000)
                           for width, height, offset in raw_pages]
-        self.pages = [(width, height & 0x7FFF if b[:4] == b"VXB8" else height, offset)
+        self.pages = [(width, height & 0x7FFF if b[:4] in (b"VXB8", b"VXB9") else height, offset)
                       for width, height, offset in raw_pages]
         o += npages * 8
         self.models = []
@@ -139,7 +141,7 @@ class Buildings:
         self.placements = [struct.unpack_from("<HHHHHHI", b, o + 16 * i) for i in range(nplaces)]
         o += nplaces * 16
         # a model's cells: its offset into them, 255 a cell it does not own
-        self.model_heights = [struct.unpack_from("<I", b, 24 + npages * 8 + 16 * i + 12)[0]
+        self.model_heights = [struct.unpack_from("<I", b, head + npages * 8 + 16 * i + 12)[0]
                               for i in range(nmodels)]
         self.heights = b[o:o + hbytes]
         o += hbytes
@@ -147,6 +149,12 @@ class Buildings:
         o += hbytes * 2 + nmasks * 32 + hbytes
         o += o & 1
         o += nvar * 6 + ndecks * 8
+        # placement index -> (metatile, x, y): it stands while that cell holds it
+        self.conditions = {}
+        for i in range(nconds):
+            k, metatile, x, y = struct.unpack_from("<HHBB", b, o + 6 * i)
+            self.conditions[k] = (metatile, x, y)
+        o += nconds * 6
         o += (-o) & 3
         self.vert_at = o
         self._pages = {}
@@ -583,12 +591,8 @@ def static_bytes(bld, page_model):
 def layout_pages(bld):
     """Layout id (1-based) -> its page's (width, rows), from the placements
     (one page a layout)."""
-    b = bld.blob
-    npages, nmodels, npm, nplaces = struct.unpack_from("<4H", b, 4)
-    o = 24 + npages * 8 + nmodels * 16 + npm * 8
     out = {}
-    for i in range(nplaces):
-        lid, pm = struct.unpack_from("<HH", b, o + 16 * i)
+    for lid, pm, *_ in bld.placements:
         out[lid] = bld.pages[bld.page_models[pm][1]][:2]
     return out
 

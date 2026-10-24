@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+- Builder: the terrain relief is made after the buildings, whose cells it
+  reads. Made side by side, the relief depended on which finished first,
+  and a data pack could fail to match the release.
+
+- Juan's gym battle no longer crashes the game when it ends, by @DannyM90
+  (pull request #182, issue #134). His defeat text is longer than the
+  battle's text buffer; on the GBA the rest landed in an unused array, here
+  it ran into live variables. The buffer now has room to spare behind it.
+
+- Portuguese, by @carlosmozart (pull request #178): the general texts of the
+  scripts (the POKéMON CENTER and MART signs, SELECT with no registered item,
+  whiting out, POKéRUS, a TM or HM found, the weird tree...) are translated,
+  and the bottom screen's type and contest icons are in Portuguese again.
+  In every language, the bottom screen's Pokédex shows an entry's whole
+  description, over the box's full width, instead of losing its last line.
+
+- Double battle target choice, by @eathanpage (pull request #176): the
+  bottom screen shows the four places of the battle two by two, as the top
+  screen has them, instead of left and right arrows and OK. Each plate has
+  the Pokémon's icon, name, level, gender and HP bar (the HP figures for
+  your side only), the opponents in red and your side in blue; one the move
+  cannot reach is grey and takes no tap, and an empty place has no plate. A
+  tap on a plate aims there and confirms; the D-pad walks the grid.
+
+- Double battles, by @maxxandres (pull request #152): the bottom screen's
+  target plates and the second mon's move menu are made ready while the
+  turn plays out, with the action menu and the first mon's moves. Built
+  when they first came up, they dropped an Old 3DS's frame rate sharply the
+  first time a target, or the second mon's move, was chosen. The second
+  mon's moves have pictures of their own, so warming them no longer throws
+  out the first mon's.
+
 - Voxel world: a map whose layout its script swaps is drawn with the swapped
   one. The Mirage Tower no longer stands in 3D on the days the game hides it,
   or after it falls, and it no longer shows from Mauville or Routes 112 and

@@ -35,6 +35,13 @@ typedef enum
 } VoxelVisualShape;
 
 #define MAX_VOXEL_MAP_INSTANCES 16
+/*
+ * Tiles from the current map's edge within which a map is placed in the
+ * world however many crossings away it is (VoxelWorld_BuildInstances): the
+ * farthest the camera's view reaches past the player, and the chunk of
+ * prefetch ring round it (ctr_voxel.c checks it against both).
+ */
+#define VOXEL_WORLD_REACH 56
 
 typedef struct
 {
@@ -45,6 +52,12 @@ typedef struct
     int mapGroup, mapNum;
     /* Index into gMapLayouts, the key of every prebuilt per-layout table. */
     int layoutId;
+    /* The layout its header names, before any script swapped another in:
+     * the other drawing the same map is known by (voxel_building.c). */
+    int headerLayoutId;
+    /* Read off the live grid (the current map): a script may have changed
+     * any of its cells since its layout's tables were built. */
+    bool live;
     int originX, originY;
     int width, height;
     bool indoor;
@@ -65,7 +78,8 @@ bool VoxelWorld_IsBattleMapAvailable(void);
  */
 void VoxelWorld_BeginBatch(void);
 
-/* The current map, its connections and theirs (see voxel_world.c). */
+/* The current map, its connections and theirs, and every map further along
+ * within VOXEL_WORLD_REACH of it (see voxel_world.c). */
 void VoxelWorld_BuildInstances(void);
 /*
  * The asset payloads the renderer reads for the maps on screen and one
@@ -139,6 +153,13 @@ bool VoxelWorld_ScreenFade(float *amount, float rgb[3]);
  * crossing costs nothing.
  */
 uint32_t VoxelWorld_BlockHash(int x0, int y0, int x1, int y1);
+
+/*
+ * A layout's own drawing as its tables were built from it, not the live
+ * grid: its metatiles row by row (block words, `*width` x `*height`), or
+ * NULL. Resolved through the asset layer, so not to be kept past the batch.
+ */
+const uint16_t *VoxelWorld_LayoutDrawing(int layoutId, int *width, int *height);
 
 /* Changes whenever any block of the live grid does; see voxel_world.c. */
 uint32_t VoxelWorld_LiveDigest(void);

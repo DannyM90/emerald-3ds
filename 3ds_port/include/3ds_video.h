@@ -133,6 +133,20 @@ void CtrVideo_ClearExtPaletteOam(void);
 void CtrVideo_MarkExtPaletteOam(unsigned first, unsigned end, unsigned index);
 void CtrVideo_NotifyTilesetAnimWrite(const void *dest, unsigned bytes);
 /*
+ * The field's banks of other tilesets (3ds_tile_banks.h). SetTileBank gives
+ * bank `bank` (0 to CTR_TILE_BANKS - 1) a secondary tileset's tiles (4bpp, at
+ * most CTR_TILE_BANK_BYTES) and its seven palettes 6-12, unfaded; NULL tiles
+ * empty it. A tilemap buffer registered with an array of bank numbers (1 +
+ * bank, 0 for none, an entry each) hands them over whenever the game copies
+ * it to VRAM (TilemapRequested, from bg.c); any other copy to that VRAM
+ * clears them. An entry keeps its bank only while VRAM holds the entry it
+ * was handed over with.
+ */
+void CtrVideo_SetTileBank(unsigned bank, const void *tiles, unsigned bytes, const uint16_t *palettes);
+void CtrVideo_RegisterTilemapBanks(const void *buffer, const uint8_t *banks, unsigned entries);
+void CtrVideo_UnregisterTilemapBanks(const void *buffer);
+void CtrVideo_TilemapRequested(unsigned vramOffset, const void *src, unsigned bytes);
+/*
  * A write the game made through its BIOS copies (3ds_prof_wrap.c): VRAM,
  * palette or OAM, by address. Phase F1, part B: which VRAM changed is
  * announced instead of found by comparing; a block that changed without
@@ -172,7 +186,9 @@ void CtrVideo_SetFieldBanner(bool banner);
 enum
 {
     CTR_CENTRED_NONE,
-    /* The fly map, the Town Map. */
+    /* The fly map, the Town Map, the OPTION screen, and the others with
+     * nothing of their own (ctr_gba_centred.h's default: contests,
+     * minigames, the slot machine). */
     CTR_CENTRED_PLAIN,
     /* The title menu and the professor's speech. */
     CTR_CENTRED_MAIN_MENU,
