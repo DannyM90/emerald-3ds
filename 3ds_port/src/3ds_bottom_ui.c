@@ -3795,10 +3795,12 @@ static u8 PlateState(const ViewState *s, u8 hit, bool8 focused)
  * its edges and shadow are blended. FIGHT's has Rayquaza in it already.
  */
 /* Every plate of a double battle's menus in all its looks: the actions, both
- * mons' moves (each move type its own colour), CANCEL and the target menu,
- * 47 + 16 at most; a few to spare. Made only as used: a slot costs its
- * pixels (w * h * 3 bytes, 36 KiB for a move plate) once it holds a plate. */
-#define TINT_SLOTS 72
+ * mons' moves (each move type its own colour), CANCEL and the target plates
+ * (red and blue, each normal, focused in both blink tones and pressed; grey
+ * is an empty move's), 47 + 16 + 8 at most; a few to spare. Made only as
+ * used: a slot costs its pixels (w * h * 3 bytes, 36 KiB for a move plate)
+ * once it holds a plate. */
+#define TINT_SLOTS 80
 
 typedef struct
 {
@@ -4616,6 +4618,11 @@ static void WarmView(ViewState *v, u8 battler)
         v->quickBallCount = CountTotalItemQuantityInBag(v->quickBall);
     WarmMoves(&v->moves4, battler);
     SnapshotPartyBalls(v);
+    /* The target plates as the mon on the left will be shown them: the one on
+     * the right sees its own plate grey instead, and those two are made when
+     * it chooses. */
+    if (v->isDouble)
+        SnapshotTargets(v, battler);
 }
 
 /* The battle's own menus all made (WarmBattleMenus): its frames may make the
@@ -4660,6 +4667,17 @@ static void WarmBattleMenus(void)
     }
     for (int i = 0; i < PARTY_SIZE; ++i)
         key = Mix(key, v.partyBalls[i]);
+    /* A hit, a faint or a switch in the turn changes the target plates. */
+    for (int i = 0; i < MAX_BATTLERS_COUNT && v.isDouble; ++i)
+    {
+        const TargetView *t = &v.targets[i];
+
+        key = Mix(key, t->species | (t->iconSpecies << 16));
+        key = Mix(key, t->hp | (t->maxHp << 16));
+        key = Mix(key, t->level | (t->gender << 8) | (t->live << 16) | (t->deoxys << 24));
+        for (int k = 0; k < POKEMON_NAME_LENGTH + 1; ++k)
+            key = Mix(key, t->nick[k]);
+    }
     sBattleMenusReady = key == sWarmKey;
     if (key == sWarmKey)
         return;
