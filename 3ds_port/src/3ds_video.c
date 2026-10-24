@@ -10,6 +10,7 @@
 #include "3ds_daynight.h"
 #include "3ds_gpumem.h"
 #include "3ds_video.h"
+#include "3ds_tile_banks.h"
 #include "3ds_dex_top.h"
 #include "3ds_data.h"
 #include "3ds_bottom.h"
@@ -473,12 +474,17 @@ static uint32_t sTileSerial;
  * Tiles are cached by palette: 0-15 the BG banks, 16-31 the OBJ banks, 32 and
  * 33 the BG and OBJ palettes as one 256-colour bank, and from PAL_EXT the OBJ
  * banks past the GBA's sixteen (CtrVideo_LatchExtPalettes), whose colours
- * follow the GBA's 512 here.
+ * follow the GBA's 512 here, and from PAL_TILE_BANK the field's banks of
+ * other tilesets (CtrVideo_SetTileBank), seven palettes a bank, after those.
  */
 #define PAL_BG256 32
 #define PAL_OBJ256 33
 #define PAL_EXT 34
-#define PAL_IDS (PAL_EXT + CTR_EXT_PALETTES)
+#define PAL_TILE_BANK (PAL_EXT + CTR_EXT_PALETTES)
+#define PAL_IDS (PAL_TILE_BANK + CTR_TILE_BANKS * CTR_TILE_BANK_PALETTES)
+/* Where the banks' colours start in sPalette and sTexturePalette. */
+#define PAL_TILE_BANK_COLOURS (512 + CTR_EXT_PALETTES * 16)
+#define PAL_COLOURS (PAL_TILE_BANK_COLOURS + CTR_TILE_BANKS * CTR_TILE_BANK_PALETTES * 16)
 
 static uint32_t sOamAnchored[4];
 static int16_t sOamAnchor[128];
@@ -677,8 +683,8 @@ static C3D_RenderTarget *sLogical, *sTop, *sTopRight;
 static bool sStereo;
 static Tile sTiles[CACHE_COUNT];
 static uint16_t sHash[HASH_COUNT];
-static uint16_t sPalette[512 + CTR_EXT_PALETTES * 16];
-static uint16_t sTexturePalette[512 + CTR_EXT_PALETTES * 16];
+static uint16_t sPalette[PAL_COLOURS];
+static uint16_t sTexturePalette[PAL_COLOURS];
 static uint8_t sMorton[64];
 /* A 4bpp tile's two pixels of a byte, (x, y) and (x + 1, y) for an even x,
  * are neighbouring texels in the tiled order: written as one word. */
@@ -858,6 +864,167 @@ static bool VramChangedAfter(unsigned address, unsigned bytes, uint32_t t)
     for (unsigned b = address / VRAM_BLOCK; b <= last; ++b)
         if (SyncBlock(b) > t) return true;
     return false;
+}
+
+/*
+ * The field's banks of other tilesets (3ds_tile_banks.h): their tiles sit in
+ * logical addresses past the GBA's VRAM, TILE_BANK_BASE on, CTR_TILE_BANK_BYTES
+ * a bank, so the tile cache keys them as it keys any tile. A bank's tiles are
+ * whole or not there: sTileBankStamp is the token at which they last changed.
+ */
+#define TILE_BANK_BASE VRAM_BYTES
+static uint8_t sTileBankTiles[CTR_TILE_BANKS][CTR_TILE_BANK_BYTES];
+static uint16_t sTileBankPalettes[CTR_TILE_BANKS][CTR_TILE_BANK_PALETTES * 16];
+static uint32_t sTileBankStamp[CTR_TILE_BANKS];
+static unsigned sTileBanksLive;
+static bool sTileBanksChanged;
+
+/*
+ * The banks of the tilemap entries in VRAM TILEMAP_BANK_BASE on (the field's
+ * screenblocks are 25-30), and the entry each was handed over with: a bank
+ * holds only while VRAM holds that entry, so another screen writing there
+ * without bg.c's copies never draws from a bank. sTilemapBankRow stamps a
+ * row of 32 entries whose banks changed, which its VRAM need not have done
+ * (a map left behind drawn again, the same entries now from a bank).
+ */
+#define TILEMAP_BANK_BASE 0x8000u
+#define TILEMAP_BANK_ENTRIES ((0x10000u - TILEMAP_BANK_BASE) / 2)
+static uint8_t sTilemapBank[TILEMAP_BANK_ENTRIES];
+static uint16_t sTilemapBankEntry[TILEMAP_BANK_ENTRIES];
+static uint32_t sTilemapBankRow[TILEMAP_BANK_ENTRIES / 32];
+static uint32_t sTilemapBankStamp;
+static unsigned sTilemapBanked;
+
+#define TILEMAP_BANK_SOURCES 3
+static struct
+{
+    const void *buffer;
+    const uint8_t *banks;
+    unsigned entries;
+} sTilemapBankSources[TILEMAP_BANK_SOURCES];
+
+void CtrVideo_SetTileBank(unsigned bank, const void *tiles, unsigned bytes, const uint16_t *palettes)
+{
+    if (bank >= CTR_TILE_BANKS) return;
+    if (tiles == NULL)
+    {
+        sTileBanksLive &= ~(1u << bank);
+        return;
+    }
+    if (bytes > CTR_TILE_BANK_BYTES) bytes = CTR_TILE_BANK_BYTES;
+    memset(sTileBankTiles[bank], 0, sizeof(sTileBankTiles[bank]));
+    memcpy(sTileBankTiles[bank], tiles, bytes);
+    if (palettes != NULL)
+        memcpy(sTileBankPalettes[bank], palettes, sizeof(sTileBankPalettes[bank]));
+    else
+        memset(sTileBankPalettes[bank], 0, sizeof(sTileBankPalettes[bank]));
+    sTileBankStamp[bank] = sStats.frames + 1;
+    sTileBanksLive |= 1u << bank;
+    sTileBanksChanged = true;
+    /* Every layer walks its cells again, as for new palettes. */
+    sBgPaletteStamp = sStats.frames + 1;
+}
+
+void CtrVideo_RegisterTilemapBanks(const void *buffer, const uint8_t *banks, unsigned entries)
+{
+    unsigned i, free = TILEMAP_BANK_SOURCES;
+
+    for (i = 0; i < TILEMAP_BANK_SOURCES; ++i)
+    {
+        if (sTilemapBankSources[i].buffer == buffer) break;
+        if (sTilemapBankSources[i].buffer == NULL && free == TILEMAP_BANK_SOURCES) free = i;
+    }
+    if (i == TILEMAP_BANK_SOURCES) i = free;
+    if (i == TILEMAP_BANK_SOURCES) return;
+    sTilemapBankSources[i].buffer = buffer;
+    sTilemapBankSources[i].banks = banks;
+    sTilemapBankSources[i].entries = entries;
+}
+
+void CtrVideo_UnregisterTilemapBanks(const void *buffer)
+{
+    for (unsigned i = 0; i < TILEMAP_BANK_SOURCES; ++i)
+        if (sTilemapBankSources[i].buffer == buffer)
+            sTilemapBankSources[i].buffer = NULL;
+}
+
+void CtrVideo_TilemapRequested(unsigned vramOffset, const void *src, unsigned bytes)
+{
+    const uint8_t *banks = NULL;
+    const uint16_t *entries = src;
+    unsigned first, count, available = 0;
+
+    if (vramOffset >= 0x10000 || vramOffset + bytes <= TILEMAP_BANK_BASE) return;
+    for (unsigned i = 0; i < TILEMAP_BANK_SOURCES; ++i)
+        if (sTilemapBankSources[i].buffer == src && src != NULL)
+        {
+            banks = sTilemapBankSources[i].banks;
+            available = sTilemapBankSources[i].entries;
+            break;
+        }
+    /* Nothing banked there and nothing to bank: nothing to do. */
+    if (banks == NULL && sTilemapBanked == 0) return;
+    if (bytes > 0x10000 - vramOffset) bytes = 0x10000 - vramOffset;
+    first = vramOffset >= TILEMAP_BANK_BASE ? (vramOffset - TILEMAP_BANK_BASE) / 2 : 0;
+    count = (vramOffset + bytes - TILEMAP_BANK_BASE) / 2 - first;
+    if (vramOffset < TILEMAP_BANK_BASE)
+    {
+        unsigned skipped = (TILEMAP_BANK_BASE - vramOffset) / 2;
+
+        entries += skipped;
+        if (banks != NULL) banks += skipped;
+        available = available > skipped ? available - skipped : 0;
+    }
+    for (unsigned i = 0; i < count; ++i)
+    {
+        unsigned at = first + i;
+        uint8_t bank = banks != NULL && i < available ? banks[i] : 0;
+        uint16_t entry = bank ? entries[i] : 0;
+
+        if (bank > CTR_TILE_BANKS) bank = 0;
+        if (sTilemapBank[at] == bank && sTilemapBankEntry[at] == entry) continue;
+        if ((sTilemapBank[at] != 0) != (bank != 0))
+            sTilemapBanked += bank ? 1u : ~0u;
+        sTilemapBank[at] = bank;
+        sTilemapBankEntry[at] = entry;
+        sTilemapBankRow[at / 32] = sStats.frames + 1;
+        sTilemapBankStamp = sStats.frames + 1;
+    }
+}
+
+/* Whether the banks of a row of the tilemap (its VRAM address) changed after t. */
+static bool TilemapBanksChangedAfter(unsigned rowAddress, uint32_t t)
+{
+    if (rowAddress < TILEMAP_BANK_BASE || rowAddress >= 0x10000) return false;
+    return sTilemapBankRow[(rowAddress - TILEMAP_BANK_BASE) / 64] > t;
+}
+
+/* The bank (1 + bank) of the entry at VRAM entryAddress, read as `entry`: 0 for none. */
+static unsigned TilemapBankAt(unsigned entryAddress, unsigned entry)
+{
+    unsigned at, bank;
+
+    if (sTilemapBanked == 0 || entryAddress < TILEMAP_BANK_BASE || entryAddress >= 0x10000) return 0;
+    at = (entryAddress - TILEMAP_BANK_BASE) / 2;
+    bank = sTilemapBank[at];
+    if (bank == 0 || sTilemapBankEntry[at] != entry || !(sTileBanksLive & (1u << (bank - 1)))) return 0;
+    return bank;
+}
+
+static int GetTileSlot(unsigned address, unsigned bank, bool color256);
+
+/* The slot of a 4bpp entry of bank `bank` (1 + bank), its tiles from chars. */
+static int BankedTileSlot(unsigned bank, unsigned entry, unsigned chars)
+{
+    unsigned tile, palette, address;
+    bool fromBank, bankPalette;
+
+    CtrTileBank_Resolve(entry, &tile, &fromBank, &palette, &bankPalette);
+    --bank;
+    address = fromBank ? TILE_BANK_BASE + bank * CTR_TILE_BANK_BYTES + tile * 32 : chars + tile * 32;
+    if (!fromBank && address >= 0x10000) return -1;
+    return GetTileSlot(address, bankPalette ? PAL_TILE_BANK + bank * CTR_TILE_BANK_PALETTES + palette : palette,
+                       false);
 }
 static bool sC3d, sC2d;
 static uint64_t sFpsStart;
@@ -1198,6 +1365,53 @@ static unsigned DetectPaletteFade(uint16_t *color)
     return 0;
 }
 
+/*
+ * The banks' palettes as the current map's are shown (3ds_tile_banks.h): in a
+ * uniform fade, which the renderer applies itself to colours decoded from the
+ * unfaded palettes, their own unfaded colours; otherwise their colours taken
+ * channel by channel through what took the current map's palettes 0-12 from
+ * unfaded to shown - nothing, most of the time.
+ */
+static void UpdateTileBankPalettes(bool fading)
+{
+    const uint16_t *shown = sMemory.palette, *unfaded = gPlttBufferUnfaded;
+    unsigned count = (CTR_TILE_BANK_FIRST_PALETTE + CTR_TILE_BANK_PALETTES) * 16;
+    bool same = fading || !memcmp(shown, unfaded, count * sizeof(uint16_t));
+    uint8_t lut[3][32];
+
+    if (!same)
+        CtrTileBank_BuildLut(unfaded, shown, count, lut);
+    for (unsigned b = 0; b < CTR_TILE_BANKS; ++b)
+    {
+        if (!(sTileBanksLive & (1u << b))) continue;
+        for (unsigned p = 0; p < CTR_TILE_BANK_PALETTES; ++p)
+        {
+            unsigned id = PAL_TILE_BANK + b * CTR_TILE_BANK_PALETTES + p;
+            unsigned base = PAL_TILE_BANK_COLOURS + (b * CTR_TILE_BANK_PALETTES + p) * 16;
+            const uint16_t *source = sTileBankPalettes[b] + p * 16;
+            bool changed = false;
+
+            for (unsigned index = 0; index < 16; ++index)
+            {
+                uint16_t colour = same ? source[index] & 0x7fff : CtrTileBank_ApplyLut(lut, source[index]);
+
+                if (sPalette[base + index] == colour) continue;
+                if (!changed)
+                    memset(sPaletteChanges[id], 0, sizeof(sPaletteChanges[id]));
+                changed = true;
+                sPalette[base + index] = colour;
+                sTexturePalette[base + index] = CtrVideo_RGBA5551(colour);
+                sPaletteChanges[id][0] |= 1u << index;
+            }
+            if (changed)
+            {
+                ++sPaletteVersion[id];
+                sBgPaletteStamp = sStats.frames + 1;
+            }
+        }
+    }
+}
+
 static void UpdatePalette(void)
 {
     bool bgChanged = false, objChanged = false;
@@ -1252,6 +1466,9 @@ static void UpdatePalette(void)
         }
         ++sPaletteVersion[bank];
     }
+    if (sTileBanksLive && (bgChanged || sTileBanksChanged))
+        UpdateTileBankPalettes(fade != 0);
+    sTileBanksChanged = false;
 }
 
 /*
@@ -1300,11 +1517,19 @@ static bool TilePaletteChanged(const Tile *tile, unsigned paletteId)
  */
 static int GetTileSlot(unsigned address, unsigned bank, bool color256)
 {
-    if (address + (color256 ? 64 : 32) > 0x18000)
+    bool fromBank = address >= TILE_BANK_BASE;
+
+    if (fromBank ? color256 || address + 32 > TILE_BANK_BASE + CTR_TILE_BANKS * CTR_TILE_BANK_BYTES
+                 : address + (color256 ? 64 : 32) > 0x18000)
     {
         Error(1, "tile outside logical VRAM");
         address = 0;
+        fromBank = false;
     }
+    /* A bank's tiles stand in for VRAM past its end (sTileBankTiles). */
+    const uint8_t *source = fromBank
+        ? sTileBankTiles[(address - TILE_BANK_BASE) / CTR_TILE_BANK_BYTES] + (address - TILE_BANK_BASE) % CTR_TILE_BANK_BYTES
+        : sMemory.vram + address;
     unsigned paletteId = color256 ? PAL_BG256 + (bank >= 16) : bank;
     uint32_t key = (address / 32) * PAL_IDS + paletteId + 1;
     unsigned hash = (key * 2654435761u) & (HASH_COUNT - 1);
@@ -1324,20 +1549,22 @@ static int GetTileSlot(unsigned address, unsigned bank, bool color256)
         unsigned bytes = color256 ? 64 : 32;
         /* Compared now whatever follows: the tile records this token, so its
          * block must be (see SyncBlock). */
-        uint32_t stamp = SyncBlock(address / VRAM_BLOCK);
+        uint32_t stamp = fromBank ? sTileBankStamp[(address - TILE_BANK_BASE) / CTR_TILE_BANK_BYTES]
+                                  : SyncBlock(address / VRAM_BLOCK);
         /* A tile's bytes sit in one block: unchanged since it was last
          * checked, they need no comparing. */
         bool fresh = !tile->valid, palette = !fresh && TilePaletteChanged(tile, paletteId);
 
         if (fresh || palette
             || (stamp > tile->checked
-                && memcmp(tile->bytes, sMemory.vram + address, bytes)))
+                && memcmp(tile->bytes, source, bytes)))
         {
             if (fresh) ++sDecodeNew;
             else if (palette) ++sDecodePalette;
             else ++sDecodeBytes;
-            memcpy(tile->bytes, sMemory.vram + address, bytes);
+            memcpy(tile->bytes, source, bytes);
             unsigned paletteBase = color256 ? (bank >= 16 ? 256 : 0)
+                                 : bank >= PAL_TILE_BANK ? PAL_TILE_BANK_COLOURS + (bank - PAL_TILE_BANK) * 16
                                  : bank >= PAL_EXT ? 512 + (bank - PAL_EXT) * 16 : bank * 16;
             uint16_t *dest = (uint16_t *)sAtlas.data + slot * 64;
             uint16_t before[64];
@@ -1721,8 +1948,8 @@ static bool EmptyWalkHolds(const EmptyWalk *w, const EmptyWalk *now)
         || w->offY != now->offY)
         return false;
     if (chars + charBytes > 0x10000) charBytes = 0x10000 - chars;
-    return sBgPaletteStamp <= w->token && !VramChangedAfter(map, mapBytes, w->token)
-        && !VramChangedAfter(chars, charBytes, w->token);
+    return sBgPaletteStamp <= w->token && sTilemapBankStamp <= w->token
+        && !VramChangedAfter(map, mapBytes, w->token) && !VramChangedAfter(chars, charBytes, w->token);
 }
 
 static void DrawTextSpanAt(unsigned bg, int left, int right, int top, int bottom,
@@ -1787,9 +2014,17 @@ static void DrawTextSpanAt(unsigned bg, int left, int right, int top, int bottom
              * hardware; only the margins are denied to a narrow background. */
             if (px + 8 <= left || px >= right) continue;
             /* Columns past 31 live in the next screenblock, 1024 entries on. */
-            entry = Read16(rowBase + (column & 31) * 2 + (column >> 5) * 2048);
+            unsigned entryAddress = rowBase + (column & 31) * 2 + (column >> 5) * 2048;
+            unsigned bank;
+
+            entry = Read16(entryAddress);
             index = entry & 1023;
-            if (sMemoStamp[index] == stamp && sMemoEntry[index] == entry)
+            bank = color256 ? 0 : TilemapBankAt(entryAddress, entry);
+            if (bank)
+            {
+                slot = BankedTileSlot(bank, entry, chars);
+            }
+            else if (sMemoStamp[index] == stamp && sMemoEntry[index] == entry)
             {
                 slot = sMemoSlot[index];
             }
@@ -4151,7 +4386,7 @@ static bool LayerRenderCells(unsigned bg)
 
     /* Nothing it is made of changed since its cells were last walked: the
      * texture is what a walk would draw. */
-    if (sameTiles && !VramChangedAfter(map, rows * columns * 2, walked))
+    if (sameTiles && !VramChangedAfter(map, rows * columns * 2, walked) && sTilemapBankStamp <= walked)
         return false;
     /* Recorded at this token: its VRAM is compared now (see SyncBlock). */
     VramSyncRange(chars, Min(1024u * (color256 ? 64 : 32), 0x10000 - chars));
@@ -4165,23 +4400,29 @@ static bool LayerRenderCells(unsigned bg)
 
         /*
          * Same tiles, same palettes, same slots: a cell can only have changed
-         * if its tilemap entry did. The camera redraws a row or a column of
-         * the map at a time, so most rows lie in VRAM that did not change
-         * and are not walked at all (both screenblocks of a 64-wide row).
+         * if its tilemap entry did, or its bank. The camera redraws a row or
+         * a column of the map at a time, so most rows lie in VRAM that did
+         * not change and are not walked at all (both screenblocks of a
+         * 64-wide row).
          */
-        if (sameTiles && !VramChangedAfter(rowBase, 64, walked)
-            && (columns < 64 || !VramChangedAfter(rowBase + 2048, 64, walked)))
+        if (sameTiles && !VramChangedAfter(rowBase, 64, walked) && !TilemapBanksChangedAfter(rowBase, walked)
+            && (columns < 64 || (!VramChangedAfter(rowBase + 2048, 64, walked)
+                                 && !TilemapBanksChangedAfter(rowBase + 2048, walked))))
             continue;
 
         for (unsigned column = 0; column < columns; ++column)
         {
             unsigned cell = row * columns + column;
-            unsigned entry = Read16(rowBase + (column & 31) * 2 + (column >> 5) * 2048);
+            unsigned entryAddress = rowBase + (column & 31) * 2 + (column >> 5) * 2048;
+            unsigned entry = Read16(entryAddress);
             unsigned index = entry & 1023;
+            unsigned bank = color256 ? 0 : TilemapBankAt(entryAddress, entry);
             int slot;
             uint32_t sig;
 
-            if (memoStamp[index] == stamp && memoEntry[index] == entry)
+            if (bank)
+                slot = BankedTileSlot(bank, entry, chars);
+            else if (memoStamp[index] == stamp && memoEntry[index] == entry)
                 slot = memoSlot[index];
             else
             {
@@ -6751,7 +6992,7 @@ static bool SceneHoldsSince(unsigned exclude, uint32_t token)
  */
 static bool SceneCacheHolds(unsigned exclude)
 {
-    if (sBgPaletteStamp > sSceneCacheToken)
+    if (sBgPaletteStamp > sSceneCacheToken || sTilemapBankStamp > sSceneCacheToken)
         return false;
     return SceneHoldsSince(exclude, sSceneCacheToken);
 }

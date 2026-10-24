@@ -793,7 +793,7 @@ def register_piece(piece_spec, layout, art, hidden=(), loose=False, own=None):
     _PIECES.append({"spec": piece_spec, "layout": layout.id, "size": (w, h), "pixels": pixels,
                     "keys": grid, "cells": cells,
                     "anchor": max(cells, key=lambda c: len(cells[c])),
-                    "loose": loose and len(pixels) >= LOOSE_PIXELS})
+                    "loose": loose and (len(pixels) >= LOOSE_PIXELS or piece_spec.get("found"))})
 
 
 def place_reused(layout, ground, pit=()):
@@ -831,7 +831,13 @@ def place_reused(layout, ground, pit=()):
         w, h = p["size"]
         cells |= {(x + i, y + j) for j in range(h) for i in range(w)}
         print("  reuse: %s stands in %s at %d,%d" % (p["spec"]["name"], layout.id, x, y))
+    _REUSED_PIXELS[layout.id] = _REUSED_PIXELS.get(layout.id, set()) | pixels
     return pixels, cells
+
+
+# layout -> the room's pixels the pieces found again in it draw: none of them
+# is laid flat round another as the map's own paint (ground_patch)
+_REUSED_PIXELS = {}
 
 
 def reuse_everywhere():
@@ -1744,6 +1750,48 @@ def decal_cells(art, cells, origin, v_offset):
     return out, boxes
 
 
+def drawn_as(layout_id, draw=None):
+    """A layout's drawing, the cells `draw` names ({(x, y): metatile}) laid
+    with those metatiles: the room as a script leaves it (setmetatile), the
+    other state of a puzzle's barriers, for the pieces that stand only then."""
+    layout = vb.LayoutArt(layout_id)
+    if draw:
+        layout.blocks = list(layout.blocks)
+        for (x, y), mt in draw.items():
+            i = y * layout.w + x
+            layout.blocks[i] = (layout.blocks[i] & ~0x3FF) | mt
+    return layout
+
+
+def when_holds(model, layout, px, py):
+    """Whether a room piece that stands only while a cell of its rectangle
+    holds a metatile (`when`: x, y in it, metatile - voxel_building.c
+    PlacementLive) stands at (px, py) in `layout` as drawn."""
+    when = model.spec.get("when")
+    return not when or layout.metatile(px + when[0], py + when[1]) == when[2]
+
+
+def anim_box(layout, shape, tiles, frames):
+    """The pixels of `shape` (a rectangle) drawn from the upper layer's
+    `tiles` (lo, hi) in any of the animation's `frames`, and their box."""
+    x0, y0, x1, y1 = shape
+    lo, hi = tiles
+    pts = set()
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            tile, pixel, _ = layout.upper_source(x, y)
+            if lo <= tile <= hi and any(layout.tile_pixel(tile, pixel, f) for f in [None] + frames):
+                pts.add((x, y))
+    if not pts:
+        raise SystemExit("anim_box: no pixel of tiles %d-%d in %s" % (lo, hi, shape))
+    return pts, (min(x for x, _ in pts), min(y for _, y in pts),
+                 max(x for x, _ in pts) + 1, max(y for _, y in pts) + 1)
+
+
+# the colour a live texel never draws: clear where its tile's pixel is 0
+LIVE_BG = (1, 2, 3)
+
+
 def interior_specs(spec):
     """Expand an `interior` spec: a room cut into pieces, one model each.
 
@@ -1765,7 +1813,7 @@ def interior_specs(spec):
     they stand in.
     """
     room = spec["interior"]
-    layout = vb.LayoutArt(room["layout"])
+    layout = drawn_as(room["layout"], room.get("draw"))
     W, H = layout.w * 16, layout.h * 16
     full = Image.new("RGBA", (W, H))
     for y in range(layout.h):
@@ -1781,6 +1829,17 @@ def interior_specs(spec):
     match = [[any(f[x % 16, y % 16] == fpx[x, y] for f in floors) for x in range(W)]
              for y in range(H)]
     grids = [_inside_grid(pc["shape"], W, H) for pc in pieces]
+    # a piece drawn from some tiles of the upper layer alone (`tiles`): a
+    # beam over the floor and the posts it runs between, its pixels only
+    for k, pc in enumerate(pieces):
+        if pc.get("tiles"):
+            lo, hi = pc["tiles"]
+            g = grids[k]
+            for y in range(H):
+                for x in range(W):
+                    if g[y][x]:
+                        tile, pixel, _ = layout.upper_source(x, y)
+                        g[y][x] = lo <= tile <= hi and layout.tile_pixel(tile, pixel) != 0
     shaped = [[any(g[y][x] for g in grids) for x in range(W)] for y in range(H)]
     ground = [[match[y][x] and not shaped[y][x] for x in range(W)] for y in range(H)]
     # The room's front corners: black in the drawing, the outside of a room
@@ -1795,10 +1854,15 @@ def interior_specs(spec):
                 ground[ny][nx] = True
                 todo.append((nx, ny))
     # the floor's shaded variants: their colours are floor wherever they run
-    # on from the open floor, never a piece's
+    # on from the open floor, never a piece's. A colour named alone is the
+    # floor's shadow where its metatiles also carry a piece's edge (the lip
+    # of a block's top, lying on the cell north of it)
     shade = set()
     for m in room.get("shade", ()):
-        shade.update("%02x%02x%02x" % c[:3] for c in layout.cell_image(m).getdata())
+        if isinstance(m, str):
+            shade.add(m)
+        else:
+            shade.update("%02x%02x%02x" % c[:3] for c in layout.cell_image(m).getdata())
     owner = [[None] * W for _ in range(H)]
     # the furniture an earlier room has modelled, standing here as it is:
     # its pixels are no piece's of this room's
@@ -1814,7 +1878,8 @@ def interior_specs(spec):
     shapes_at = [[sum(g[y][x] for g in things) for x in range(W)] for y in range(H)]
     leaves = auto_leave(pieces, grids, ground, hexes, supports, W, H)
     for k, pc in enumerate(pieces):
-        inside = _inside_grid(pc["shape"], W, H)
+        # (a piece of some tiles alone: its shape cut to them, as above)
+        inside = grids[k] if pc.get("tiles") else _inside_grid(pc["shape"], W, H)
         # what the piece leaves: its `leave` colours where they run on out of
         # its shape - the wall round a machine's corners, not the machine's
         # own orange lamps inside its outline - and, but for a wall, the
@@ -2005,6 +2070,14 @@ def interior_specs(spec):
             found.append(fpx[xx, y])
         return found[0] if found[0] == found[1] else None
 
+    # the cells a piece stands again in (`at`): its copies', where no other
+    # piece lays the drawing (the post a side wall's rectangle reaches)
+    copied = set()
+    for k, rect in enumerate(rects):
+        if rect is not None:
+            for (ax, ay) in pieces[k].get("at", ()):
+                copied |= {(ax + i, ay + j) for j in range(rect[3] - rect[1])
+                           for i in range(rect[2] - rect[0])}
     decal_of = {}
     for k, rect in enumerate(rects):
         if rect is None:
@@ -2012,7 +2085,8 @@ def interior_specs(spec):
         x0, y0, x1, y1 = rect
         for cy in range(y0, y1):
             for cx in range(x0, x1):
-                decal_of.setdefault((cx, cy), k)
+                if (cx, cy) not in pieces[k].get("skip", ()) and (cx, cy) not in copied:
+                    decal_of.setdefault((cx, cy), k)
     for y in range(layout.h):
         for x in range(layout.w):
             if ((x, y) not in decal_of and (x, y) not in reused_cells
@@ -2131,10 +2205,58 @@ def interior_specs(spec):
             back = pc.get("back") if pc.get("against") is None else pc["against"]
             if back is not None:
                 back = back - y0 * 16 - pc.get("base", 0)
-            if pc.get("card"):
+            span = None
+            if pc.get("anim"):
+                # what any frame of its animation draws: the card or the
+                # ribbon spans all of it, its texels following the game's
+                # tiles (live, ~live faces)
+                _, box = anim_box(layout, (x0 * 16, y0 * 16, x1 * 16, y1 * 16), pc["tiles"],
+                                  [vb.anim_frame(f, pc["anim"][1]) for f in pc["anim"][0]])
+                span = (box[0] - x0 * 16, box[2] - x0 * 16, box[1] - y0 * 16)
+                voff = 2 * h * 16 + sh + th
+                live_map = {(u, voff + v): (u, v, LIVE_BG)
+                            for v in range(box[1] - y0 * 16, box[3] - y0 * 16)
+                            for u in range(span[0], span[1])
+                            if pc["tiles"][0] <= layout.upper_source(x0 * 16 + u, y0 * 16 + v)[0]
+                            <= pc["tiles"][1]}
+            live_tag = "~live" if pc.get("anim") else ""
+
+            def lay_live(art):
+                """Its band of texels as its tiles draw them, clear where they
+                draw nothing: the post's lower layer under the beam is the
+                post's."""
+                bpx = art.load()
+                for (u, vv), (lu, lv, _) in live_map.items():
+                    tile, pixel, pal = layout.upper_source(x0 * 16 + lu, y0 * 16 + lv)
+                    index = layout.tile_pixel(tile, pixel)
+                    bpx[u, vv] = layout.palette(pal)[index] + (255,) if index else (0, 0, 0, 0)
+            if pc.get("flat"):
+                # a block whose drawing is its plan (the dark beyond a room
+                # and its rims): its top `height` up over the whole of it,
+                # the drawing laid on it as drawn, not projected - its rim
+                # at its north edge, where its wall ends. Its sides are its
+                # walls; at 45 degrees it is not its drawing (the room's
+                # `redrawn`)
+                band = 2 * h * 16 + sh + th
+                art.paste(obj, (0, band))
+                ht = pc["height"]
+                xs = [x - x0 * 16 for (x, _) in mine]
+                zs = [y - y0 * 16 for (_, y) in mine]
+                parts = [vb.Ribbon(pc["name"] + "_lid", min(xs), max(xs) + 1, min(zs), ht,
+                                   max(zs) + 1, ht, voff=band + ht)]
+            elif pc.get("ribbon"):
+                # running back across the plan, from one post to the next
                 art.paste(obj, (0, 2 * h * 16 + sh + th))
-                parts = [vb.Card(pc["name"], obj, foot, voff=2 * h * 16 + sh + th,
-                                 base=pc.get("base", 0))]
+                lay_live(art)
+                (za, ya), (zb, yb) = pc["ribbon"]
+                parts = [vb.Ribbon(pc["name"] + live_tag, span[0], span[1], za - y0 * 16, ya,
+                                   zb - y0 * 16, yb, voff=2 * h * 16 + sh + th)]
+            elif pc.get("card"):
+                art.paste(obj, (0, 2 * h * 16 + sh + th))
+                if pc.get("anim"):
+                    lay_live(art)
+                parts = [vb.Card(pc["name"] + live_tag, obj, foot, voff=2 * h * 16 + sh + th,
+                                 base=pc.get("base", 0), span=span)]
             elif pc.get("run"):
                 # built from the side (an escalator): each section, (x, y) in
                 # the room's pixels, runs back from z0 to z1 with its drawing
@@ -2245,10 +2367,52 @@ def interior_specs(spec):
             # check, with every piece in place, judges it
             parts.append(vb.Decal(pc["name"] + "_under~behind", hidden, uo, lift=0.25,
                                   boxes=hidden_box))
+        # `skip`: cells of its rectangle that stay the map's own, drawn as
+        # the game has them (a switch a script presses beside a wall)
+        owned = ({(i, j) for j in range(h) for i in range(w)
+                  if (x0 + i, y0 + j) not in pc["skip"]} if pc.get("skip") else None)
+        # `when`: it stands only while that cell holds that metatile; `at`:
+        # it stands again with its rectangle at each of those cells. Either
+        # stands only where it is put
+        extra = {}
+        # (and a piece of a room's other drawing stands only in that room)
+        if pc.get("when") or pc.get("at") or room.get("draw"):
+            g0 = room["ground"][0]
+            extra["placed"] = [(room["layout"], ax, ay, g0)
+                               for (ax, ay) in [(x0, y0)] + list(pc.get("at", ()))]
+            # under it at each place the floor as drawn there, where that is
+            # not the ground's: its lower layer, if that is floor alone (the
+            # wall's shadow across it) - not the post it draws itself
+            floorish = set(pc.get("leave", ())) | {
+                "%02x%02x%02x" % c[:3] for c in layout.cell_image(g0).getdata()}
+            under = {}
+            for (_, ax, ay, _) in extra["placed"]:
+                for j in range(h):
+                    for i in range(w):
+                        mt = layout.metatile(ax + i, ay + j)
+                        lower = layout.cell_image(mt, layers=(0,)).convert("RGBA")
+                        colours = {"%02x%02x%02x" % c[:3] for c in lower.getdata()}
+                        if (mt != g0 and colours <= floorish
+                                and lower.tobytes() != layout.cell_image(g0, layers=(0,))
+                                .convert("RGBA").tobytes()):
+                            under.setdefault((ax, ay), []).append((i, j, lower))
+            if under:
+                extra["placed_patches"] = under
+        if pc.get("when"):
+            # its cell in its rectangle: it moves with each place it stands
+            extra["when"] = (pc["when"][0] - x0, pc["when"][1] - y0, pc["when"][2])
+        if pc.get("anim"):
+            extra["live_map"] = live_map
+        if pc.get("found"):
+            extra["found"] = True
+        if room.get("draw"):
+            extra["layout_art"] = layout
         out.append({"name": "%s_%s" % (spec["name"], pc["name"]), "layout": room["layout"],
                     "rect": (x0, y0, w, h), "ground": room["ground"], "art": art,
+                    **({"owned": owned} if owned is not None else {}), **extra,
                     "parts": (lambda ps: (lambda: ps))(parts),
-                    "exact": [(0, 0, w * 16, h * 16)], "interior": spec["name"],
+                    "exact": [] if pc.get("flat") else [(0, 0, w * 16, h * 16)],
+                    "interior": spec["name"],
                     "behind_wall": behind_wall,
                     "drawing": (_without(drawing, behind_wall | hidden_fill)
                                 if behind_wall or drawing is not art else None),
@@ -2265,7 +2429,7 @@ def interior_specs(spec):
                        if plan else {})})
         # `alone`: a room's own shell - its walls, a doorway's recess - which
         # another room does not repeat by having the same floor along an edge
-        if not pc.get("alone"):
+        if not (pc.get("alone") or extra.get("placed")):
             register_piece(out[-1], layout, drawing,
                            {(x - x0 * 16, y - y0 * 16) for (x, y) in fill},
                            loose=not (pc.get("fill") or pc.get("facet") or pc.get("walls")),
@@ -2449,7 +2613,8 @@ def build_models(only=None):
         lid = spec["layout"]
         if lid not in layouts:
             layouts[lid] = vb.LayoutArt(lid)
-        layout = layouts[lid]
+        # a room piece of a puzzle's other state is read off that drawing
+        layout = spec.get("layout_art") or layouts[lid]
         x, y, w, h = spec["rect"]
         owned = spec.get("owned")
         live = None
@@ -2520,6 +2685,8 @@ def build_models(only=None):
         if spec.get("clip_art"):
             model.spec = spec
             clip_to_art(model)
+        if spec.get("live_map"):
+            live = spec["live_map"]
         model.live = live_texels(spec, layout, art, live) if live else []
         model.owned = owned if owned is not None else {(i, j) for i in range(w) for j in range(h)}
         model.spec = spec
@@ -2582,7 +2749,7 @@ def preview(model, out_dir, cams=None):
 
 # ── Export ───────────────────────────────────────────────────────────────
 
-MAGIC = b"VXB8"
+MAGIC = b"VXB9"
 # A model drawn from its own mesh (static: ctr_voxel.c StaticMeshPrepare), not
 # copied into the chunk it stands in - a chunk's buffer holds ~9300 vertices
 # with its ground and trees (voxel_engine_view.py check):
@@ -3253,10 +3420,14 @@ def ground_patch(model, layout, px, py, i, j):
     img = layout.cell_image(layout.metatile(px + i, py + j)).convert("RGBA")
     ipx, apx = img.load(), model.art.load()
     own = getattr(model, "own", None)   # a bare piece: its own pixels only
+    # and what the other pieces found here draw (a statue's ball on its
+    # pedestal): theirs, not the map's paint
+    others = _REUSED_PIXELS.get(layout.id, ())
     for y in range(16):
         for x in range(16):
             if (apx[i * 16 + x, j * 16 + y][3] >= 128 if own is None
-                    else (i * 16 + x, j * 16 + y) in own):
+                    else (i * 16 + x, j * 16 + y) in own) or \
+                    ((px + i) * 16 + x, (py + j) * 16 + y) in others:
                 ipx[x, y] = (0, 0, 0, 0)
     return img
 
@@ -3267,6 +3438,8 @@ def placement_patches(model, layout_json_entry_name, layouts, px, py, odd):
     spec lays itself (`patches`: (i, j, image), a bridge's drawing laid on
     the ground, voxel_bridge)."""
     own = [(i, j, img) for (i, j, img) in model.spec.get("patches", ())]
+    # and those it was given where it was put (`placed_patches`)
+    own += model.spec.get("placed_patches", {}).get((px, py), [])
     if not odd:
         return own
     cells = own
@@ -3752,7 +3925,7 @@ def read_crop(model):
 
 
 def export(models, path):
-    """Write buildings.bin (VXB8).
+    """Write buildings.bin (VXB9).
 
     Geometry is stored once per model, texture coordinates in pixels of the
     model's own drawing. Textures are paged by map: each layout that places
@@ -3765,8 +3938,8 @@ def export(models, path):
     compaction would leave reading glass where another face reads none
     keeps its drawing as drawn.
 
-      "VXB8", u16 pages, models, pageModels, placements, heightBytes, masks,
-      u32 vertices, u16 variants, u16 decks
+      "VXB9", u16 pages, models, pageModels, placements, heightBytes, masks,
+      u32 vertices, u16 variants, u16 decks, u16 conditions, u16 0
       pages       x 8:  u16 w, h; u32 file offset of its RGBA5551 texels (h the
                         rows it holds, a multiple of 8; its texture is h
                         rounded up to a power of two - texture_rows; h's bit
@@ -3785,7 +3958,9 @@ def export(models, path):
       layout draws it from, less those quarters - see ground_variants),
       decks x 8 (u16 layout; u8 x, y, top, bottom, elevation, 0: a bridge's
       deck over that cell, where walkers stand - see voxel_bridge.decks),
-      padding to 4,
+      conditions x 6 (u16 placement, metatile; u8 x, y: the placement
+      stands only while that cell of its rectangle holds that metatile - a
+      room piece's `when`), padding to 4,
       vertices x 24 (x, y, z, u, v, shade), then the pages' texels, each
       flagged page's followed by its w*h L8 glass-mask bytes in the same
       PICA order, then the texels that follow the game's tile animations
@@ -3957,8 +4132,12 @@ def export(models, path):
                 c = [i + 1, 0.01, j + 1, ox + 16, oy + 16, 1.0]
                 d = [i, 0.01, j + 1, ox, oy + 16, 1.0]
                 verts += a + b + c + a + c + d
-            placements.append((lid, pm_of[index], px, py, ground, len(verts) // 6 - first, first))
-    placements.sort()
+            when = models[index].spec.get("when")
+            placements.append((lid, pm_of[index], px, py, ground, len(verts) // 6 - first, first,
+                               (when[2], when[0], when[1]) if when else None))
+    placements.sort(key=lambda p: p[:7])
+    conditions = [(k,) + p[7] for k, p in enumerate(placements) if p[7] is not None]
+    placements = [p[:7] for p in placements]
     nverts = len(verts) // 6
     # ctr_voxel.c keeps a flag a page (VOXEL_MAX_PAGES), and a page larger
     # than half its VRAM block cannot share it with the next map's
@@ -3968,9 +4147,9 @@ def export(models, path):
     index_of = {e.get("id"): k + 1 for k, e in enumerate(layouts_json)}
     decks = sorted((index_of[lid], y, x, top, bottom, gate)
                    for (lid, x, y, top, bottom, gate) in voxel_bridge.deck_table())
-    head = MAGIC + struct.pack("<HHHHHHIHH", len(pages), len(models), len(page_models),
+    head = MAGIC + struct.pack("<HHHHHHIHHHH", len(pages), len(models), len(page_models),
                                len(placements), len(heights), len(masks), nverts,
-                               len(variants), len(decks))
+                               len(variants), len(decks), len(conditions), 0)
     body = bytearray()
     for r in records:
         body += r
@@ -3991,6 +4170,8 @@ def export(models, path):
         body += struct.pack("<HHBB", lid, m, q, 0)
     for (lid, y, x, top, bottom, gate) in decks:
         body += struct.pack("<HBBBBBB", lid, x, y, top, bottom, gate, 0)
+    for (k, metatile, x, y) in conditions:
+        body += struct.pack("<HHBB", k, metatile, x, y)
     table_size = 8 * len(pages)
     fixed = len(head) + table_size + len(body)
     pad = (-fixed) % 4
@@ -4054,12 +4235,12 @@ def town_preview(models, layout_id, out_dir):
         w, h = m.cells
         tops = cell_heights(m)
         for lid, px, py, ground, name, odd in find_placements(m, layouts_json):
-            if name != layout_id:
-                continue
+            if name != layout_id or not when_holds(m, layout, px, py):
+                continue    # (or switched off as the room is drawn)
             for j in range(h):
                 for i in range(w):
-                    if ground != OWN_GROUND:    # a prop keeps each cell's own
-                        override[(px + i, py + j)] = ground
+                    if ground != OWN_GROUND and (i, j) in m.owned:
+                        override[(px + i, py + j)] = ground     # a prop keeps each cell's own
             for (i, j, patch) in placement_patches(m, layout_id, {layout_id: layout}, px, py, odd):
                 q = [(px + i, 0.01, py + j, 0, 0), (px + i + 1, 0.01, py + j, 16, 0),
                      (px + i + 1, 0.01, py + j + 1, 16, 16), (px + i, 0.01, py + j + 1, 0, 16)]
@@ -4078,7 +4259,7 @@ def town_preview(models, layout_id, out_dir):
     return shots
 
 
-def room_check(models, layout_id, out_dir):
+def room_check(models, layout_id, out_dir, draw=None, suffix=""):
     """A whole room as the console composes it, against its drawing.
 
     The terrain draws each cell a model covers with the placement's floor
@@ -4088,18 +4269,19 @@ def room_check(models, layout_id, out_dir):
     """
     layouts_json = json.load(open(os.path.join(vb.ROOT, "data", "layouts", "layouts.json"),
                                   encoding="utf-8"))["layouts"]
-    layout = vb.LayoutArt(layout_id)
+    layout = drawn_as(layout_id, draw)
     W, H = layout.w * 16, layout.h * 16
     ras = vb.Raster(W, H, bg=(0, 0, 0))
     covered, items, patches, hidden = {}, [], [], set()
     for m in models:
         w, h = m.cells
         for lid, px, py, ground, name, odd in find_placements(m, layouts_json):
-            if name != layout_id:
-                continue
+            if name != layout_id or not when_holds(m, layout, px, py):
+                continue    # (or switched off in this state of the room)
             for j in range(h):
                 for i in range(w):
-                    covered[(px + i, py + j)] = ground
+                    if (i, j) in m.owned:   # (the rest stays the map's)
+                        covered[(px + i, py + j)] = ground
             items.append((m, px, py))
             hidden |= {(px * 16 + u, py * 16 + v) for (u, v) in m.spec.get("behind_wall", ())}
             patches += [(px + i, py + j, img) for (i, j, img)
@@ -4142,6 +4324,8 @@ def room_check(models, layout_id, out_dir):
         for x in range(W):
             if _inside(room.get("open", ()), x, y):
                 continue  # floor in the round where the drawing is black
+            if _inside([r for r, _ in room.get("redrawn", ())], x, y):
+                continue  # stood otherwise than its drawing, on purpose
             if (x, y) in hidden:
                 continue  # a top's rows behind the wall it stands against
             if fpx[x, y] != gpx[x, y]:
@@ -4153,11 +4337,13 @@ def room_check(models, layout_id, out_dir):
         print("    %-34s %4d px, e.g. %s" % (tag, len(pts), pts[:3]))
     if hidden:
         print("    %-34s %4d px (not judged)" % ("tops behind the wall", len(hidden)))
+    for r, why in room.get("redrawn", ()):
+        print("    %-34s %s (not judged: %s)" % ("redrawn", r, why))
     sheet = Image.new("RGB", (W * 2 + 4, H))
     sheet.paste(full, (0, 0))
     sheet.paste(diff, (W + 4, 0))
     sheet.resize((sheet.width * 3, sheet.height * 3), Image.NEAREST).save(
-        os.path.join(out_dir, layout_id.lower() + "_room_check.png"))
+        os.path.join(out_dir, layout_id.lower() + suffix + "_room_check.png"))
     return bad
 
 
@@ -4204,6 +4390,15 @@ def verify(models, out, complete=True):
         print("room %-28s composed with the terrain: %d pixel(s) differ from the drawing"
               % (lid, bad))
         failed = failed or bad != 0
+        # and as a script leaves it: a puzzle's other state (a room's `draw`)
+        for n, draw in enumerate(sorted({id(s["interior"]["draw"]): s["interior"]["draw"]
+                                         for s in specs.SPECS
+                                         if s.get("interior", {}).get("layout") == lid
+                                         and s["interior"].get("draw")}.items())):
+            bad = room_check(models, lid, out, draw[1], "_state%d" % (n + 1))
+            print("room %-28s in its state %d: %d pixel(s) differ from the drawing"
+                  % (lid, n + 1, bad))
+            failed = failed or bad != 0
     for lid in sorted(voxel_bridge.BRIDGES):
         mine = [m for m in models if m.spec.get("deck_of") == lid]
         if mine:
