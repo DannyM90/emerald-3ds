@@ -56,6 +56,7 @@ import json
 import math
 import operator
 import os
+import shutil
 import struct
 import sys
 
@@ -2643,36 +2644,9 @@ def ledge_berms(layout, art, h):
     length. Where it ends - a point shared with a cell that is no ledge - it
     comes down to the ground, and the drawn end taper does the rest.
     """
-    cells = ledge_cells(layout)
+    cells, lip = ledge_lip(layout, art)
     if not cells:
         return 0
-    lip = {}
-    for (x, y), dirs in cells.items():
-        # ground colours: the cells the jump leaves and lands on, else round it
-        ground = set()
-        for ring in ([(-dx, -dy) for dx, dy in dirs] + list(dirs),
-                     [(dx, dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)]):
-            for dx, dy in ring:
-                nx, ny = x + dx, y + dy
-                if (nx, ny) in cells or layout.off_map(nx, ny) or layout.blocked(nx, ny):
-                    continue
-                img = art.cell_image(art.metatile(nx, ny))
-                ground.update(img.getpixel((i, j))[:3] for j in range(16) for i in range(16))
-            if ground:
-                break
-        if not ground:
-            continue
-        img = art.cell_image(art.metatile(x, y)).load()
-        for j in range(16):
-            for i in range(16):
-                if img[i, j][:3] not in ground:
-                    lip[(x * 16 + i, y * 16 + j)] = True
-
-    def run(px, py, dx, dy, limit=64):
-        n = 0
-        while n < limit and lip.get((px + n * dx, py + n * dy)):
-            n += 1
-        return n
 
     def first(px, py, dx, dy, limit):
         for k in range(limit):
@@ -2680,26 +2654,11 @@ def ledge_berms(layout, art, h):
                 return k
         return None
 
-    def lip_height(f):
-        return LIP * min(f, LIP_WIDTH) / float(LIP_WIDTH)
-
     raised = {}
     for (x, y), dirs in cells.items():
         for j in range(PER_CELL + 1):
             for i in range(PER_CELL + 1):
-                px, py = x * 16 + i * STEP, y * 16 + j * STEP
-                reads = []
-                for dx, dy in dirs:
-                    # the pixel line through the point, inside the cell across
-                    # the jump, entered on the jump side of the point along it
-                    if dx == 0:
-                        sx = min(max(px, x * 16), x * 16 + 15)
-                        sy = py - (dy < 0)
-                    else:
-                        sx = px - (dx < 0)
-                        sy = min(max(py, y * 16), y * 16 + 15)
-                    reads.append((sx, sy, dx, dy, run(sx, sy, dx, dy),
-                                  run(sx - dx, sy - dy, -dx, -dy)))
+                reads = ledge_reads(lip, x, y, dirs, i, j)
                 if all(f for (_, _, _, _, f, _) in reads):
                     best = min(lip_height(f) for (_, _, _, _, f, _) in reads)
                 elif any(b and not f for (_, _, _, _, f, b) in reads):
@@ -2710,7 +2669,7 @@ def ledge_berms(layout, art, h):
                     for (sx, sy, dx, dy, f, b) in reads:
                         k = first(sx, sy, dx, dy, LIP_BACK)
                         if k is not None:
-                            top = lip_height(run(sx + k * dx, sy + k * dy, dx, dy))
+                            top = lip_height(lip_run(lip, sx + k * dx, sy + k * dy, dx, dy))
                             best = max(best, top * (1.0 - k / float(LIP_BACK)))
                 key = (x * PER_CELL + i, y * PER_CELL + j)
                 raised[key] = max(raised.get(key, 0.0), best)
@@ -2734,6 +2693,69 @@ def ledge_berms(layout, art, h):
     for (gx, gy), v in raised.items():
         h[gy][gx] += v
     return len(cells)
+
+
+def lip_height(f):
+    """A lip point's height, `f` pixels of brown from its foot."""
+    return LIP * min(f, LIP_WIDTH) / float(LIP_WIDTH)
+
+
+def lip_run(lip, px, py, dx, dy, limit=64):
+    """How many lip pixels from (px, py) on, walking (dx, dy)."""
+    n = 0
+    while n < limit and lip.get((px + n * dx, py + n * dy)):
+        n += 1
+    return n
+
+
+def ledge_reads(lip, x, y, dirs, i, j):
+    """What lattice point (i, j) of ledge cell (x, y) sees along each way the
+    ledge jumps: (sx, sy, dx, dy, f, b), f the lip pixels from the point to
+    the lip's foot (on the lip when f), b those behind it (in front of the
+    lip when b and not f; else behind it)."""
+    px, py = x * 16 + i * STEP, y * 16 + j * STEP
+    reads = []
+    for dx, dy in dirs:
+        # the pixel line through the point, inside the cell across
+        # the jump, entered on the jump side of the point along it
+        if dx == 0:
+            sx = min(max(px, x * 16), x * 16 + 15)
+            sy = py - (dy < 0)
+        else:
+            sx = px - (dx < 0)
+            sy = min(max(py, y * 16), y * 16 + 15)
+        reads.append((sx, sy, dx, dy, lip_run(lip, sx, sy, dx, dy),
+                      lip_run(lip, sx - dx, sy - dy, -dx, -dy)))
+    return reads
+
+
+def ledge_lip(layout, art):
+    """({cell: jump directions}, {pixel: True}) of a layout's ledges: every
+    pixel of a ledge cell drawn in none of the ground colours round it - the
+    brown lip."""
+    cells = ledge_cells(layout)
+    lip = {}
+    for (x, y), dirs in cells.items():
+        # ground colours: the cells the jump leaves and lands on, else round it
+        ground = set()
+        for ring in ([(-dx, -dy) for dx, dy in dirs] + list(dirs),
+                     [(dx, dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)]):
+            for dx, dy in ring:
+                nx, ny = x + dx, y + dy
+                if (nx, ny) in cells or layout.off_map(nx, ny) or layout.blocked(nx, ny):
+                    continue
+                img = art.cell_image(art.metatile(nx, ny))
+                ground.update(img.getpixel((i, j))[:3] for j in range(16) for i in range(16))
+            if ground:
+                break
+        if not ground:
+            continue
+        img = art.cell_image(art.metatile(x, y)).load()
+        for j in range(16):
+            for i in range(16):
+                if img[i, j][:3] not in ground:
+                    lip[(x * 16 + i, y * 16 + j)] = True
+    return cells, lip
 
 
 def ledges_on_ground(layout, h):
@@ -3217,7 +3239,13 @@ def cut_cells(lid, roles_layout, h):
     rock = {(gx - ox, gy - oy) for (gx, gy) in kinds}
     art = layout_art(lid)
     out = []
-    for (x, y) in sorted(rock, key=lambda c: (c[1], c[0])):
+    # never a ledge: its berm is one mound, the grass behind its lip risen
+    # with it the run's whole length. Cut, the middle of a run laid that
+    # grass back at its foot and left the lip's top pixels in the air (dark
+    # spikes along Route 111's ledges), the ground rising at its two uncut
+    # end tiles only
+    ledges = set(ledge_cells(roles_layout))
+    for (x, y) in sorted(rock - ledges, key=lambda c: (c[1], c[0])):
         if not (0 <= x < roles_layout.w and 0 <= y < roles_layout.h):
             continue
         mask = _cut_mask(art, roles_layout, x, y, rock)
@@ -3231,6 +3259,7 @@ def cut_cells(lid, roles_layout, h):
 
 _SIDE_PIXELS = {      # the part of a tile that faces the rock: its south rows, east or west columns
     None: lambda i, j: True,
+    "N": lambda i, j: j < 6,
     "S": lambda i, j: j >= 10,
     "E": lambda i, j: i >= 10,
     "W": lambda i, j: i < 6,
@@ -3335,22 +3364,33 @@ def _behind(art, layout, x, y, rock, mask=None, half=False, content=None, ignore
         img = art.cell_image(art.metatile(x, y)).convert("RGB").load()
         bg = [img[i, j] for j in range(16) for i in range(16)
               if (mask[j] >> i) & 1 and img[i, j] not in ignore]
-        if ignore and len(bg) < 8:
-            bg = []
+        if ignore and len(bg) < 32:
+            around = []
             for ny in (y - 1, y, y + 1):
                 for nx in (x - 1, x, x + 1):
                     if (nx, ny) != (x, y) and 0 <= nx < layout.w and 0 <= ny < layout.h:
-                        bg += [p for p in art.cell_image(art.metatile(nx, ny)).convert("RGB").getdata()
-                               if p not in ROCK_ALL and p not in ignore]
+                        around += [p for p in art.cell_image(art.metatile(nx, ny)).convert("RGB").getdata()
+                                   if p not in ROCK_ALL and p not in ignore]
+            # (a background of a few pixels in a colour the ground round the
+            # cell has little of - under a quarter of its commonest - is the
+            # rock's own outline, no ground to tell by: the deep blue round
+            # Route 120's boulder, laid under its cut, stood as a dark block
+            # in the river. In a colour round it, it is that ground: its tip's
+            # drops of the river, read by the ground round it, were the deep
+            # water north of it)
+            if len(bg) < 8 or (around and 4 * around.count(commonest(bg)) < around.count(commonest(around))):
+                bg = around
         if len(bg) >= 8:
             kind = commonest(bg)
-            for (dx, dy, side) in ((0, -1, "S"), (-1, 0, "E"), (1, 0, "W"), (0, 0, None)):
+            # (south last: walled in by rock and props, the ground it stands
+            # on - Verdanturf's corner between the Battle Tent and a sign)
+            for (dx, dy, side) in ((0, -1, "S"), (-1, 0, "E"), (1, 0, "W"), (0, 0, None), (0, 1, None)):
                 nx, ny = x + dx, y + dy
                 if 0 <= nx < layout.w and 0 <= ny < layout.h and (nx, ny) not in rock or (dx, dy) == (0, 0):
                     m = plain_ground(art, layout, content, nx, ny, side, kind, half)
                     if m is not None:
                         return m
-    for (dx, dy, side) in ((0, -1, "S"), (-1, 0, "E"), (1, 0, "W")):
+    for (dx, dy, side) in ((0, -1, "S"), (-1, 0, "E"), (1, 0, "W"), (0, 1, None)):
         nx, ny = x + dx, y + dy
         if 0 <= nx < layout.w and 0 <= ny < layout.h and (nx, ny) not in rock:
             return plain_ground(art, layout, rock, nx, ny, side, half=half)
@@ -3384,6 +3424,7 @@ def rim_cells(lid, roles_layout, h, cut, base=None):
     taken = {(x, y) for (x, y, *_) in cut}
     cut_behind = {(c[0], c[1]): c[5] for c in cut if len(c) > 5 and c[5] is not None}
     plainest = lambda x, y: plain_ground(art, roles_layout, content, x, y, "S")
+    ledges = set(ledge_cells(roles_layout))
     grids, fills = {}, {}
 
     def level(x, y):
@@ -3423,8 +3464,15 @@ def rim_cells(lid, roles_layout, h, cut, base=None):
         if (x, y) not in grids:
             continue
         # under a cut tile the ground is the one its own drawing names, the
-        # tile north of it can be a shore tile of the sea
-        ground = cut_behind.get((x, y)) or plainest(x, y - 1)
+        # tile north of it can be a shore tile of the sea. Under a ledge's
+        # berm it is the grass its own tile draws behind the lip: the strip
+        # its risen back leaves open is drawn there, and the tile north of
+        # it can be the end of a sand path (Route 111: a band of plain sand
+        # or of a streaked road under the berm, past the path's round end)
+        if (x, y) in ledges:
+            ground = plain_ground(art, roles_layout, content, x, y, "N")
+        else:
+            ground = cut_behind.get((x, y)) or plainest(x, y - 1)
         for k in range(int(math.ceil((top - foot) / LEVEL))):
             c = (x, y + k)
             if not (0 <= c[1] < Hh):
@@ -4262,6 +4310,11 @@ def main():
             print("proof:", proof(name, os.path.join(args.proof, "terraces_%s.png" % name)))
     if args.output:
         export(lids, args.output)
+        # the export as the terraces read it (their reference: the world
+        # placement they keep), for the voxel editor to solve its groups
+        # against the same relief the build does
+        if os.environ.get("VOXEL_RELIEF_EXPORT"):
+            shutil.copy2(args.output, os.environ["VOXEL_RELIEF_EXPORT"])
         # the mountains of the maps chosen so far, counted tile by tile
         # (voxel_terraces.py) over the solve, in the world it placed
         import voxel_terraces

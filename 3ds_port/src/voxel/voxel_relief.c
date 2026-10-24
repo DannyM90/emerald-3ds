@@ -27,7 +27,7 @@
  *                  background is the plain ground behind it - written, no
  *                  longer read; 2: VOXEL_RELIEF_GOES_ON; 4:
  *                  VOXEL_RELIEF_BLOCK_WALLS; 8: VOXEL_RELIEF_THIN_DECK;
- *                  32: VOXEL_RELIEF_GOES_ON_FACE)
+ *                  16: VOXEL_RELIEF_FACE_TOP; 32: VOXEL_RELIEF_GOES_ON_FACE; 64: VOXEL_RELIEF_GOES_ON_SOUTH)
  *   and last u32 the table's offset, "CUTS".
  *
  * A point's depth is its height ((u, h, v + h)), so the file does not carry
