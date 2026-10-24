@@ -8048,3 +8048,167 @@ ABANDONED_SHIP_ROOMS = [
 ]
 SPECS += [{"name": n, "interior": {"layout": lid, "ground": [g], "pieces": own_shell(f())}}
           for (n, lid, g, f) in ABANDONED_SHIP_ROOMS]
+
+
+
+# The Aqua Hideout (#179), in the Facility tiles of Stern's Shipyard and the
+# harbor: its machines, desks, capsules, bins and crates are theirs, found
+# again (reuse_pieces). Its own: the partitions between its rooms - their
+# white tops and grey faces, 23 px, a piece to each rectangle of them, the
+# floor cut away round them (`leave`, as Sootopolis's gym) - the back walls,
+# the same partition with its top above the map's edge, and the railings
+# round its pools and channels: the long ones a cell deep, the side ones
+# half a cell, the floor and the water seen between their bars. The water,
+# its rock banks and the steps down into it stay drawn. Each floor's map:
+# `#` partition, `-` a long railing, `[` and `]` the west and east side
+# railings.
+
+AQUA_TANKS = {"1F": ((2, 16), (24, 19), (2, 23), (24, 24)), "B2F": ((17, 7), (21, 8), (25, 8), (28, 8))}
+AQUA_FLOOR = ("acb494", "839473", "dedec5", "6a7b41", "8bb4ac", "a4cdbd", "9c8b94", "628b83", "739c8b")
+AQUA_SEE = AQUA_FLOOR + ("526ad5", "29418b", "39529c", "6a83d5", "acc5e6", "8ba4de")
+AQUA_MAPS = {
+    "1F": """
+.....######################.
+.....#################.####.
+.#####....................#.
+.#####....................#.
+.#........................#.
+.#......------------......#.
+.#......[..........]......#.
+.#......[..........]......#.
+.#......------------......#.
+.#........................#.
+.#........................#.
+.#...--------..--------...#.
+.#...[................]...#.
+.#...[................]...#.
+.#...[................]...#.
+.#...[................]...#.
+.#...-................-...#.
+.#........................#.
+.#........................#.
+.#...-................-...#.
+.#...[................]...#.
+.#...[................]...#.
+.#...[................]...#.
+.#...[................]...#.
+.#...-................-...#.
+.#........................#.
+.#........................#.
+.#........................#.
+.#........................#.
+............................
+""",
+    "B1F": """
+.......###########################......###########
+.......#####.#####.##########.####......###########
+########......#..........#.......#......#.........#
+###.####......#..........#.......#......#.........#
+#.............#..........#.......#......#.........#
+#.............#..........#.......#......#.........#
+#.............####################......#---------#
+#.............####################......#[.......]#
+#.............#..........#.......#......#---------#
+#.............#..........#.......#......#.........#
+#.............#..........#.......#......#---------#
+#.............#..........#.......#......#[.......]#
+##########################.......#......#---------#
+##########################.......#......#.........#
+#........................#########......#---------#
+#........................#########......#[.......]#
+#---------------.................#......#---------#
+#[.............].................#......#.........#
+#[.............].................#......#.........#
+#---------------.................#......###########
+#................................#......###########
+#................................#.................
+##################################.................
+##################################.................
+""",
+    "B2F": """
+......########################...#
+......######.#####.###############
+#######.......#..................#
+###.###.......#..................#
+#.....#.......#..................#
+#.....#.......#..................#
+#.....#.......#..................#
+#.....#.......#..................#
+#.....#.......#..................#
+#.....#.......#..................#
+###############..................#
+###############..................#
+#.............#..................#
+#.............#..................#
+#.............#.........##########
+#-------------#.........##########
+#..............---------.........#
+#......................].........#
+#......................-.........#
+#................................#
+#......................-.........#
+#......................].........#
+#......................-##########
+#-----------------------##########
+""",
+}
+
+
+def aqua_hideout(floor):
+    rows = AQUA_MAPS[floor].strip("\n").split("\n")
+    at = lambda ch: [(x, y) for y, r in enumerate(rows) for x, c in enumerate(r) if c == ch]
+    out = rect_pieces("partition", runs_of(at("#")), 23, leave=AQUA_FLOOR)
+    longs = run_rects(runs_of(at("-")))
+    # a side railing's long faces, which the drawing never shows: the bars of
+    # the floor's first long railing
+    x0, y0 = longs[0][0], longs[0][1]
+    bars = (x0 + 2, y0, x0 + 14, y0 + 8)
+    out += [piece("edge_rail_%d_%d" % (a // 16, b // 16), [(a, b, c, d)], 12, through=True, leave=AQUA_SEE)
+            for (a, b, c, d) in longs]
+    # a west side railing two cells long or more is the harbor's or the
+    # shipyard's, found again (theirs share its tiles): those single cells
+    # long are the floor's own, and the east ones (mirrored) all are
+    for ch, dx in (("[", 0), ("]", 8)):
+        out += [piece("edge_rail_%s_%d_%d" % ("w" if ch == "[" else "e", a // 16, b // 16),
+                      [(a + dx, b, a + dx + 8, d)], 12, through=True, leave=AQUA_SEE, side=bars)
+                for (a, b, c, d) in run_rects(runs_of(at(ch))) if ch == "]" or d - b == 16]
+    # the tanks with pipes and a control panel along the walls, each floor's
+    # own (named as blocks: drawn alike, found from one floor in the other
+    # they would stand twice)
+    out += [piece("block_tank_%d_%d" % (x, y), [(x * 16, y * 16, x * 16 + 32, y * 16 + 32)], 20,
+                  leave=AQUA_FLOOR)
+            for (x, y) in AQUA_TANKS.get(floor, ())]
+    return out
+
+
+SPECS += [{"name": "aqua_hideout_%s" % f.lower(),
+           "interior": {"layout": "LAYOUT_AQUA_HIDEOUT_%s" % f, "ground": [0x228],
+                        "pieces": own_shell(aqua_hideout(f))}}
+          for f in ("1F", "B1F", "B2F")]
+
+
+# The Magma Hideout (#179): a cave, its rock walls and lava the cave's own
+# (#179 asks whether they're the mountains' work), and the machines in it -
+# seven kinds, each modelled in the room that has fewest of it and found
+# again in the others (reuse_pieces): on 3F 2R the consoles with a dish on
+# top, the cream tank and the drills boring into the rock, on 3F 3R the
+# domed robot, on 2F 1R the tall capsule and the console under a dish (4F's
+# small dish boxes are the same, found again), and on 4F, the only floor
+# with them, the drills standing on the floor. The cave floor round them
+# cut away (`leave`).
+
+MAGMA_FLOOR = ("d59c8b", "bd8373", "9c6252")
+MAGMA_MACHINES = {
+    "3F_2R": [("console", 3, 6, 2, 3, 24), ("console", 5, 6, 2, 3, 24), ("tank", 20, 3, 2, 3, 30),
+              ("drill", 7, 1, 2, 2, 16), ("drill", 9, 1, 2, 2, 16), ("drill", 11, 1, 2, 2, 16)],
+    "3F_3R": [("robot", 18, 20, 2, 2, 16)],
+    "2F_1R": [("capsule", 16, 16, 2, 3, 32), ("dish_console", 14, 16, 2, 3, 24)],
+    "4F": [("drill_floor", 12, 2, 2, 2, 16), ("drill_floor", 14, 2, 2, 2, 16), ("drill_floor", 9, 3, 2, 2, 16),
+           ("drill_floor", 47, 14, 2, 2, 16)],
+}
+SPECS += [{"name": "magma_hideout_%s" % f.lower(),
+           "interior": {"layout": "LAYOUT_MAGMA_HIDEOUT_%s" % f, "ground": [0x3a2],
+                        "pieces": [piece("%s_%d_%d" % (k, x, y), [(x * 16, y * 16, (x + w) * 16, (y + h) * 16)],
+                                         ht, leave=MAGMA_FLOOR)
+                                   for (k, x, y, w, h, ht) in machines]}}
+          for f, machines in MAGMA_MACHINES.items()]
