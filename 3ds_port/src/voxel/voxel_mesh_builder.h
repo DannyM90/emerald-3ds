@@ -65,7 +65,7 @@ typedef struct
      */
     float lift, shift;
     /* The base of the map being built (VoxelRelief_Base): everything emitted
-     * is raised by it, straight up. */
+     * is raised by it and drawn as far south (VoxelBuilder_StretchZ). */
     float base;
     /* Its south seam's ease (VoxelRelief_Stretch): world z from stretchFrom
      * to stretchTo drawn longer, past it moved stretchAdd south. stretchAdd
@@ -93,7 +93,10 @@ void VoxelBuilder_SetAtlas(VoxelBuilder *builder, const struct VoxelAtlasMap *at
 void VoxelBuilder_SetOrigin(VoxelBuilder *builder, int originX, int originZ);
 /* The map being built's ease, if it has one (VoxelRelief_Stretch). */
 void VoxelBuilder_SetStretch(VoxelBuilder *builder, const VoxelMapInstance *inst);
-/* A world z (after the shift) where the builder's map draws it. */
+/* A world z (after the shift) where the builder's map draws it: on its
+ * eased rows, and as far south as its base is high - a point stands as far
+ * south as it is high in the world, (u, h, v + h), so two maps meeting at one
+ * height meet in the same row whatever their bases. */
 float VoxelBuilder_StretchZ(const VoxelBuilder *builder, float z);
 void VoxelBuilder_Tri(VoxelBuilder *builder, const VoxelVertex *a,
                       const VoxelVertex *b, const VoxelVertex *c);

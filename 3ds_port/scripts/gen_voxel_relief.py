@@ -877,9 +877,9 @@ STEP_SEAM_WEIGHT = 1
 # level its neighbour on one side has at the seam to the level of the one on
 # the other side - a level over its sixty cells, a pixel every four, so every
 # seam it has meets and nothing between Dewford and Slateport steps. Its
-# heights have no depth (level, in relief.bin): they lift it straight up, as
-# the bases either side of it do. As far south as high, its west edge stood a
-# row north of Route 107's and the player jumped a row on the crossing.
+# points stand as far south as they are high in the world, as every map's do
+# (voxel_relief.h), so its west edge meets Route 107's in the same row, on its
+# base a level down.
 SEA_RAMPS = {
     "LAYOUT_ROUTE108": "open sea between the Dewford side (a level under) and "
                        "Slateport's (Route 107 / Route 108, the step seam above)",
@@ -1204,7 +1204,7 @@ def sea_ramps(relief, quiet=False):
     """SEA_RAMPS over a parsed relief.bin (voxel_relief_fixes.parse), in
     place: each map's sea leans from the level of its west (north) neighbour
     at their seam to that of its east (south) one, every lattice point by its
-    distance across the map, with no depth (level). The levels are read off
+    distance across the map. The levels are read off
     the neighbours as the file has them - after the terraces, whose blocks
     keep the world's seams - the commonest height along the seam, each of its
     cells' edge points over the base. Returns the maps changed."""
@@ -1254,7 +1254,6 @@ def sea_ramps(relief, quiet=False):
         if t["cells"]:
             # a ledge's berm would lose its depth with the map's
             raise ValueError("%s: a sea ramp over a map with relief of its own" % lid)
-        t["level"] = True
         span = float(w if across else h)
         for y in range(h):
             for x in range(w):
@@ -4153,9 +4152,9 @@ def export(layout_ids, path):
     a map read off its drawing (DRAWN): its relief is the whole of the terrain,
     and every blocked cell of rock is written, level or not. Bit 14 says its
     heights are in units of HEIGHT_UNIT pixels (a mountain stands taller than
-    a byte of pixels). A point's depth is its height, so it is not written;
-    bit 15 of the width (set by sea_ramps) says it has none, the heights
-    lifting the map straight up as its base does. Bit 14 of the width (WIDE,
+    a byte of pixels). A point's depth is its height in the world, base and
+    all, so it is not written (bit 15 of the width, once a level map's, is no
+    longer set or read). Bit 14 of the width (WIDE,
     voxel_relief_fixes.pack: hand marks past 16 levels) says its cells hold
     25 s16 heights in pixels instead of bytes."""
     layouts = json.load(open(os.path.join(vb.ROOT, "data", "layouts", "layouts.json"),
