@@ -13,6 +13,7 @@
 #include "main.h"
 #include "overworld.h"
 #include "event_data.h"
+#include "time_events.h"
 #include "constants/layouts.h"
 #include "fieldmap.h"
 #include "decompress.h"
@@ -266,23 +267,37 @@ bool VoxelWorld_IsBattleMapAvailable(void)
  * their ON_TRANSITION), as the swap stands while the player is elsewhere:
  * a neighbour is drawn whole, and its header's layout showed what the game
  * hides - the Mirage Tower over the desert from Mauville, every day, years
- * after it fell. `flag` 0: always swapped; else swapped while it is clear.
+ * after it fell - or hid what it shows: Mirage Island, out in the sea of
+ * Route 130 the days it is there, rose out of it only once the player
+ * crossed into the route. `swapped` says, as the script does, whether the
+ * map is entered with `layoutId`; NULL: always.
  */
+static bool MirageTowerHidden(void)
+{
+    return !FlagGet(FLAG_MIRAGE_TOWER_VISIBLE);
+}
+
+static bool MirageIslandShown(void)
+{
+    return IsMirageIslandPresent();
+}
+
 static const struct
 {
     u8 mapGroup, mapNum;
-    u16 flag;
+    bool (*swapped)(void);
     u16 layoutId;
 } sLayoutSwaps[] = {
-    { MAP_GROUP(MAP_ROUTE111), MAP_NUM(MAP_ROUTE111), FLAG_MIRAGE_TOWER_VISIBLE, LAYOUT_ROUTE111_NO_MIRAGE_TOWER },
-    { MAP_GROUP(MAP_ROUTE131), MAP_NUM(MAP_ROUTE131), 0, LAYOUT_ROUTE131_SKY_PILLAR },
+    { MAP_GROUP(MAP_ROUTE111), MAP_NUM(MAP_ROUTE111), MirageTowerHidden, LAYOUT_ROUTE111_NO_MIRAGE_TOWER },
+    { MAP_GROUP(MAP_ROUTE130), MAP_NUM(MAP_ROUTE130), MirageIslandShown, LAYOUT_ROUTE130_MIRAGE_ISLAND },
+    { MAP_GROUP(MAP_ROUTE131), MAP_NUM(MAP_ROUTE131), NULL, LAYOUT_ROUTE131_SKY_PILLAR },
 };
 
 static u16 NeighbourLayoutId(const struct MapHeader *header, int mapGroup, int mapNum)
 {
     for (unsigned i = 0; i < ARRAY_COUNT(sLayoutSwaps); ++i)
         if (sLayoutSwaps[i].mapGroup == mapGroup && sLayoutSwaps[i].mapNum == mapNum
-         && (sLayoutSwaps[i].flag == 0 || !FlagGet(sLayoutSwaps[i].flag))
+         && (sLayoutSwaps[i].swapped == NULL || sLayoutSwaps[i].swapped())
          && Port_GetMapLayoutById(sLayoutSwaps[i].layoutId) != NULL)
             return sLayoutSwaps[i].layoutId;
     return header->mapLayoutId;
@@ -290,12 +305,14 @@ static u16 NeighbourLayoutId(const struct MapHeader *header, int mapGroup, int m
 
 /* `layoutId`: the layout the map is drawn with - the current map's is the
  * save block's (a script may have swapped it: the header keeps the map's
- * first), a neighbour's NeighbourLayoutId. */
+ * first id), a neighbour's NeighbourLayoutId. The current map's layout is
+ * the one the game loaded, gMapHeader's pointer (SetCurrentMapLayout moves
+ * it with the save block's id), never looked up again by id. */
 static void FillInstance(VoxelMapInstance *inst, const struct MapHeader *header, u16 layoutId,
                          int mapGroup, int mapNum, int originX, int originY)
 {
-    const struct MapLayout *layout = layoutId == header->mapLayoutId ? header->mapLayout
-                                   : Port_GetMapLayoutById(layoutId);
+    const struct MapLayout *layout = header == &gMapHeader || layoutId == header->mapLayoutId
+                                   ? header->mapLayout : Port_GetMapLayoutById(layoutId);
 
     if (layout == NULL)
     {
@@ -307,6 +324,8 @@ static void FillInstance(VoxelMapInstance *inst, const struct MapHeader *header,
     inst->primaryTileset = layout->primaryTileset;
     inst->secondaryTileset = layout->secondaryTileset;
     inst->layoutId = layoutId;
+    inst->headerLayoutId = header->mapLayoutId;
+    inst->live = false;
     inst->mapGroup = mapGroup;
     inst->mapNum = mapNum;
     inst->originX = originX;
@@ -348,12 +367,37 @@ static bool ConnectionOrigin(const struct MapConnection *conn, const struct MapH
 }
 
 /*
- * The map across each side connection of `from`. The current map's own are
- * taken as they are; one further away (`far`) only where it is not a map
- * already placed and covers none of their ground - the connections of
- * Hoenn's maps do not always agree with one another's.
+ * Every map the walk out along the connections has placed, the instances
+ * among them: each is a place the walk goes on from, so that a map within
+ * reach is found even where the way to it leads through one that is not.
  */
-static void AddConnections(const VoxelMapInstance *from, bool far)
+#define VOXEL_PLACED_MAX 32
+#define VOXEL_WALK_REACH (2 * VOXEL_WORLD_REACH)
+
+static VoxelMapInstance sPlaced[VOXEL_PLACED_MAX];
+static unsigned sPlacedCount;
+
+/* Tiles between two rectangles, the larger of the two axes; 0 touching. */
+static int RectGap(const VoxelMapInstance *a, int x, int y, int width, int height)
+{
+    int dx = x >= a->originX + a->width ? x - (a->originX + a->width)
+           : a->originX >= x + width ? a->originX - (x + width) : 0;
+    int dy = y >= a->originY + a->height ? y - (a->originY + a->height)
+           : a->originY >= y + height ? a->originY - (y + height) : 0;
+
+    return dx > dy ? dx : dy;
+}
+
+/*
+ * The map across each side connection of `from`. The current map's own are
+ * taken as they are; one further away only where it is not a map already
+ * placed and covers none of their ground - the connections of Hoenn's maps
+ * do not always agree with one another's. `keep`: an instance however far it
+ * lies (a connection of the current map's own neighbours); otherwise only
+ * within VOXEL_WORLD_REACH of the current map, and not placed at all past
+ * VOXEL_WALK_REACH.
+ */
+static void AddConnections(const VoxelMapInstance *from, bool near, bool keep)
 {
     const struct MapHeader *header = from->header;
     const struct MapConnection *conn;
@@ -364,10 +408,11 @@ static void AddConnections(const VoxelMapInstance *from, bool far)
     for (s32 i = 0; i < header->connections->count; ++i, ++conn)
     {
         const struct MapHeader *neighbour;
-        int originX, originY;
+        int originX, originY, width, height, gap;
         bool clash = false;
+        VoxelMapInstance *placed;
 
-        if (sInstanceCount >= MAX_VOXEL_MAP_INSTANCES)
+        if (sPlacedCount >= VOXEL_PLACED_MAX)
             return;
         if (conn->direction == CONNECTION_DIVE || conn->direction == CONNECTION_EMERGE)
             continue;
@@ -375,19 +420,28 @@ static void AddConnections(const VoxelMapInstance *from, bool far)
         if (neighbour == NULL || neighbour->mapLayout == NULL
          || !ConnectionOrigin(conn, neighbour, from, &originX, &originY))
             continue;
-        for (unsigned k = 0; far && k < sInstanceCount && !clash; ++k)
+        width = neighbour->mapLayout->width;
+        height = neighbour->mapLayout->height;
+        gap = RectGap(&sPlaced[0], originX, originY, width, height);
+        if (!near && !keep && gap > VOXEL_WALK_REACH)
+            continue;
+        for (unsigned k = 0; !near && k < sPlacedCount && !clash; ++k)
         {
-            const VoxelMapInstance *placed = &sInstances[k];
+            const VoxelMapInstance *other = &sPlaced[k];
 
-            clash = (placed->mapGroup == conn->mapGroup && placed->mapNum == conn->mapNum)
-                 || (originX < placed->originX + placed->width
-                     && originX + neighbour->mapLayout->width > placed->originX
-                     && originY < placed->originY + placed->height
-                     && originY + neighbour->mapLayout->height > placed->originY);
+            clash = (other->mapGroup == conn->mapGroup && other->mapNum == conn->mapNum)
+                 || (originX < other->originX + other->width
+                     && originX + width > other->originX
+                     && originY < other->originY + other->height
+                     && originY + height > other->originY);
         }
-        if (!clash)
-            FillInstance(&sInstances[sInstanceCount++], neighbour,
-                         NeighbourLayoutId(neighbour, conn->mapGroup, conn->mapNum), conn->mapGroup, conn->mapNum, originX, originY);
+        if (clash)
+            continue;
+        placed = &sPlaced[sPlacedCount++];
+        FillInstance(placed, neighbour, NeighbourLayoutId(neighbour, conn->mapGroup, conn->mapNum),
+                     conn->mapGroup, conn->mapNum, originX, originY);
+        if ((near || keep || gap <= VOXEL_WORLD_REACH) && sInstanceCount < MAX_VOXEL_MAP_INSTANCES)
+            sInstances[sInstanceCount++] = *placed;
     }
 }
 
@@ -408,15 +462,26 @@ static bool VariantFits(const VoxelMapInstance *inst, unsigned layoutId, unsigne
 #endif
 
 /*
- * The current map, its connections, and theirs. The game loads only the first
- * two, which is all its 15 x 10 tiles of screen can reach; the 3D view sees
+ * The current map, its connections, theirs, and any map further along that
+ * lies within VOXEL_WORLD_REACH of it. The game loads only the first two,
+ * which is all its 15 x 10 tiles of screen can reach; the 3D view sees
  * several times as far, and a map one crossing further away was missing from
  * it - the belt of border trees stood in its place, and on the crossing that
  * made it a neighbour it had to be built from nothing while the view showed
  * black where it lies. Placed from the start, it is built ahead of time like
- * any map in the ring, and the crossing only moves the coordinates. The set
- * depends on the current map alone, never on the view: a change to it is a
- * new epoch, and every chunk in view verified again.
+ * any map in the ring, and the crossing only moves the coordinates.
+ *
+ * Two crossings were not enough either. The view looks back the way the
+ * player came - walking south out of Route 101 into Littleroot it faces
+ * north - and the map two crossings behind, still on screen, became three
+ * crossings away on the step that crossed: Route 102 went out of the world
+ * and the belt stood where it had been, black until built. Counted by
+ * distance instead of by crossings, the set of one map holds whatever the
+ * view from the map beside it showed across their seam, so a crossing drops
+ * nothing in sight and builds nothing that was already there.
+ *
+ * The set depends on the current map alone, never on the view: a change to
+ * it is a new epoch, and every chunk in view verified again.
  */
 void VoxelWorld_BuildInstances(void)
 {
@@ -424,13 +489,15 @@ void VoxelWorld_BuildInstances(void)
 
 #ifdef PLATFORM_3DS
     VoxelBuildings_SetVariantFits(VariantFits);
+    VoxelBuildings_SetDrawings(VoxelWorld_LayoutDrawing);
 #endif
     sInstanceCount = 0;
+    sPlacedCount = 0;
     if (gMapHeader.mapLayout == NULL)
         return;
 
     /* Instance 0 is always the current map, at the origin. */
-    FillInstance(&sInstances[0], &gMapHeader, gSaveBlock1Ptr->mapLayoutId,
+    FillInstance(&sPlaced[0], &gMapHeader, gSaveBlock1Ptr->mapLayoutId,
                  gSaveBlock1Ptr->location.mapGroup,
                  gSaveBlock1Ptr->location.mapNum, 0, 0);
     /* Its layout is the save block's: a script that swaps it in
@@ -439,12 +506,15 @@ void VoxelWorld_BuildInstances(void)
      * sets that and gMapHeader.mapLayout, never gMapHeader.mapLayoutId
      * (overworld.c, SetCurrentMapLayout). Keyed by the header's, the
      * relief, regions and buildings were the default layout's. */
-    sInstances[0].layoutId = gSaveBlock1Ptr->mapLayoutId;
-    sInstanceCount = 1;
-    AddConnections(&sInstances[0], false);
-    near = sInstanceCount;
-    for (unsigned i = 1; i < near; ++i)
-        AddConnections(&sInstances[i], true);
+    sPlaced[0].layoutId = gSaveBlock1Ptr->mapLayoutId;
+    sInstances[0] = sPlaced[0];
+    sInstances[0].live = true;
+    sPlacedCount = sInstanceCount = 1;
+    AddConnections(&sPlaced[0], true, true);
+    near = sPlacedCount;
+    /* Nearest first: the walk goes outwards a crossing at a time. */
+    for (unsigned i = 1; i < sPlacedCount; ++i)
+        AddConnections(&sPlaced[i], false, i < near);
 }
 
 unsigned VoxelWorld_InstanceCount(void)
@@ -1098,6 +1168,21 @@ void VoxelWorld_MarkUsedMetatiles(const void *primaryTileset, const void *second
             if (used[m] > used[ground])
                 used[ground] = used[m];
         }
+}
+
+/* A layout's own drawing, not the live grid (voxel_world.h). */
+const uint16_t *VoxelWorld_LayoutDrawing(int layoutId, int *width, int *height)
+{
+    const struct MapLayout *layout;
+
+    if (layoutId <= 0 || layoutId > 0xFFFF)
+        return NULL;
+    layout = Port_GetMapLayoutById((u16)layoutId);
+    if (layout == NULL || layout->width <= 0 || layout->height <= 0)
+        return NULL;
+    *width = layout->width;
+    *height = layout->height;
+    return Voxel_ResolveMap(layout);
 }
 
 /*

@@ -43,8 +43,16 @@ u32 Port_GetAssetSizeExact(const void *p) { return p == sSizedAsset ? sSizedByte
 void LZDecompressWram(const u32 *src, void *dst) { (void)src; (void)dst; }
 void CB2_Overworld(void) {}
 void CB2_OverworldBasic(void) {}
+/* The maps of the instance fixture (InstanceTests), by number; none else. */
+#define FIXTURE_GROUP 30
+#define FIXTURE_MAPS 10
+static struct MapHeader sFixtureHeaders[FIXTURE_MAPS];
+static bool sFixtureMaps;
 const struct MapHeader *const GetMapHeaderFromConnection(const struct MapConnection *c)
-{ (void)c; return NULL; }
+{
+    return sFixtureMaps && c->mapGroup == FIXTURE_GROUP && c->mapNum < FIXTURE_MAPS
+         ? &sFixtureHeaders[c->mapNum] : NULL;
+}
 unsigned VoxelRegions_RoleAt(unsigned id, int x, int y)
 { (void)id; (void)x; (void)y; return VOXEL_ROLE_FLOOR; }
 VoxelVisualShape Voxel_BehaviorShape(unsigned b) { (void)b; return VOXEL_SHAPE_COUNT; }
@@ -59,6 +67,9 @@ const struct MapLayout *Port_GetMapLayoutById(u16 mapLayoutId) { (void)mapLayout
 const u16 *MapGridGetCameraBorderAt(int x, int y, u8 *index)
 { (void)x; (void)y; *index = 0; return NULL; }
 u32 GetMapClosedEdges(void) { return 0; }
+/* The layout swaps' conditions (sLayoutSwaps): no fixture map is one of theirs. */
+bool8 FlagGet(u16 id) { (void)id; return FALSE; }
+bool8 IsMirageIslandPresent(void) { return FALSE; }
 
 static void Check(int x0, int y0, int x1, int y1)
 {
@@ -165,6 +176,90 @@ static void LayoutSwapTest(void)
     puts("PASS layout swap: the current map's instance keys on the save block's layout id");
 }
 
+/* A row of maps 20 tiles wide, each joined to the next going east. */
+static struct SaveBlock1 sSave;
+static struct MapLayout sRowLayout = {.width = 20, .height = 10};
+static struct MapConnection sRowLinks[FIXTURE_MAPS][2];
+static struct MapConnections sRowConnections[FIXTURE_MAPS];
+
+static void EnterRowMap(unsigned num)
+{
+    gMapHeader = sFixtureHeaders[num];
+    sSave.location.mapGroup = FIXTURE_GROUP;
+    sSave.location.mapNum = (u8)num;
+    sSave.mapLayoutId = gMapHeader.mapLayoutId;
+    gSaveBlock1Ptr = &sSave;
+    VoxelWorld_BuildInstances();
+}
+
+static const VoxelMapInstance *FindRowMap(unsigned num)
+{
+    for (unsigned i = 0; i < VoxelWorld_InstanceCount(); ++i)
+        if (VoxelWorld_Instance(i)->mapNum == (int)num)
+            return VoxelWorld_Instance(i);
+    return NULL;
+}
+
+static void InstanceTests(void)
+{
+    VoxelMapInstance before[MAX_VOXEL_MAP_INSTANCES];
+    unsigned count;
+
+    for (unsigned k = 0; k < FIXTURE_MAPS; ++k)
+    {
+        unsigned n = 0;
+
+        if (k > 0)
+            sRowLinks[k][n++] = (struct MapConnection){CONNECTION_WEST, 0, FIXTURE_GROUP, (u8)(k - 1)};
+        if (k + 1 < FIXTURE_MAPS)
+            sRowLinks[k][n++] = (struct MapConnection){CONNECTION_EAST, 0, FIXTURE_GROUP, (u8)(k + 1)};
+        sRowConnections[k] = (struct MapConnections){(s32)n, sRowLinks[k]};
+        sFixtureHeaders[k] = (struct MapHeader){.mapLayout = &sRowLayout,
+                                                .connections = &sRowConnections[k],
+                                                .mapLayoutId = 1, .mapType = MAP_TYPE_ROUTE};
+    }
+    sFixtureMaps = true;
+
+    /* From map 2: its neighbours, theirs, and the one past them within
+     * reach (map 5, 40 tiles off); map 6, 60 off, is out of reach. */
+    EnterRowMap(2);
+    assert(VoxelWorld_Instance(0)->mapNum == 2 && VoxelWorld_Instance(0)->originX == 0);
+    for (unsigned k = 0; k <= 5; ++k)
+    {
+        const VoxelMapInstance *inst = FindRowMap(k);
+
+        assert(inst != NULL && inst->originX == ((int)k - 2) * 20 && inst->originY == 0);
+    }
+    assert(FindRowMap(6) == NULL && VoxelWorld_InstanceCount() == 6);
+    /* Two crossings off are kept however far they lie: wider maps. */
+    sRowLayout.width = 70;
+    EnterRowMap(2);
+    assert(FindRowMap(0) != NULL && FindRowMap(4) != NULL && FindRowMap(5) == NULL);
+    sRowLayout.width = 20;
+
+    /* Walking east into map 3: every map placed from map 2 that lies within
+     * reach of map 3 is still there, where it was (one map further west). */
+    EnterRowMap(2);
+    count = VoxelWorld_InstanceCount();
+    memcpy(before, sInstances, sizeof(before));
+    EnterRowMap(3);
+    for (unsigned i = 0; i < count; ++i)
+    {
+        const VoxelMapInstance *inst = FindRowMap((unsigned)before[i].mapNum);
+        /* tiles between it and map 3, at 20-40 */
+        int gap = before[i].originX >= 40 ? before[i].originX - 40
+                : before[i].originX < 0 ? -before[i].originX : 0;
+
+        if (gap <= VOXEL_WORLD_REACH)
+            assert(inst != NULL && inst->originX == before[i].originX - 20);
+    }
+    /* Walking back west: map 0, now two crossings behind, stays. */
+    EnterRowMap(1);
+    assert(FindRowMap(0) != NULL && FindRowMap(3) != NULL && FindRowMap(4) != NULL);
+    sFixtureMaps = false;
+    sInstanceCount = 0;
+}
+
 int main(void)
 {
     u16 live[32 * 32], a[16 * 16], b[16 * 16];
@@ -221,6 +316,8 @@ int main(void)
     MaterialAndPayloadTests();
     TileLoadTests();
     LayoutSwapTest();
+    InstanceTests();
+    puts("PASS instances: maps within reach of the current one, kept across a crossing");
     puts("PASS world hash: scalar equivalence, live digest, overlaps, negative origins, missing maps, live edits, clipping; Fortree puddle art");
     return 0;
 }

@@ -15,22 +15,29 @@ static const Rgb sFieldMove = {64, 120, 200};
  * message going on. CANCEL, YES and NO are the shared ones. */
 enum { HIT_NAT_SLOT = HIT_ROW, HIT_NAT_ENTRY = HIT_ROW + 8, HIT_NAT_MSG = HIT_ROW + 16 };
 
-/* The game's HP bar: green over half, yellow over a fifth, red under. */
+/* The game's HP bar, by the party menu's own math (DisplayPartyPokemonHPBar):
+ * its colour by GetHPBarLevel, its length by GetScaledHPFraction, so any HP
+ * at all is a pixel of it and only full HP the whole bar. */
 static void HpBar(int x, int y, int w, u16 hp, u16 maxHp)
 {
-    int fill = maxHp ? ((w - 2) * hp + maxHp / 2) / maxHp : 0;
+    int fill = maxHp ? GetScaledHPFraction(hp, maxHp, w - 2) : 0;
     u16 colour, dark;
 
-    if (hp * 2 > maxHp)
+    switch (maxHp ? GetHPBarLevel(hp, maxHp) : HP_BAR_EMPTY)
+    {
+    case HP_BAR_FULL:
+    case HP_BAR_GREEN:
         colour = PackRgb(112, 248, 168), dark = PackRgb(88, 208, 128);
-    else if (hp * 5 > maxHp)
+        break;
+    case HP_BAR_YELLOW:
         colour = PackRgb(248, 224, 0), dark = PackRgb(200, 168, 0);
-    else
+        break;
+    default:
         colour = PackRgb(248, 88, 56), dark = PackRgb(200, 56, 40);
+        break;
+    }
     FillRect(x, y, w, 5, PackRgb(40, 48, 56));
     FillRect(x + 1, y + 1, w - 2, 3, PackRgb(88, 96, 104));
-    if (hp && fill < 1)
-        fill = 1;
     if (fill)
     {
         FillRect(x + 1, y + 1, fill, 2, colour);
@@ -1373,6 +1380,23 @@ static void DrawFootprint(const u8 *bits, int x, int y)
                     Put(x + (t & 1) * 8 + col, y + (t >> 1) * 8 + row, ink);
 }
 
+/* The entry, written for the game's narrower window in four lines, over
+ * the box's whole width in three: its line breaks become spaces, and it
+ * wraps in the normal font, or in the narrow one when that takes four. */
+static void DrawDexDescription(const u8 *text, int x, int y, int w)
+{
+    u8 joined[256];
+    int i;
+
+    for (i = 0; i < (int)sizeof(joined) - 1 && text[i] != EOS; ++i)
+        joined[i] = text[i] == CHAR_NEWLINE ? CHAR_SPACE : text[i];
+    joined[i] = EOS;
+    if (TextLinesBy(joined, x, y, w, 13, 4, &sNormal, &sNormal, STYLE_INK, FALSE) <= 3)
+        TextLinesBy(joined, x, y, w, 13, 3, &sNormal, &sNormal, STYLE_INK, TRUE);
+    else
+        TextLines(joined, x, y, w, 13, 3, &sNarrow, STYLE_INK, TRUE);
+}
+
 static void DrawDexInfo(const ViewState *s)
 {
     const struct CtrDexView *v = &s->dx;
@@ -1399,7 +1423,7 @@ static void DrawDexInfo(const ViewState *s)
     }
     oy = Plate(AREA_X, y + 100, AREA_W, AREA_Y + AREA_H - y - 100, sLight, PLATE_STATE_NORMAL);
     if (v->description)
-        TextLines(v->description, AREA_X + 10, oy + 2, AREA_W - 20, 13, 3, &sNormal, STYLE_INK, TRUE);
+        DrawDexDescription(v->description, AREA_X + 10, oy + 2, AREA_W - 20);
 }
 
 /* The list's START menu over the list, as the game's slides up over it: its

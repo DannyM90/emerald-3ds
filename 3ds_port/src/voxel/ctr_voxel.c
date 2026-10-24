@@ -770,6 +770,11 @@ static float sLeadX, sLeadZ;
  * already there. One chunk: the player never outwalks it.
  */
 #define VOXEL_PREFETCH VOXEL_CHUNK
+/* Every map the view or the ring around it can reach from the current map is
+ * one of the instances (voxel_world.c): a map left out is the belt, or black,
+ * wherever it lies on screen. */
+_Static_assert(VOXEL_WORLD_REACH >= VOXEL_VIEW_REACH_MAX + VOXEL_WINDOW_SLACK + VOXEL_PREFETCH,
+               "the world's maps reach as far as the view and its ring");
 /* Tiles past the view whose metatiles an atlas is composed for: a whole route, not
  * the 24 around the view, whose edge ids arrived by extension - a few frames of
  * black cells each - as the player walked towards them. */
@@ -3060,12 +3065,17 @@ static unsigned OpenTiles(const ChunkSite *site);
  */
 static uint32_t SiteHash(const ChunkSite *site)
 {
+    /* which layout's models stand on the current map
+     * (VoxelBuildings_LiveSignature): 0 as it was entered */
+    uint32_t standing = sHaveBuildings && !site->border
+                      ? VoxelBuildings_LiveSignature(site->inst) * 2654435761u : 0u;
+
 #if CTR_VOXEL_LIGHTING
     if (!site->inst->indoor)
-        return VoxelLighting_Hash(site->x0, site->y0, site->x1, site->y1);
+        return VoxelLighting_Hash(site->x0, site->y0, site->x1, site->y1) ^ standing;
 #endif
     return VoxelWorld_BlockHash(site->x0 - 1, site->y0 - VOXEL_CHUNK_MARGIN_NORTH - 1,
-                                site->x1 + 1, site->y1 + 2);
+                                site->x1 + 1, site->y1 + 2) ^ standing;
 }
 
 /*
@@ -5577,7 +5587,8 @@ static void AnimateBuildings(const VoxelMapInstance *inst)
         BuildingPageSlot *slot;
         uint16_t *out;
 
-        if (!VoxelBuildings_AnimRun(run, &page, &layout, &offset, &bytes) || layout != inst->layoutId
+        if (!VoxelBuildings_AnimRun(run, &page, &layout, &offset, &bytes)
+         || layout != VoxelBuildings_LayoutOf(inst)
          || !VoxelBuildings_AnimRunDirty(run, sBuildingAnimDirty))
             continue;
         slot = FindPage((int)page);
@@ -5677,11 +5688,14 @@ bool CtrVoxel_Update(void)
         }
         if (changed)
         {
+            /* what stands on it is read off the grid again (voxel_building.h) */
+            VoxelBuildings_WorldChanged();
             sMapVersion = version;
             sInstanceSignature = signature;
             /* the belt past the map at its edge's level, or at the base
              * (settings.txt voxel_border_edge=0), read with each new map */
             VoxelMesh_SetBorderFollowsEdge(CtrSettings_GetInt("voxel_border_edge", 1) != 0);
+            VoxelBuildings_MapChanged();
             ++sEpoch;
 #if CTR_VOXEL_LIGHTING
             VoxelLighting_Reset();
