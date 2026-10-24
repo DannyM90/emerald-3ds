@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Double battle target choice, by @eathanpage (pull request #176): the
+  bottom screen shows the four places of the battle two by two, as the top
+  screen has them, instead of left and right arrows and OK. Each plate has
+  the Pokémon's icon, name, level, gender and HP bar (the HP figures for
+  your side only), the opponents in red and your side in blue; one the move
+  cannot reach is grey and takes no tap, and an empty place has no plate. A
+  tap on a plate aims there and confirms; the D-pad walks the grid.
+
+- Double battles, by @maxxandres (pull request #152): the bottom screen's
+  target plates and the second mon's move menu are made ready while the
+  turn plays out, with the action menu and the first mon's moves. Built
+  when they first came up, they dropped an Old 3DS's frame rate sharply the
+  first time a target, or the second mon's move, was chosen. The second
+  mon's moves have pictures of their own, so warming them no longer throws
+  out the first mon's.
+
 - Voxel world: a map whose layout its script swaps is drawn with the swapped
   one. The Mirage Tower no longer stands in 3D on the days the game hides it,
   or after it falls, and it no longer shows from Mauville or Routes 112 and
