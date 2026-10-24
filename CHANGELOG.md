@@ -9,6 +9,14 @@
   move, was chosen. The second mon's moves have pictures of their own, so
   warming them no longer throws out the first mon's.
 
+- Voxel world: a map whose layout its script swaps is drawn with the swapped
+  one. The Mirage Tower no longer stands in 3D on the days the game hides it,
+  or after it falls, and it no longer shows from Mauville or Routes 112 and
+  113 while it is hidden; Route 131 shows the Sky Pillar, and Mirage Island
+  and the Sky Pillar's clean floors get their own relief and objects. Route
+  111's hand-shaped mountains apply to its layout without the tower too.
+  Reported, with the cause, by @Deunnis (issue #179).
+
 - Bottom screen map: a magnifier button in the map's bottom right corner
   zooms in on the player's place and back out. Touching a place on the map
   picks it: zoomed in, a panel shows its name and, for a city or town, its

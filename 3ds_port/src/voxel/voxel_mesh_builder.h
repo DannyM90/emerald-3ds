@@ -129,6 +129,9 @@ void VoxelMesh_Top(VoxelBuilder *b, float wx, float wz, float h, float inset,
 /* The cell's relief drawn with u0..v1 (a tree's trunk on a slope). */
 void VoxelMesh_ReliefGround(VoxelBuilder *b, const VoxelMapInstance *inst, int x, int y,
                             float u0, float v0, float u1, float v1);
+/* A tree's cell drawn as the rock under it: the ground pass's, not the tree
+ * pass's. */
+bool VoxelMesh_TreeOnRock(const VoxelMapInstance *inst, int x, int y);
 void VoxelMesh_South(VoxelBuilder *b, float wx, float wz, float yBottom, float yTop,
                      float inset, float u0, float v0, float u1, float v1);
 void VoxelMesh_North(VoxelBuilder *b, float wx, float wz, float yBottom, float yTop,
@@ -206,5 +209,12 @@ void VoxelMesh_EmitBorder(VoxelBuilder *builder, int x0, int y0, int x1, int y1)
  * instance 0's base included; false anywhere else (maps, stood borders,
  * indoors). For the battle's staging. */
 bool VoxelMesh_BorderWaterAt(float worldX, float worldZ, float *height);
+/* The level a cell of the belt of land stands at, in tiles over instance 0's
+ * base, and its depth: its map edge's (false, both 0: at the base). */
+bool VoxelMesh_BorderLevel(int x, int y, float *level, float *shift);
+
+/* settings.txt voxel_border_edge: the belt at its edge's level (default) or
+ * at the base, as it was. */
+void VoxelMesh_SetBorderFollowsEdge(bool on);
 
 #endif

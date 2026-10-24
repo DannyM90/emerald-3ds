@@ -354,11 +354,24 @@ class Layout:
             return False
         if m < NUM_PRIMARY and self.primary == "gTileset_General" and m in MOUNTAIN_ROCK:
             return False
+        if m >= NUM_PRIMARY and self.mountain_drawn(m):
+            return False
         if self.covers(m):
             return False
         if self.foliage(m) >= FOLIAGE or (x, y) in self.houses():
             return False
         return not self.blocked(x, y - 1) or self.metatile(x, y - 1) != m
+
+    def mountain_drawn(self, metatile):
+        """A secondary tileset's tile drawn mostly in the mountain's own
+        colours (gen_voxel_relief.ROCK_ALL): its rock, like MOUNTAIN_ROCK.
+        Fortree's 242, the corner of Route 120's cliff between its stairs and
+        the river, stood as a sign laid with the stairs' tile."""
+        import gen_voxel_relief as gr
+        pair = pair_for(self.primary, self.secondary)
+        drawn = pair.layer_pixels(metatile, 0)
+        drawn.update(pair.layer_pixels(metatile, 1))
+        return bool(drawn) and 2 * sum(1 for rgb in drawn.values() if tuple(rgb)[:3] in gr.ROCK_ALL) >= len(drawn)
 
     def lamps(self):
         """(post, head) metatiles of the posts that stand free with no sign

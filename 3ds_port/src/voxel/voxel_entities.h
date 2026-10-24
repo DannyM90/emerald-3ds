@@ -54,6 +54,12 @@ void VoxelEntities_Reset(void);
 void VoxelEntities_GetPlayerWorldPos(float *worldX, float *worldZ);
 /* How high a bridge's deck carries the player, tiles (0 off one). */
 float VoxelEntities_PlayerDeck(void);
+/* The height, tiles, of the ground the player stands on, deck included: taken
+ * in the player's own cell. The position VoxelEntities_GetPlayerWorldPos
+ * gives is shifted south by the relief's depth (and the deck's), so the
+ * relief read there is that of a cell further south: on Route 120's bridges,
+ * three tiles up, it was the water's, and the camera dipped. */
+float VoxelEntities_PlayerGround(void);
 /* First vertex of the emitted player quad, or -1 when invisible/not emitted. */
 int VoxelEntities_PlayerVertexFirst(void);
 

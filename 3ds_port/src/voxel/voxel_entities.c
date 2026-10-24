@@ -226,6 +226,27 @@ float VoxelEntities_PlayerDeck(void)
     return ObjectDeck(obj, x, z);
 }
 
+float VoxelEntities_PlayerGround(void)
+{
+    const struct ObjectEvent *obj = &gObjectEvents[gPlayerAvatar.objectEventId];
+    float x = 0.0f, z = 0.0f;
+
+    if (!obj->active || obj->spriteId >= MAX_SPRITES)
+        VoxelWorld_GetPlayerWorldCoords(&x, &z);
+    else
+    {
+        GetObjectWorldPos(obj, &gSprites[obj->spriteId], &x, &z);
+        if (VoxelWorld_InstanceCount() > 0)
+        {
+            x += (float)VoxelWorld_Instance(0)->originX;
+            z += (float)VoxelWorld_Instance(0)->originY;
+        }
+    }
+    /* Where the player's card stands (EmitBillboard): on the cell it is in,
+     * not on the one its drawing is shifted south over. */
+    return VoxelRelief_LiftAt(x + 0.5f, z + 0.5f) + VoxelEntities_PlayerDeck();
+}
+
 void VoxelEntities_GetPlayerWorldPos(float *worldX, float *worldZ)
 {
     const struct ObjectEvent *obj = &gObjectEvents[gPlayerAvatar.objectEventId];

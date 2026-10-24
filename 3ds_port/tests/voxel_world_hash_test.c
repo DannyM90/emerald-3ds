@@ -37,6 +37,7 @@ const struct Tileset gTileset_GenericBuilding = {0};
 bool VoxelAtlas_IsVoid(const VoxelMapInstance *inst, int metatile) { (void)inst; (void)metatile; return false; }
 
 const void *Port_ResolveAssetPointer(const void *p) { return p; }
+const struct MapLayout *Port_GetMapLayoutById(u16 id) { (void)id; return NULL; }
 static const void *sSizedAsset;
 static u32 sSizedBytes;
 u32 Port_GetAssetSizeExact(const void *p) { return p == sSizedAsset ? sSizedBytes : 0; }

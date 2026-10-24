@@ -118,6 +118,12 @@ float VoxelRelief_DrawnTop(const VoxelMapInstance *inst);
  * left a gap beside the corner that a camera steeper than the drawing saw
  * the ground below through. */
 #define VOXEL_RELIEF_GOES_ON_FACE (32u << 8)
+/* With VOXEL_RELIEF_GOES_ON_SOUTH instead, the rock that goes on under it is
+ * the cell south of it, a row back: a bridge's deck over a band (Route
+ * 120's ends over the slopes of its river's banks), whose row north is
+ * another plank. Walled down as a block, the bank stood under the deck as a
+ * vertical slab of rock. */
+#define VOXEL_RELIEF_GOES_ON_SOUTH (64u << 8)
 /*
  * `wall` (-1: none) says the cell has cliffs: wherever its west, east or
  * south edge stands over its neighbour's - a tile of rock reaching its own
@@ -140,6 +146,17 @@ float VoxelRelief_DrawnTop(const VoxelMapInstance *inst);
  * through the gap: walled down to the water it stood as a dam.
  */
 #define VOXEL_RELIEF_THIN_DECK (8u << 8)
+
+/* Its relief is drawn with its `wall`, not its own drawing: a tree's cell on
+ * the mountain's slope (the crown is the tree model's; laid on the rock as
+ * the cell's texture, a slab of leaves stood down Route 120's bank). */
+#define VOXEL_RELIEF_FACE_TOP (16u << 8)
+/* Its cut variant is a canopy cleared (a secondary tileset's crown of the
+ * small tree south of it, over the rim of Route 120's plateau): drawn whole
+ * on its relief, over a plate of `wall` - the ground the crown was drawn
+ * over - a pixel under it; `ground` at `foot` is the ground run on under it,
+ * as with no variant. The crown is the tree model's. */
+#define VOXEL_RELIEF_CANOPY (128u << 8)
 #define VOXEL_RELIEF_DECK_EDGE (4.0f / 16.0f)
 int VoxelRelief_Cut(const VoxelMapInstance *inst, int x, int y, float *foot, int *ground,
                     int *wall, unsigned *sides);
