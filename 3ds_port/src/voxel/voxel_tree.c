@@ -105,6 +105,9 @@ static void EmitGround(VoxelBuilder *builder, const VoxelMapInstance *inst, int 
 {
     float lift = builder->lift, shift = builder->shift;
 
+    /* on a mountain's rock the ground pass lays the rock (EmitTreeStep) */
+    if (inst != NULL && VoxelMesh_TreeOnRock(inst, x, y))
+        return;
     if (inst == NULL || !OneLevelSlope(VoxelRelief_Cell(inst, x, y)))
     {
         VoxelMesh_Top(builder, (float)x, (float)y, 0.0f, 0.0f, u0, v0, u1, v1, 1.0f);
@@ -264,6 +267,16 @@ void VoxelTree_EmitBorder(VoxelBuilder *builder, int x0, int y0, int x1, int y1)
             metatileId = VoxelWorld_BorderMetatile(x, y);
             part = VoxelTree_Part(current->secondaryTileset, metatileId);
             if (part >= 0)
+            {
+                /* at its map edge's level (VoxelMesh_BorderLevel) */
+                float level, shift;
+
+                VoxelMesh_BorderLevel(x, y, &level, &shift);
+                builder->lift = level;
+                builder->shift = shift;
                 EmitCell(builder, NULL, x, y, part, metatileId, false);
+                builder->lift = 0.0f;
+                builder->shift = 0.0f;
+            }
         }
 }
