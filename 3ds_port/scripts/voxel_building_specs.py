@@ -7739,3 +7739,133 @@ SPECS += [{"name": n, "interior": {"layout": lid, "ground": [g], "pieces": own_s
               # (named apart from Route 111's building of the same name)
               ("trainer_hill_entrance_room", "LAYOUT_TRAINER_HILL_ENTRANCE", 0x331,
                trainer_hill_entrance))]
+
+
+# The Sky Pillar (#179). Outside, the foot of the tower (80 x 96; the rest
+# of it is above the map's top edge): its middle stands 9 px before its
+# corner posts (x 0-6 and 74-80, their feet on row 86, sand drawn under
+# them), the door in the middle's foot, its last row 95. As deep as it is wide and as tall as the Battle
+# Tower, its sides and roof laid with the brick beside its windows.
+SPECS += [{
+    "name": "sky_pillar_tower",
+    "layout": "LAYOUT_SKY_PILLAR_OUTSIDE",
+    "rect": (12, 0, 5, 6),
+    "ground": [0x121, 0x2b7, 0x2ba],
+    # under the corner posts, beside the middle's foot, the tiles draw sand
+    "keep": [(0, 0, 80, 86), (6, 86, 74, 96)],
+    "parts_art": flat(lambda: [
+        PlanPrism("tower", [(0, 16), (80, 16), (80, 86), (74, 86), (74, 96), (6, 96), (6, 86),
+                            (0, 86)], 0, 320, (8, 16, 96), top=Tile(8, 8, 16, 24))]),
+    "exact": [(0, 0, 80, 96)],
+}]
+
+
+# Its floors (224 x 224): the back wall, the stairs' doorways painted on it,
+# and the rubble, a mound to each cell (round="dome") shaped as the ellipse
+# in its cell, a pixel short of its foot (taken in, the mound's base showed
+# a row below it) - its rocks are drawn in the floor's own greys, so no
+# colour tells the floor round them. The shaft in the middle (looked down into, its
+# far wall lit) and the cracked floor of 2F and 4F, which the player falls
+# through, stay drawn. Each rubble tile is modelled once, in the first floor
+# that has it, and found again in the others (reuse_pieces): `o` the
+# boulder (0x20f), `x` the stones (0x21f), `O` the boulder under the back
+# wall (0x207). `X`, the stones there (0x217), is the stones' piece found
+# again by its pixels: one of its own would be left the floor round them.
+# Until Rayquaza has left for Sootopolis (VAR_SKY_PILLAR_STATE below 2) the
+# game swaps in the `_CLEAN` layouts: less rubble, and 2F's and 4F's floors
+# whole - their walls, and the rubble they keep found again.
+SKY_PILLAR_RUBBLE = {
+    "1F": """
+.......O....O.
+...x....ox....
+....x.........
+..............
+..o...........
+ox........o..x
+o..........ox.
+.............x
+...o.........o
+..x......o....
+..............
+x............o
+""",
+    "2F": """
+........X.....
+.....x.oo.....
+......o...x...
+..............
+xx............
+.............x
+..............
+..............
+..............
+...x.....x....
+..x...........
+.............x
+""",
+    "3F": """
+....X.....X...
+.....x...o....
+.x...o..x.....
+x.............
+...o......x...
+..x...........
+..x..........o
+..........o...
+...........x..
+o....x...x....
+.o............
+.......x....o.
+""",
+    "4F": """
+........O.....
+..oxxxoxxo...o
+Xx........o...
+.o............
+..............
+..x.........o.
+..o..........o
+x.o...........
+x.............
+.....o...o....
+..o...........
+.......o......
+""",
+    "5F": """
+.....O...X....
+..o.....x.....
+...........o..
+x..........o..
+.x...........x
+..............
+..............
+..o.........x.
+...........x..
+o.............
+.........x..o.
+.o...x........
+""",
+}
+SKY_PILLAR_FLOORS = ("1F", "2F", "3F", "4F", "5F")
+
+
+def sky_pillar_floor(floor=None):
+    """A floor's walls, and its rubble of the tiles no floor before it has."""
+    seen = set()
+    for f in SKY_PILLAR_FLOORS[:SKY_PILLAR_FLOORS.index(floor)] if floor else ():
+        seen |= set(SKY_PILLAR_RUBBLE[f]) - set(".\n")
+    out = []
+    for y, row in enumerate(SKY_PILLAR_RUBBLE[floor].split() if floor else ()):
+        for x, c in enumerate(row):
+            if c in "oxO" and c not in seen:
+                out.append(piece("rubble_%d_%d" % (x, y + 2), [("ellipse", x * 16 + 8, y * 16 + 39.5, 8, 7.5)],
+                                 9, round="dome"))
+    return out + room_shell(224, 224, side=(0, 0, 16, 32))
+
+
+SKY_PILLAR_GROUND = {"1F": 0x2bd, "2F": 0x234, "3F": 0x2bd, "4F": 0x234, "5F": 0x2bd}
+SPECS += [{"name": "sky_pillar_%s%s" % (f.lower(), clean.lower()),
+           "interior": {"layout": "LAYOUT_SKY_PILLAR_%s%s" % (f, clean),
+                        "ground": [SKY_PILLAR_GROUND[f]],
+                        "pieces": own_shell(sky_pillar_floor(None if clean else f))}}
+          for f in SKY_PILLAR_FLOORS for clean in ("", "_CLEAN")]
