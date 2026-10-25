@@ -17,12 +17,14 @@ come from the ROM directly. Played on a 3DS (to the fifth badge as of
 from __future__ import annotations
 
 import argparse
+import ast
 import gzip
 import hashlib
 import json
 import re
 import struct
 import sys
+import warnings
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,6 +41,52 @@ def encoded(data: bytes) -> str:
     return ",".join("0x%02X" % byte for byte in data)
 
 
+# A raw __() initializer has no terminator, so its source text is the size of
+# its buffer. A longer German replacement would be cut off or run into the
+# next object; only the naming keyboard rows are wider on purpose (the German
+# patch gives them nine columns).
+WIDER_RAW_ROWS = {"src/naming_screen.c": 9}
+
+
+def charmap_widths(tree: Path) -> tuple[dict[str, int], dict[str, int]]:
+    """Encoded byte widths of the charmap's glyphs and named controls."""
+    glyphs, controls = {}, {}
+    for line in (tree / "charmap.txt").read_text(encoding="utf-8").splitlines():
+        match = re.fullmatch(r"('(?:\\.|[^'\\])*'|\w+)\s*=\s*((?:[0-9A-Fa-f]{2}\s*)+)",
+                             line.split("@", 1)[0].strip())
+        if match:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                key = ast.literal_eval(match[1]) if match[1].startswith("'") else match[1]
+            width = len(match[2].split())
+            if match[1].startswith("'"):
+                glyphs[key] = width
+            else:
+                controls[match[1]] = width
+    return glyphs, controls
+
+
+def raw_capacity(initializer: str, glyphs: dict[str, int], controls: dict[str, int]) -> int:
+    """Bytes the source's __("...") encodes to, padding included."""
+    literal = r'"(?:\\.|[^"\\])*"'
+    match = re.fullmatch(r"\s*__\s*\(\s*((?:" + literal + r"\s*)+)\)\s*", initializer)
+    if match is None:
+        raise ValueError("Invalid raw text initializer: " + initializer[:40])
+    with warnings.catch_warnings():  # "\l" and "\p" are the game's escapes, not Python's
+        warnings.simplefilter("ignore")
+        text = "".join(ast.literal_eval(part) for part in re.findall(literal, match[1]))
+    size = 0
+    for token in re.finditer(r"\{([^{}]*)\}|\\[lp]|.", text, re.S):
+        names = token[1].split() if token[1] is not None else None
+        if names is not None and names and all(name in controls for name in names):
+            size += sum(controls[name] for name in names)
+        elif names is None and token[0] in glyphs:
+            size += glyphs[token[0]]
+        else:
+            raise ValueError("Unknown character in raw text: " + repr(token[0]))
+    return size
+
+
 def stage(tree: Path, rom_path: Path) -> None:
     manifest = json.loads(gzip.decompress((ROOT / "tools/locales/german.json.gz").read_bytes()))
     rom = load_rom(rom_path)
@@ -46,6 +94,7 @@ def stage(tree: Path, rom_path: Path) -> None:
         raise ValueError("This localization requires the clean German BPED ROM")
     source = rom.data
     writes: dict[Path, bytes] = {}
+    widths = None
     for relative, file in manifest["files"].items():
         path = tree / relative
         text = path.read_text(encoding="utf-8")
@@ -56,6 +105,12 @@ def stage(tree: Path, rom_path: Path) -> None:
             if not previous_end <= start < end <= len(text) or not 0 <= offset < offset + size <= len(source):
                 raise ValueError("Overlapping or out-of-range edit: " + relative)
             previous_end = end
+            if kind == "c" and re.match(r"\s*__\s*\(", text[start:end]):
+                widths = widths or charmap_widths(tree)
+                limit = WIDER_RAW_ROWS.get(relative) or raw_capacity(text[start:end], *widths)
+                if size > limit:
+                    raise ValueError("Raw text longer than its buffer (%d > %d bytes): %s at %d"
+                                     % (size, limit, relative, start))
         for start, end, offset, size, kind in sorted(file["edits"], reverse=True):
             data = source[offset:offset + size]
             if kind == "c":

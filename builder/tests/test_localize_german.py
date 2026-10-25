@@ -130,3 +130,89 @@ class GermanStagingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Overlapping"):
             self.stage()
         self.assert_untouched()
+
+    def raw_text(self, name, size, initializer='__("a{PAUSE}")'):
+        """One __() buffer in `name` (three bytes by default), replaced by `size` ROM bytes."""
+        text = 'const u8 sText[] = %s;\n' % initializer
+        self.sources[name] = text
+        (self.tree / name).parent.mkdir(parents=True, exist_ok=True)
+        (self.tree / name).write_bytes(text.encode())
+        (self.tree / "charmap.txt").write_text(
+            "'a' = BB\n'$' = FF\n'\\n' = FE\n'é' = 1B\nPAUSE = FC 08\nCOLOR = FC 01\n", encoding="utf-8")
+        start = text.index("__(")
+        self.manifest["files"][name] = {"sha256": hashlib.sha256(text.encode()).hexdigest(),
+                                        "edits": [[start, text.index(";"), 40, size, "c"]]}
+
+    def test_raw_text_fills_its_buffer(self):
+        self.raw_text("src/battle_interface.c", 3)
+        self.stage()
+        self.assertEqual((self.tree / "src/battle_interface.c").read_text(),
+                         "const u8 sText[] = {0x28,0x29,0x2A};\n")
+
+    def test_raw_text_longer_than_its_buffer_is_rejected_before_any_write(self):
+        # a __() buffer has no terminator: one more byte would be cut off by
+        # the compiler or run into the next object
+        self.raw_text("src/battle_interface.c", 4)
+        with self.assertRaisesRegex(ValueError, "longer than its buffer"):
+            self.stage()
+        self.assert_untouched()
+
+    def test_only_the_keyboard_rows_grow_to_nine_columns(self):
+        self.raw_text("src/naming_screen.c", 10)
+        with self.assertRaisesRegex(ValueError, "longer than its buffer"):
+            self.stage()
+        self.assert_untouched()
+        self.raw_text("src/naming_screen.c", 9)
+        self.stage()
+        self.assertIn("{0x28,", (self.tree / "src/naming_screen.c").read_text())
+
+    def test_raw_graphics_are_copied_byte_for_byte(self):
+        # the healthbox's "KP" bar is raw 4bpp inside a concatenated table
+        self.manifest["graphics"] = [["graphics/battle_interface/hpbar.4bpp", 64, 32]]
+        self.stage()
+        self.assertEqual((self.tree / "graphics/battle_interface/hpbar.4bpp").read_bytes(),
+                         self.data[64:96])
+
+    def test_raw_text_may_be_shorter_than_its_buffer(self):
+        self.raw_text("src/battle_interface.c", 2)
+        self.stage()
+        self.assertEqual((self.tree / "src/battle_interface.c").read_text(),
+                         "const u8 sText[] = {0x28,0x29};\n")
+
+    def test_raw_text_width_counts_padding_escapes_and_every_literal(self):
+        # "$" padding, "\\n", a one-byte accent and two literals: 1+1+1+1+1+2 = 7
+        initializer = '__("a$\\n" "é$" "{PAUSE}")'
+        self.raw_text("src/battle_interface.c", 8, initializer)
+        with self.assertRaisesRegex(ValueError, "longer than its buffer"):
+            self.stage()
+        self.assert_untouched()
+        self.raw_text("src/battle_interface.c", 7, initializer)
+        self.stage()
+        self.assertIn("0x2E}", (self.tree / "src/battle_interface.c").read_text())
+
+    def test_unknown_raw_text_fails_before_any_write(self):
+        for initializer in ('__("ß")', '__("{NOPE}")', '__(sOther)'):
+            with self.subTest(initializer=initializer):
+                self.raw_text("src/battle_interface.c", 1, initializer)
+                with self.assertRaisesRegex(ValueError, "raw text"):
+                    self.stage()
+                self.assert_untouched()
+
+    def test_terminated_text_does_not_need_the_charmap(self):
+        # _() strings end at their terminator, so a longer German text is fine
+        text = 'const u8 sText[] = _("a");\n'
+        self.sources["src/strings.c"] = text
+        (self.tree / "src/strings.c").write_bytes(text.encode())
+        start = text.index("_(")
+        self.manifest["files"]["src/strings.c"] = {"sha256": hashlib.sha256(text.encode()).hexdigest(),
+                                                   "edits": [[start, text.index(";"), 40, 12, "c"]]}
+        self.stage()
+        self.assertFalse((self.tree / "charmap.txt").exists())
+        self.assertIn("0x33}", (self.tree / "src/strings.c").read_text())
+
+    def test_graphics_outside_the_rom_fail_before_any_write(self):
+        self.manifest["graphics"] = [["graphics/battle_interface/hpbar.4bpp", 120, 32]]
+        with self.assertRaisesRegex(ValueError, "outside ROM"):
+            self.stage()
+        self.assert_untouched()
+        self.assertFalse((self.tree / "graphics").exists())
