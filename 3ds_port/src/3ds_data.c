@@ -145,13 +145,17 @@ static bool OpenPak(void)
     if (sPak == NULL)
     {
         SetError(CTR_TEXT("The game data pack was not found.", "The game data pack was not found.", "The game data pack was not found.", "The game data pack was not found.", "O pacote de dados nao foi encontrado.", "Das Datenpaket wurde nicht gefunden."),
-                 CTR_TEXT_PT("Run the builder that came with this\n"
+                 CTR_TEXT_PT_DE("Run the builder that came with this\n"
                              "release with your own Pokemon Emerald\n"
                              "ROM and install the data pack to:\n\n"
                              "  /3ds/emerald3ds/emerald3ds.pak",
                              "Rode o builder que veio com esta\n"
                              "versao com a sua ROM de Pokemon\n"
                              "Emerald e instale o pacote em:\n\n"
+                             "  /3ds/emerald3ds/emerald3ds.pak",
+                             "Starte den Builder dieser Version\n"
+                             "mit deinem eigenen Smaragd-ROM und\n"
+                             "installiere das Datenpaket nach:\n\n"
                              "  /3ds/emerald3ds/emerald3ds.pak"));
         return false;
     }
@@ -164,15 +168,17 @@ static bool OpenPak(void)
         break;
     case CTR_PAK_BAD_MAGIC:
         SetError(CTR_TEXT("This is not a game data pack.", "This is not a game data pack.", "This is not a game data pack.", "This is not a game data pack.", "Isto nao e um pacote de dados.", "Das ist kein Datenpaket des Spiels."),
-                 CTR_TEXT_PT("/3ds/emerald3ds/emerald3ds.pak is not a\n"
+                 CTR_TEXT_PT_DE("/3ds/emerald3ds/emerald3ds.pak is not a\n"
                              "data pack. Run the builder again.",
                              "/3ds/emerald3ds/emerald3ds.pak nao e um\n"
-                             "pacote de dados. Rode o builder de novo."));
+                             "pacote de dados. Rode o builder de novo.",
+                             "/3ds/emerald3ds/emerald3ds.pak ist kein\n"
+                             "Datenpaket. Starte den Builder erneut."));
         goto fail;
     case CTR_PAK_BAD_SCHEMA:
     case CTR_PAK_BAD_ABI:
         snprintf(detail, sizeof(detail),
-                 CTR_TEXT_PT("It was generated for a different\n"
+                 CTR_TEXT_PT_DE("It was generated for a different\n"
                              "release. Run the builder that came\n"
                              "with this release again.\n\n"
                              "Engine ABI: %08lX (schema %u)\n"
@@ -181,7 +187,12 @@ static bool OpenPak(void)
                              "Rode de novo o builder que veio\n"
                              "com esta versao.\n\n"
                              "ABI do motor:  %08lX (schema %u)\n"
-                             "ABI do pacote: %08lX (schema %lu)"),
+                             "ABI do pacote: %08lX (schema %lu)",
+                             "Es wurde fuer eine andere Version\n"
+                             "erstellt. Starte den Builder dieser\n"
+                             "Version erneut.\n\n"
+                             "Engine-ABI: %08lX (Schema %u)\n"
+                             "Paket-ABI:  %08lX (Schema %lu)"),
                  (unsigned long)sEngineAbi, CTR_PAK_SCHEMA_VERSION,
                  (unsigned long)info.engineAbi, (unsigned long)info.schema);
         SetError(CTR_TEXT("The data pack does not match this release.", "The data pack does not match this release.", "The data pack does not match this release.", "The data pack does not match this release.", "O pacote de dados nao e desta versao.", "Datenpaket passt nicht zu dieser Version."), detail);
@@ -191,10 +202,12 @@ static bool OpenPak(void)
         goto fail;
     default:
         SetError(CTR_TEXT("The data pack is damaged.", "The data pack is damaged.", "The data pack is damaged.", "The data pack is damaged.", "O pacote de dados esta corrompido.", "Das Datenpaket ist beschaedigt."),
-                 CTR_TEXT_PT("It does not pass the integrity check.\n"
+                 CTR_TEXT_PT_DE("It does not pass the integrity check.\n"
                              "Run the builder again.",
                              "Ele nao passa na verificacao de\n"
-                             "integridade. Rode o builder de novo."));
+                             "integridade. Rode o builder de novo.",
+                             "Die Integritaetspruefung schlug fehl.\n"
+                             "Starte den Builder erneut."));
         goto fail;
     }
     index = malloc((size_t)info.entryCount * CTR_PAK_ENTRY_BYTES);
@@ -210,10 +223,12 @@ static bool OpenPak(void)
     if (CtrPak_ParseIndex(index, &info, sEntries) != CTR_PAK_OK)
     {
         SetError(CTR_TEXT("The data pack is damaged.", "The data pack is damaged.", "The data pack is damaged.", "The data pack is damaged.", "O pacote de dados esta corrompido.", "Das Datenpaket ist beschaedigt."),
-                 CTR_TEXT_PT("Its index does not pass the integrity\n"
+                 CTR_TEXT_PT_DE("Its index does not pass the integrity\n"
                              "check. Run the builder again.",
                              "O indice nao passa na verificacao de\n"
-                             "integridade. Rode o builder de novo."));
+                             "integridade. Rode o builder de novo.",
+                             "Die Integritaetspruefung des Index\n"
+                             "schlug fehl. Starte den Builder erneut."));
         goto fail;
     }
     free(index);
