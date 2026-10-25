@@ -70,6 +70,16 @@ EXTRA_GRAPHICS = (("graphics/credits/german_the_end.bin.lz", "sCreditsCopyrightE
                   ("graphics/pokedex/start_menu_main.bin.lz", "gPokedexStartMenuMain_Tilemap"),
                   ("graphics/pokedex/start_menu_search_results.bin.lz", "gPokedexStartMenuSearchResults_Tilemap"),
                   ("graphics/berry_blender/outer.4bpp.lz", "gBerryBlenderOuter_Gfx"))
+# Raw graphics INCBIN'd back to back into one object; (file, size) in order.
+# Only the parts whose German bytes differ go into the manifest (the "KP"
+# bar and the status icons of the battle healthbox).
+CONCATENATED = {
+    "gHealthboxElementsGfxTable": tuple(("graphics/battle_interface/%s.4bpp" % name, size) for name, size in (
+        ("hpbar", 384), ("expbar", 288), ("status", 480), ("misc", 352), ("hpbar_anim", 576),
+        ("misc_frameend", 32), ("ball_display", 128), ("ball_caught_indicator", 32),
+        ("status2", 480), ("status3", 480), ("status4", 480),
+        ("healthbox_doubles_frameend", 32), ("healthbox_doubles_frameend_bar", 32))),
+}
 # Graphics the German tree keeps as unnamed statics: the word in the literal
 # pool of a function both builds share (same size) points at the German one.
 CODE_REFERENCED = {
@@ -490,6 +500,19 @@ def code_referenced(builds: Builds, relative: str):
     return [relative, offset, lz77_size(builds.de_rom, offset)]
 
 
+def concatenated(builds: Builds, name: str, parts):
+    (en, en_size, _), (de, de_size, _) = builds.en[name], builds.de[name]
+    if not en_size == de_size == sum(size for _, size in parts):
+        raise SystemExit("%s: parts do not add up to the object" % name)
+    out, at = [], 0
+    for relative, size in parts:
+        de_at, en_at = de - ROM_BASE + at, en - ROM_BASE + at
+        if builds.de_rom[de_at:de_at + size] != builds.en_rom[en_at:en_at + size]:
+            out.append([relative, de_at, size])
+        at += size
+    return out
+
+
 def graphics(builds: Builds):
     seen, out, skipped, decompressed = {}, [], [], 0
     for language in REFERENCES:
@@ -511,6 +534,8 @@ def graphics(builds: Builds):
         out.append([relative, target[0], target[1]])
     for relative, name in EXTRA_GRAPHICS:
         out.append([relative, builds.de[name][0] - ROM_BASE, builds.de[name][1]])
+    for name, parts in CONCATENATED.items():
+        out += concatenated(builds, name, parts)
     for relative, offset, size in out:
         if relative.endswith(".lz"):
             lz77_decompress(builds.de_rom, offset)
