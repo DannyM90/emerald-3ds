@@ -2397,7 +2397,8 @@ WALL_COLOURS = ("f6b473", "de7b31", "ffe6b4")   # the Center's orange wall
 def piece(name, shape, height, base=0, fill=None, leave=(), side=None, solid=None,
           back=None, card=False, top=None, foot=None, walls=(), cells=(), against=None,
           claim=(), through=False, round=None, legs=None, run=(), plan=None, skip=(),
-          when=None, at=(), tiles=None, anim=None, ribbon=None, found=False, flat=False):
+          when=None, at=(), tiles=None, anim=None, ribbon=None, found=False, flat=False,
+          variants=False, posts=None, squash=None, turn=None):
     """`back`: the Z its top runs back to, where the cartridge's collision
     says it ends (or the wall it stands against); `against`: that wall's Z,
     where a top drawn deeper than the room in front of it stops, flat, the
@@ -2443,14 +2444,25 @@ def piece(name, shape, height, base=0, fill=None, leave=(), side=None, solid=Non
     statue's ball: gen_voxel_buildings.LOOSE_PIXELS); `flat`: a block whose
     drawing is its plan, laid on its top as drawn (not projected), its sides
     its `walls` - the dark beside a room's entrance, its rim at its north
-    edge (its room's `redrawn` waives the 45-degree proof there)."""
+    edge (its room's `redrawn` waives the 45-degree proof there);
+    `variants`: with `at`, each place it stands textured as the room draws
+    it there, round its shape and a pixel out - one model to each way it is
+    drawn (a column with another before it, drawn lighter where it shows;
+    one a neighbour's outline joins); `posts`: (width, step) - with "lathe",
+    a row of little turned things that wide, each column of them one
+    behind another that far down the drawing, each fitted on its own;
+    `squash`: with "lathe", its plan that deep for its width (0.7 if not
+    given; 1.0 round); `turn`: with "lathe", (sides, bands) - its polygon's
+    sides and the rings up it, (16, 4) if not given, fewer for a plain
+    drum (the console's chunks hold so many triangles)."""
     return {"name": name, "shape": shape, "height": height, "base": base,
             "fill": fill, "leave": leave, "side": side, "solid": solid,
             "back": back, "card": card, "top": top, "foot": foot, "walls": walls,
             "cells": cells, "against": against, "claim": claim, "through": through,
             "round": round, "legs": legs, "run": run, "plan": plan, "skip": skip,
             "when": when, "at": at, "tiles": tiles, "anim": anim, "ribbon": ribbon,
-            "found": found, "flat": flat}
+            "found": found, "flat": flat, "variants": variants, "posts": posts,
+            "squash": squash, "turn": turn}
 
 
 def own_shell(pieces):
@@ -3037,17 +3049,68 @@ def house_with_bed():
     ]
 
 
+# Its sliding doors (field_specials.c PetalburgGymSetDoorMetatiles): (x, y)
+# of each one's top cell, the room's back wall's first row; its bottom cell
+# under it. PetalburgGymSlideOpenRoomDoors opens them through five frames
+# (SlidingDoor_Frame0-4, and the bottom's a row of the tileset on), and
+# PetalburgGymUnlockRoomDoors sets the last at once.
+PETALBURG_GYM_DOORS = [(1, 104), (7, 104), (1, 78), (7, 78), (1, 91), (7, 91), (7, 39),
+                       (1, 52), (7, 52), (1, 65), (7, 13), (1, 26)]
+PETALBURG_GYM_DOOR_FRAMES = 5
+PETALBURG_GYM_DOOR = 0x218          # SlidingDoor_Frame0; its bottom 8 on
+PETALBURG_GYM_SIDE = (16, 208, 48, 240)     # a stretch of the second room's panelling
+
+
+def petalburg_door(x, y, frame):
+    """The door whose top cell is (x, y), a stretch of its wall, as it stands
+    while the game has it at `frame`."""
+    return piece("wall_door_%d_%d_%d" % (x, y, frame),
+                 [(x * 16, y * 16, x * 16 + 16, y * 16 + 32)], 32,
+                 foot=y * 16 + 32, side=PETALBURG_GYM_SIDE,
+                 when=(x, y, PETALBURG_GYM_DOOR + frame))
+
+
+def petalburg_door_draw(frame):
+    """The room with every door at `frame`, the doors' pieces read off it."""
+    return {c: m for (x, y) in PETALBURG_GYM_DOORS
+            for c, m in (((x, y), PETALBURG_GYM_DOOR + frame),
+                         ((x, y + 1), PETALBURG_GYM_DOOR + 8 + frame))}
+
+
 def petalburg_gym():
     """Petalburg's gym: nine rooms one under another in the black between
     them, each nine cells wide and eight deep under a back wall two cells
-    tall, its doors and its plate drawn on the wall's face. Back walls only:
-    the drawing has no side walls, and a pair made for every room (as the
-    houses have, to close them from the console's camera) puts the layout's
-    page past the console's 512x512 - four rooms' fit, and four closed rooms
-    of nine would read as a fault."""
-    side = (16, 208, 48, 240)       # a stretch of the second room's panelling
-    return [piece("wall_%d" % room, [(0, y, 144, y + 32)], 32, fill=16, foot=y + 32, side=side)
-            for room, y in ((room, room * 13 * 16) for room in range(9))]
+    tall, its plate drawn on the wall's face and its sliding doors in it:
+    each door a stretch of the wall that stands while the game has it at its
+    frame (petalburg_door, `when`), as it slides open; the wall round them
+    stands whole. The drawing has no side walls: each room gets its pair, to
+    close it from the console's camera."""
+    side = PETALBURG_GYM_SIDE
+    out = []
+    for room in range(9):
+        y = room * 13 * 16
+        doors = sorted(dx for (dx, dy) in PETALBURG_GYM_DOORS if dy * 16 == y)
+        rects, x = [], 0
+        for d in doors:
+            if d * 16 > x:
+                rects.append((x, y, d * 16, y + 32))
+            x = d * 16 + 16
+        rects.append((x, y, 144, y + 32))
+        out += [petalburg_door(d, y // 16, 0) for d in doors]
+        out.append(piece("wall_%d" % room, rects, 32, fill=16, foot=y + 32, side=side))
+        # each a plane along the room's edge: the cells beside it are the
+        # map's, the entrance's yellow floor as the rooms' boards
+        bottom = (room * 13 + 8) * 16
+        beside = lambda cx: [(cx, cy) for cy in range(y // 16, bottom // 16)]   # noqa: E731
+        out += [piece("side_w%d" % room, [], 32, side=side, walls=[((0, bottom), (0, y + 32))],
+                      skip=beside(0)),
+                piece("side_e%d" % room, [], 32, side=side, walls=[((144, y + 32), (144, bottom))],
+                      skip=beside(8))]
+    return out
+
+
+def petalburg_gym_doors(frame):
+    return [petalburg_door(x, y, frame) for (x, y) in PETALBURG_GYM_DOORS]
 
 
 # ── The other houses of the general indoor tileset ────────────────────────
@@ -4852,13 +4915,21 @@ def runs_of(cells):
     return out
 
 
-def rect_pieces(prefix, runs, height, side=None, **kw):
+def rect_pieces(prefix, runs, height, side=None, whole=False, per=None, **kw):
     """A piece for each of run_rects(runs), named by its corner. A run a
     single cell tall stands 4 px lower than its cell, or it would be all
-    front and no top; `side`, if given, is a function of the rectangle."""
-    return [piece("%s_%d_%d" % (prefix, x0 // 16, y0 // 16), [(x0, y0, x1, y1)],
-                  min(height, y1 - y0 - 4), side=side and side(x0, y0, x1, y1), **kw)
-            for (x0, y0, x1, y1) in run_rects(runs)]
+    front and no top - but for `whole`: a wall cut where the floor beside
+    it changes level stands its level's whole height, on the cut below it;
+    `side`, if given, is a function of the rectangle, as is `per`: more of
+    its piece's options (its height among them)."""
+    out = []
+    for (x0, y0, x1, y1) in run_rects(runs):
+        opts = dict(kw, **(per(x0, y0, x1, y1) if per else {}))
+        h = opts.pop("height", height)
+        out.append(piece("%s_%d_%d" % (prefix, x0 // 16, y0 // 16), [(x0, y0, x1, y1)],
+                         h if whole else min(h, y1 - y0 - 4),
+                         side=side and side(x0, y0, x1, y1), **opts))
+    return out
 
 
 def mossdeep_gym():
@@ -4879,7 +4950,10 @@ def mossdeep_gym():
     }
     pieces = []
     for k, cells in islands.items():
-        pieces += rect_pieces("walls_" + k, runs_of(cells), 24, leave=fl)
+        # (each one's sides a plain patch of its own panels: not the dark
+        # the step's top runs back over)
+        pieces += rect_pieces("walls_" + k, runs_of(cells), 24, leave=fl,
+                              side=lambda x0, y0, x1, y1: (x0 + 4, y1 - 16, x0 + 10, y1 - 10))
     boxes = [piece("box_%d_%d" % c, cells_rects([c]), 8, leave=fl, solid=True)
              for c in ((5, 7), (8, 7), (8, 8), (3, 21), (7, 19), (9, 19))]
     sofa = piece("sofa", cells_rects([(22, 7), (23, 7), (24, 7), (25, 7), (22, 8), (25, 8)]),
@@ -4888,52 +4962,76 @@ def mossdeep_gym():
 
 
 
-# Fortree's gym: a wood of round trees on a grass floor, the rotating gates
-# between them (sprites, src/rotating_gate.c: no tile of the floor changes).
-# The trees stand as hedges 16 px tall, each column's run of them its top
-# and the last tree's trunk its front, a piece to each rectangle of them
-# (run_rects). The three rails across the east side stand 4 px; the leader's dais
-# is a step the floor can't take and stays drawn; the small trees along the
-# back wall are painted on it.
+# Fortree's gym: a maze of green columns on a grass floor, the rotating
+# gates between them (sprites, src/rotating_gate.c: no tile of the floor
+# changes). The three rails across the east side stand 4 px; the leader's
+# dais is a step the floor can't take and stays drawn.
 
 FORTREE_GYM_FLOOR = ("b4bd5a", "dede8b", "f6f6bd")
-FORTREE_GYM_TREES = [
-    [(0, 2, 23), (1, 2, 5), (1, 11, 23)],
-    [(2, 9, 16), (2, 22, 23), (3, 3, 7), (3, 9, 16), (3, 18, 18), (3, 23, 23)],
-    [(4, 6, 7), (4, 9, 13), (5, 10, 15), (5, 19, 21)],
-    [(6, 2, 3), (6, 5, 6), (6, 11, 15), (6, 17, 17), (6, 19, 21), (7, 2, 3), (7, 5, 6),
-     (7, 11, 11), (7, 19, 20)],
-    [(8, 2, 3), (8, 5, 8), (8, 11, 11), (8, 13, 13), (8, 17, 20), (8, 23, 23), (9, 2, 3),
-     (9, 5, 7), (9, 15, 20), (9, 23, 23)],
-    [(10, 2, 2), (10, 5, 8), (10, 11, 21), (10, 23, 23), (11, 2, 2), (11, 5, 20), (11, 23, 23)],
-    [(12, 2, 2), (12, 5, 20), (12, 23, 23)],
-    [(18, 4, 23), (19, 2, 23)],
-]
 
-# each piece of trees' sides: a plain patch of its own mid or light green
-FORTREE_GYM_TREE_SIDES = {
-    (0, 2): (5, 45, 11, 49), (1, 2): (21, 45, 27, 49), (1, 11): (21, 181, 27, 185),
-    (2, 9): (37, 149, 43, 153), (2, 22): (37, 357, 43, 361), (3, 3): (49, 116, 53, 120),
-    (3, 18): (50, 290, 54, 293), (3, 23): (49, 372, 53, 376), (4, 6): (69, 101, 75, 105),
-    (4, 9): (69, 149, 75, 153), (5, 10): (85, 165, 91, 169), (5, 19): (101, 325, 107, 329),
-    (6, 2): (101, 37, 107, 41), (6, 5): (97, 84, 101, 88), (6, 11): (101, 176, 107, 180),
-    (6, 17): (98, 274, 102, 277), (7, 11): (113, 180, 117, 184), (7, 19): (113, 324, 117, 328),
-    (8, 5): (133, 101, 139, 105), (8, 13): (130, 210, 134, 213), (8, 17): (129, 324, 133, 328),
-    (8, 23): (133, 373, 139, 377), (9, 5): (149, 101, 155, 105), (9, 15): (145, 324, 149, 328),
-    (10, 2): (161, 36, 165, 40), (10, 5): (165, 101, 171, 105), (10, 11): (165, 181, 171, 185),
-    (11, 5): (181, 101, 187, 105), (18, 4): (293, 77, 299, 81), (19, 2): (309, 61, 315, 65),
-}
+# The green columns stand as cylinders, each a turned piece: one drawn whole
+# standing for every column, each textured as drawn where it stands: round,
+# its cell wide and deep, its lid most of its drawing. Two heights of them,
+# each by its cell: 6 px, its top drawn from 6 rows into the cell north of
+# it (FORTREE_GYM_COLUMNS_A, drawn whole at (7, 11)), and 14 px, from 14
+# rows into it (FORTREE_GYM_COLUMNS_B, down the room's edges
+# and here and there between, drawn whole at (18, 24)) - each column by the
+# white crest of its top. The small ones, two to a cell and two down it,
+# are turned too, each on its own; those painted on the back wall stay on
+# it.
+FORTREE_GYM_COLUMNS_A = [
+    (0, 24), (1, 11), (1, 12), (1, 15), (1, 16), (1, 17), (1, 18), (1, 19), (1, 20), (1, 21),
+    (1, 22), (1, 23), (1, 24), (2, 9), (2, 10), (2, 11), (2, 12), (2, 15), (2, 16), (2, 22),
+    (2, 23), (2, 24), (3, 7), (3, 9), (3, 10), (3, 13), (3, 14), (3, 15), (3, 16), (3, 23),
+    (3, 24), (4, 6), (4, 7), (4, 9), (4, 10), (4, 13), (4, 24), (5, 10), (5, 11), (5, 12),
+    (5, 13), (5, 14), (5, 15), (5, 21), (5, 24), (6, 2), (6, 3), (6, 5), (6, 6), (6, 12),
+    (6, 13), (6, 14), (6, 15), (6, 20), (6, 21), (6, 24), (7, 2), (7, 3), (7, 5), (7, 6),
+    (7, 11), (7, 20), (7, 24), (8, 2), (8, 3), (8, 5), (8, 6), (8, 7), (8, 8), (8, 11),
+    (8, 20), (8, 23), (8, 24), (9, 2), (9, 3), (9, 5), (9, 6), (9, 7), (9, 20), (9, 23),
+    (9, 24), (10, 2), (10, 5), (10, 6), (10, 7), (10, 8), (10, 11), (10, 12), (10, 13),
+    (10, 14), (10, 15), (10, 16), (10, 17), (10, 18), (10, 19), (10, 20), (10, 21), (10, 23),
+    (10, 24), (11, 5), (11, 6), (11, 7), (11, 10), (11, 13), (11, 16), (11, 19), (11, 20),
+    (11, 23), (11, 24), (12, 5), (12, 6), (12, 7), (12, 8), (12, 9), (12, 10), (12, 11),
+    (12, 12), (12, 13), (12, 14), (12, 15), (12, 16), (12, 17), (12, 18), (12, 19), (12, 20),
+    (12, 23), (12, 24), (13, 24), (14, 24), (17, 24), (19, 24),
+]
+FORTREE_GYM_COLUMNS_B = [
+    (0, 3), (0, 4), (0, 5), (0, 6), (0, 7), (0, 8), (0, 9), (0, 10), (0, 11), (0, 12), (0, 13),
+    (0, 14), (0, 15), (0, 16), (0, 17), (0, 18), (0, 19), (0, 20), (0, 21), (0, 22), (0, 23),
+    (1, 2), (1, 3), (1, 4), (1, 5), (1, 14), (2, 14), (3, 12), (4, 12), (6, 11), (11, 9), (11, 12),
+    (11, 15), (11, 18), (18, 3), (18, 4), (18, 5), (18, 6), (18, 7), (18, 8), (18, 9), (18, 10),
+    (18, 11), (18, 12), (18, 13), (18, 14), (18, 15), (18, 16), (18, 17), (18, 18), (18, 19),
+    (18, 20), (18, 21), (18, 22), (18, 23), (18, 24), (19, 4), (19, 5), (19, 6), (19, 7), (19, 8),
+    (19, 9), (19, 10), (19, 11), (19, 12), (19, 13), (19, 14), (19, 15), (19, 16), (19, 17),
+    (19, 18), (19, 19), (19, 20), (19, 21), (19, 22), (19, 23),
+]
+FORTREE_GYM_SMALL = [(3, 3, 7), (3, 18, 18), (5, 19, 21), (6, 17, 17), (6, 19, 21), (7, 19, 20),
+                     (8, 13, 13), (8, 17, 20), (9, 15, 20)]
 
 
 def fortree_gym():
-    fl = FORTREE_GYM_FLOOR
-    # the trees' shadow on the grass (blue-grey) is the floor's
-    trees = rect_pieces("trees", [r for runs in FORTREE_GYM_TREES for r in runs], 16,
-                        leave=fl + ("7b839c",), solid=True,
-                        side=lambda x0, y0, x1, y1: FORTREE_GYM_TREE_SIDES[(x0 // 16, y0 // 16)])
+    fl = FORTREE_GYM_FLOOR + ("7b839c",)       # the columns' shadow on the grass
+
+    def columns(name, cells, ref, height):
+        """A column `height` tall drawn whole at `ref`, standing again at
+        every one of `cells`, each textured as drawn there (`variants`)."""
+        top = -height        # its top's first row, from its cell's: round, 16 deep
+        # a copy stands by its rectangle's corner, the cell its top is in
+        corner = lambda x, y: (x, y + (top // 16))   # noqa: E731
+        rx, ry = ref
+        return piece(name, [(rx * 16, ry * 16 + top, rx * 16 + 16, ry * 16 + 16)], height,
+                     round="lathe", squash=1.0, turn=(8, 1), leave=fl, variants=True,
+                     at=[corner(*c) for c in sorted(set(cells) - {ref})])
+
+    out = [columns("column", FORTREE_GYM_COLUMNS_A, (7, 11), 6),
+           columns("column_tall", FORTREE_GYM_COLUMNS_B, (18, 24), 14)]
+    # the small ones, two to a cell and two down it, each turned
+    out += [piece("small_%d_%d" % (x, y0), [(x * 16, y0 * 16, x * 16 + 16, y1 * 16 + 16)], 5,
+                  round="lathe", posts=(8, 8), turn=(6, 1), leave=fl)
+            for (x, y0, y1) in FORTREE_GYM_SMALL]
     rails = [piece("rail_%d" % y, [(208, y * 16, 288, y * 16 + 16)], 4, leave=fl, solid=True)
              for y in (6, 12, 17)]
-    return trees + rails + [
+    return out + rails + [
         piece("wall", [(0, 0, 320, 32)], 32, fill=16, foot=32, side=(32, 0, 48, 32)),
     ]
 
@@ -4977,19 +5075,65 @@ SOOTOPOLIS_GYM_B1F_WALLS = [
 ]
 
 
+# The 1F's tiers rise to the north, a level (16 px) each, from the entrance
+# to the leader (relief_fixes.json): its walls stand on the tier each
+# reaches down to, so a run of them is cut where the floor beside it changes
+# level - the first rows of the tiers above the entrance's.
+SOOTOPOLIS_GYM_1F_TIERS = (4, 10, 15, 20)
+SOOTOPOLIS_GYM_B1F_TIERS = (10, 15, 20)
+
+
+def tier_tops(tiers):
+    """`per` for a tier's walls (rect_pieces): a wall rising from one tier to
+    the next leaves its top's row, the next tier's level, to the map - drawn
+    there as the game draws it, it closes the floor beyond onto the wall's
+    top (the relief lifts it, relief_fixes.json)."""
+    def per(x0, y0, x1, y1):
+        out = {}
+        if y0 // 16 in tiers and y1 - y0 > 16:
+            out["skip"] = [(x, y0 // 16) for x in range(x0 // 16, x1 // 16)]
+        # (a run whose foot is a tier's first row: a level taller for it)
+        if y1 // 16 - 1 in tiers and y1 - y0 > 16:
+            out["height"] = 32
+        return out
+    return per
+
+
+def cut_runs(runs, rows):
+    """(x, y0, y1) runs cut before each of `rows` - but not where that would
+    leave a single row at the run's foot: that row is the riser of the run
+    above it, which stands on it a level taller (tier_tops)."""
+    out = []
+    for (x, y0, y1) in runs:
+        for r in sorted(rows):
+            if y0 < r < y1:
+                out.append((x, y0, r - 1))
+                y0 = r
+        out.append((x, y0, y1))
+    return out
+
+
 def sootopolis_gym_1f():
     ice = SOOTOPOLIS_GYM_ICE
-    walls = rect_pieces("walls", [r for runs in SOOTOPOLIS_GYM_1F_WALLS for r in runs], 16,
-                        leave=ice)
+    walls = rect_pieces("walls", cut_runs([r for runs in SOOTOPOLIS_GYM_1F_WALLS for r in runs],
+                                          SOOTOPOLIS_GYM_1F_TIERS), 16, leave=ice,
+                        whole=True, per=tier_tops(SOOTOPOLIS_GYM_1F_TIERS))
     rocks = [piece("rock_%d_%d" % c, cells_rects([c]), 10, leave=ice)
              for c in SOOTOPOLIS_GYM_ROCKS]
     return walls + rocks
 
 
 def sootopolis_gym_b1f():
-    # the cave's snow, and the dark round its rock
-    return rect_pieces("walls", [r for runs in SOOTOPOLIS_GYM_B1F_WALLS for r in runs], 16,
-                       leave=("acdee6", "d5eeee", "ffffff", "000000"))
+    # the cave's snow, and the dark round its rock. Solid, each wall's
+    # sides - and the steps of its snowy edge's outline - its own rock, a
+    # whole cell of it: not its edge's column drawn down them in stripes,
+    # nor its foot, the light floor below the cave's walls, in bands
+    # (its rooms under the 1F's tiers, at their levels: its walls cut as theirs)
+    return rect_pieces("wall", cut_runs([r for runs in SOOTOPOLIS_GYM_B1F_WALLS for r in runs],
+                                        SOOTOPOLIS_GYM_B1F_TIERS), 16,
+                       leave=("acdee6", "d5eeee", "ffffff", "000000"), solid=True,
+                       side=lambda x0, y0, x1, y1: "cell", whole=True,
+                       per=tier_tops(SOOTOPOLIS_GYM_B1F_TIERS))
 
 
 
@@ -6919,6 +7063,38 @@ SPECS = [
                      "shade": [0x209, 0x212, 0x213, 0x214, 0x22A, 0x232,
                                0x216, 0x22C],
                      "pieces": own_shell(petalburg_gym())},
+    },
+    {
+        # its doors at frame 1 of their sliding open
+        "name": "petalburg_gym_door1",
+        "interior": {"layout": "LAYOUT_PETALBURG_CITY_GYM", "ground": [0x201, 0x22B],
+                     "shade": [0x209, 0x212, 0x213, 0x214, 0x22A, 0x232,
+                               0x216, 0x22C],
+                     "draw": petalburg_door_draw(1), "pieces": petalburg_gym_doors(1)},
+    },
+    {
+        # its doors at frame 2 of their sliding open
+        "name": "petalburg_gym_door2",
+        "interior": {"layout": "LAYOUT_PETALBURG_CITY_GYM", "ground": [0x201, 0x22B],
+                     "shade": [0x209, 0x212, 0x213, 0x214, 0x22A, 0x232,
+                               0x216, 0x22C],
+                     "draw": petalburg_door_draw(2), "pieces": petalburg_gym_doors(2)},
+    },
+    {
+        # its doors at frame 3 of their sliding open
+        "name": "petalburg_gym_door3",
+        "interior": {"layout": "LAYOUT_PETALBURG_CITY_GYM", "ground": [0x201, 0x22B],
+                     "shade": [0x209, 0x212, 0x213, 0x214, 0x22A, 0x232,
+                               0x216, 0x22C],
+                     "draw": petalburg_door_draw(3), "pieces": petalburg_gym_doors(3)},
+    },
+    {
+        # its doors at frame 4 of their sliding open
+        "name": "petalburg_gym_door4",
+        "interior": {"layout": "LAYOUT_PETALBURG_CITY_GYM", "ground": [0x201, 0x22B],
+                     "shade": [0x209, 0x212, 0x213, 0x214, 0x22A, 0x232,
+                               0x216, 0x22C],
+                     "draw": petalburg_door_draw(4), "pieces": petalburg_gym_doors(4)},
     },
     {
         # the contest stage: its pieces stand on every stage drawn again,
