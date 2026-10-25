@@ -153,6 +153,7 @@ static const OptRowDef sRowsPlayer[] = {
     EXTRA_ROW("ev_tickets"),
     EXTRA_ROW("all_badges"),
     EXTRA_ROW("all_fly"),
+    EXTRA_ROW("frontier_pass"),
     EXTRA_ROW("ignore_trainers"),
 };
 static const OptRowDef sRowsTeam[] = {

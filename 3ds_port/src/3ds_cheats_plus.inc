@@ -36,6 +36,7 @@
 #include "constants/species.h"
 
 static const char *const sTapToSet[] = {CTR_TEXT("TAP TO SET", "TOCA PARA ACTIVAR", "ACTIVER", "ATTIVA", "TOQUE P/ ATIVAR", "ANTIPPEN")};
+static const char *const sTapToToggle[] = {CTR_TEXT("TAP: ON / OFF", "TOCA: SÍ / NO", "OUI / NON", "SÌ / NO", "TOQUE: SIM/NÃO", "AN / AUS")};
 static const char *const sTapToHeal[] = {CTR_TEXT("TAP TO HEAL", "TOCA PARA CURAR", "SOIGNER", "CURA", "TOQUE P/ CURAR", "HEILEN")};
 
 static void GiveTickets(void)
@@ -62,6 +63,22 @@ static void AllBadges(void)
     for (u32 flag = FLAG_BADGE01_GET; flag <= FLAG_BADGE08_GET; flag++)
         FlagSet(flag);
     PlaySE(SE_SUCCESS);
+}
+
+/* The Frontier Pass, on and off again: to see its screen (the TRAINER CARD
+ * button opens it while the player has it) without beating the League. */
+static void ToggleFrontierPass(void)
+{
+    if (FlagGet(FLAG_SYS_FRONTIER_PASS))
+    {
+        FlagClear(FLAG_SYS_FRONTIER_PASS);
+        PlaySE(SE_BALL_OPEN);
+    }
+    else
+    {
+        FlagSet(FLAG_SYS_FRONTIER_PASS);
+        PlaySE(SE_SUCCESS);
+    }
 }
 
 static void AllFlyDestinations(void)
