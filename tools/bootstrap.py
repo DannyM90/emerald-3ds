@@ -132,12 +132,11 @@ def main() -> int:
             shutil.rmtree(tree / "3ds_port/build", ignore_errors=True)
             shutil.rmtree(tree / "3ds_port/romfs", ignore_errors=True)
             (tree / "src/data/region_map/region_map_entries.h").unlink(missing_ok=True)
-        if previous_name.startswith(("BPES", "BPEF")):
+        manifest_name = {"BPEF": "french.json.gz", "BPES": "spanish.json.gz", "BPEI": "italian.json.gz",
+                         "BPED": "german.json.gz"}.get(previous_name.split()[0] if previous_name else "")
+        if manifest_name:
             import gzip
             import json
-            manifest_name = {"BPEF": "french.json.gz", "BPES": "spanish.json.gz",
-                             "BPEI": "italian.json.gz", "BPED": "german.json.gz"}.get(previous_name.split()[0]
-                                                           if previous_name else "", "spanish.json.gz")
             manifest = json.loads(gzip.decompress((ROOT / "tools/locales" / manifest_name).read_bytes()))
             for relative, _, _ in manifest["graphics"]:
                 for name in (relative, relative[:-3]) if relative.endswith(".lz") else (relative,):
