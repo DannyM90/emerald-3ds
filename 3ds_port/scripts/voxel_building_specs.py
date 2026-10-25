@@ -7869,3 +7869,147 @@ SPECS += [{"name": "sky_pillar_%s%s" % (f.lower(), clean.lower()),
                         "ground": [SKY_PILLAR_GROUND[f]],
                         "pieces": own_shell(sky_pillar_floor(None if clean else f))}}
           for f in SKY_PILLAR_FLOORS for clean in ("", "_CLEAN")]
+
+
+# The Abandoned Ship (#179): the S.S. Tidal's twin, wrecked. Its cabins are
+# the Tidal's, cabin for cabin - the beds, tables and bins are the Tidal's
+# pieces found again (reuse_pieces); the chairs, not blocked, stay drawn as
+# they do there - and so is the block of cabins down its corridors. What the wreck adds: passages broken through between
+# cabins, a door burst open, and breaches in the walls and floor (blocked,
+# drawn dark), which stay drawn.
+
+def ship_cabin(name, x0, top, foot, end, gap=None, side_gaps=(), cells=7):
+    """A cabin `cells` wide from x0: its back wall from `top`, standing on
+    `foot` (round a passage broken through it: `gap`, (x0, x1)), and its side
+    walls from it to `end`, open where a passage runs through them
+    (`side_gaps`, [(side, z0, z1)])."""
+    x1 = x0 + 16 * cells
+    side = (x0, top, x0 + 16, foot)
+    out = []
+    for i, (a, b) in enumerate([(x0, gap[0]), (gap[1], x1)] if gap else [(x0, x1)]):
+        out.append(piece("wall_%s%s" % (name, "_%d" % i if gap else ""), [(a, top, b, foot)], 32,
+                         fill=16, foot=foot, side=side))
+    for s, x in (("w", x0), ("e", x1)):
+        cuts = sorted((z0, z1) for (t, z0, z1) in side_gaps if t == s)
+        runs, z = [], foot
+        for z0, z1 in cuts:
+            runs.append((z, z0)); z = z1
+        runs.append((z, end))
+        for i, (a, b) in enumerate(runs):
+            out.append(piece("side_%s_%s%s" % (name, s, "_%d" % i if len(runs) > 1 else ""), [], 32, side=side,
+                             walls=[((x, b), (x, a)) if s == "w" else ((x, a), (x, b))]))
+    return out
+
+
+def ship_corridors_1f():
+    """Two corridors either side of the dark between them, each round its
+    block of cabins (the Tidal's: 26 px, its roof white, its doors - one of
+    them burst - on its south face, painted on). By the back wall, a door to
+    the stairs, walked into (drawn), and a stand of bottles."""
+    side = (16, 0, 32, 32)
+    return [
+        piece("block_w", [(32, 57, 80, 159)], 26, solid=True, side=(32, 132, 48, 158)),
+        piece("block_e", [(160, 57, 256, 159)], 26, solid=True, side=(160, 132, 176, 158)),
+        piece("wall_w", [(0, 0, 112, 32)], 32, fill=16, foot=32, side=side),
+        piece("wall_e", [(128, 0, 288, 32)], 32, fill=16, foot=32, side=side),
+        piece("side_div_w", [], 32, side=side, walls=[((112, 32), (112, 192))]),
+        piece("side_div_e", [], 32, side=side, walls=[((128, 192), (128, 32))]),
+        piece("bottles", [(96, 35, 112, 53)], 12),
+        piece("bottles_e", [(272, 35, 288, 53)], 12),
+    ]
+
+
+def ship_rooms_1f():
+    """Four cabins: a passage broken between the two below (row 13), and one
+    down from the north-east cabin through the south-east one's back wall."""
+    return (ship_cabin("n0", 16, 0, 32, 128) + ship_cabin("n1", 160, 0, 32, 128)
+            + ship_cabin("s0", 16, 144, 176, 272, side_gaps=[("e", 208, 224)])
+            + ship_cabin("s1", 160, 144, 176, 272, gap=(208, 224), side_gaps=[("w", 208, 224)]))
+
+
+def ship_rooms2_1f():
+    """Two cabins, a passage broken down from the north one through the
+    south one's back wall."""
+    return ship_cabin("n0", 16, 0, 32, 128) + ship_cabin("s0", 16, 144, 176, 272, gap=(64, 80))
+
+
+def ship_corridors_b1f():
+    """Below: two blocks of cabins running off the map's top edge, their
+    doors on their south faces - the north-west one's burst open, painted on,
+    and the north-east one's (11,4) left drawn, its script changing it, a
+    lintel over it - and the back wall beside the stairs, which stay drawn.
+    Across the south, a third block's roof, its front past the map's edge:
+    its cabins' doors are on its back edge, walked onto, as 1F's are."""
+    side = (0, 0, 16, 32)
+    return [
+        piece("block_nw", [(32, 0, 128, 79)], 26, solid=True, side=(32, 54, 48, 78)),
+        piece("block_ne_w", [(160, 0, 176, 79)], 26, solid=True, side=(160, 54, 176, 78)),
+        piece("block_ne_lintel", [(176, 0, 192, 64)], 26, solid=True, foot=79, side=(160, 54, 176, 78)),
+        piece("block_ne_e", [(192, 0, 208, 79)], 26, solid=True, side=(160, 54, 176, 78)),
+        piece("block_s", [(64, 121, 208, 160)], 26, solid=True, side=(64, 121, 80, 147)),
+        piece("wall_w", [(0, 0, 32, 32)], 32, fill=16, foot=32, side=side),
+        piece("wall_mid", [(128, 0, 160, 32)], 32, fill=16, foot=32, side=side),
+    ]
+
+
+def ship_hidden_corridors():
+    """The hidden floor's corridor round its block of cabins (one row higher
+    than 1F's: its face rows 7-8). Its script changes the doors' bottoms at
+    (3,8) and (6,8) and the indents on its back edge at (3,3) and (9,3):
+    those cells are in no piece, a lintel over each door, the columns under
+    the indents a row shorter. The flooded corner stays drawn."""
+    side = (16, 0, 32, 32)
+    face = (32, 117, 48, 142)
+    return [piece("block_%d" % (x0 // 16), [(x0, y0, x1, y1)], 26, solid=True, side=face,
+                  **({"foot": 143} if y1 < 143 else {}))
+            for (x0, y0, x1, y1) in ((32, 57, 48, 143), (48, 64, 64, 128), (64, 57, 96, 143),
+                                     (96, 57, 112, 128), (112, 57, 144, 143), (144, 64, 160, 143),
+                                     (160, 57, 176, 143))] + [
+        piece("wall", [(0, 0, 208, 32)], 32, fill=16, foot=32, side=side),
+    ]
+
+
+def ship_hidden_rooms():
+    """Six cabins, wider than the others (12 and 13 cells), the dark between
+    them beyond the rooms; a passage broken between the north-middle and
+    north-east cabins (row 3). Their writing desks, each with its chair
+    tucked in, are the Tidal's: its east column is the Tidal's piece found
+    again, its west column (taller there in the Tidal's cabin) their own."""
+    out = [piece("desk_%d_%d" % (x, y), [(x * 16, y * 16 + 2, x * 16 + 16, y * 16 + 31)], 10)
+           for (x, y) in ((22, 2), (40, 2), (40, 10))]
+    for i, (x0, n) in enumerate(((16, 12), (240, 13), (480, 13))):
+        gaps_n = [("e", 48, 64)] if i == 1 else [("w", 48, 64)] if i == 2 else []
+        out += ship_cabin("n%d" % i, x0, 0, 32, 112, side_gaps=gaps_n, cells=n)
+        out += ship_cabin("s%d" % i, x0, 128, 160, 240, cells=n)
+    return out
+
+
+ABANDONED_SHIP_ROOMS = [
+    ("abandoned_ship_corridors_1f", "LAYOUT_ABANDONED_SHIP_CORRIDORS_1F", 0x203, ship_corridors_1f),
+    ("abandoned_ship_rooms_1f", "LAYOUT_ABANDONED_SHIP_ROOMS_1F", 0x238, ship_rooms_1f),
+    ("abandoned_ship_rooms2_1f", "LAYOUT_ABANDONED_SHIP_ROOMS2_1F", 0x238, ship_rooms2_1f),
+    ("abandoned_ship_corridors_b1f", "LAYOUT_ABANDONED_SHIP_CORRIDORS_B1F", 0x202, ship_corridors_b1f),
+    # three cabins in a row, the middle one's floor broken through to the
+    # water below (drawn)
+    ("abandoned_ship_rooms_b1f", "LAYOUT_ABANDONED_SHIP_ROOMS_B1F", 0x238,
+     lambda: sum((ship_cabin("c%d" % i, x0, 0, 32, 128) for i, x0 in enumerate((16, 160, 304))), [])),
+    # two cabins, a passage broken between them (row 4)
+    ("abandoned_ship_rooms2_b1f", "LAYOUT_ABANDONED_SHIP_ROOMS2_B1F", 0x238,
+     lambda: ship_cabin("w", 16, 0, 32, 128, side_gaps=[("e", 64, 80)])
+     + ship_cabin("e", 160, 0, 32, 128, side_gaps=[("w", 64, 80)])),
+    ("abandoned_ship_room_b1f", "LAYOUT_ABANDONED_SHIP_ROOM_B1F", 0x238,
+     lambda: ship_cabin("c", 16, 0, 32, 128)),
+    ("abandoned_ship_hidden_floor_corridors", "LAYOUT_ABANDONED_SHIP_HIDDEN_FLOOR_CORRIDORS", 0x202,
+     ship_hidden_corridors),
+    ("abandoned_ship_hidden_floor_rooms", "LAYOUT_ABANDONED_SHIP_HIDDEN_FLOOR_ROOMS", 0x238,
+     ship_hidden_rooms),
+    # the captain's office, in Stern's Shipyard's tiles: its model ship on
+    # its desk and its blueprint table are the shipyard's, found again; its
+    # back wall (the machines along it painted on) and the locker by the west
+    # wall its own
+    ("abandoned_ship_captains_office", "LAYOUT_ABANDONED_SHIP_CAPTAINS_OFFICE", 0x202,
+     lambda: [piece("locker", [(0, 47, 16, 80)], 20),
+              piece("wall", [(0, 0, 144, 32)], 32, fill=16, foot=32, side=(32, 0, 48, 32))]),
+]
+SPECS += [{"name": n, "interior": {"layout": lid, "ground": [g], "pieces": own_shell(f())}}
+          for (n, lid, g, f) in ABANDONED_SHIP_ROOMS]
