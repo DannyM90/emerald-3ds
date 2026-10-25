@@ -2750,6 +2750,8 @@ def preview(model, out_dir, cams=None):
 # ── Export ───────────────────────────────────────────────────────────────
 
 MAGIC = b"VXB9"
+# the texture pages the console has room for (ctr_voxel.c, VOXEL_MAX_PAGES)
+CONSOLE_PAGES = 1024
 # A model drawn from its own mesh (static: ctr_voxel.c StaticMeshPrepare), not
 # copied into the chunk it stands in - a chunk's buffer holds ~9300 vertices
 # with its ground and trees (voxel_engine_view.py check):
@@ -4141,8 +4143,8 @@ def export(models, path):
     nverts = len(verts) // 6
     # ctr_voxel.c keeps a flag a page (VOXEL_MAX_PAGES), and a page larger
     # than half its VRAM block cannot share it with the next map's
-    if len(pages) > 256:
-        raise SystemExit("%d texture pages: the console knows 256" % len(pages))
+    if len(pages) > CONSOLE_PAGES:
+        raise SystemExit("%d texture pages: the console knows %d" % (len(pages), CONSOLE_PAGES))
     variants = ground_variants(models, layouts_json)
     index_of = {e.get("id"): k + 1 for k, e in enumerate(layouts_json)}
     decks = sorted((index_of[lid], y, x, top, bottom, gate)

@@ -7739,3 +7739,476 @@ SPECS += [{"name": n, "interior": {"layout": lid, "ground": [g], "pieces": own_s
               # (named apart from Route 111's building of the same name)
               ("trainer_hill_entrance_room", "LAYOUT_TRAINER_HILL_ENTRANCE", 0x331,
                trainer_hill_entrance))]
+
+
+# The Sky Pillar (#179). Outside, the foot of the tower (80 x 96; the rest
+# of it is above the map's top edge): its middle stands 9 px before its
+# corner posts (x 0-6 and 74-80, their feet on row 86, sand drawn under
+# them), the door in the middle's foot, its last row 95. As deep as it is wide and as tall as the Battle
+# Tower, its sides and roof laid with the brick beside its windows.
+SPECS += [{
+    "name": "sky_pillar_tower",
+    "layout": "LAYOUT_SKY_PILLAR_OUTSIDE",
+    "rect": (12, 0, 5, 6),
+    "ground": [0x121, 0x2b7, 0x2ba],
+    # under the corner posts, beside the middle's foot, the tiles draw sand
+    "keep": [(0, 0, 80, 86), (6, 86, 74, 96)],
+    "parts_art": flat(lambda: [
+        PlanPrism("tower", [(0, 16), (80, 16), (80, 86), (74, 86), (74, 96), (6, 96), (6, 86),
+                            (0, 86)], 0, 320, (8, 16, 96), top=Tile(8, 8, 16, 24))]),
+    "exact": [(0, 0, 80, 96)],
+}]
+
+
+# Its floors (224 x 224): the back wall, the stairs' doorways painted on it,
+# and the rubble, a mound to each cell (round="dome") shaped as the ellipse
+# in its cell, a pixel short of its foot (taken in, the mound's base showed
+# a row below it) - its rocks are drawn in the floor's own greys, so no
+# colour tells the floor round them. The shaft in the middle (looked down into, its
+# far wall lit) and the cracked floor of 2F and 4F, which the player falls
+# through, stay drawn. Each rubble tile is modelled once, in the first floor
+# that has it, and found again in the others (reuse_pieces): `o` the
+# boulder (0x20f), `x` the stones (0x21f), `O` the boulder under the back
+# wall (0x207). `X`, the stones there (0x217), is the stones' piece found
+# again by its pixels: one of its own would be left the floor round them.
+# Until Rayquaza has left for Sootopolis (VAR_SKY_PILLAR_STATE below 2) the
+# game swaps in the `_CLEAN` layouts: less rubble, and 2F's and 4F's floors
+# whole - their walls, and the rubble they keep found again.
+SKY_PILLAR_RUBBLE = {
+    "1F": """
+.......O....O.
+...x....ox....
+....x.........
+..............
+..o...........
+ox........o..x
+o..........ox.
+.............x
+...o.........o
+..x......o....
+..............
+x............o
+""",
+    "2F": """
+........X.....
+.....x.oo.....
+......o...x...
+..............
+xx............
+.............x
+..............
+..............
+..............
+...x.....x....
+..x...........
+.............x
+""",
+    "3F": """
+....X.....X...
+.....x...o....
+.x...o..x.....
+x.............
+...o......x...
+..x...........
+..x..........o
+..........o...
+...........x..
+o....x...x....
+.o............
+.......x....o.
+""",
+    "4F": """
+........O.....
+..oxxxoxxo...o
+Xx........o...
+.o............
+..............
+..x.........o.
+..o..........o
+x.o...........
+x.............
+.....o...o....
+..o...........
+.......o......
+""",
+    "5F": """
+.....O...X....
+..o.....x.....
+...........o..
+x..........o..
+.x...........x
+..............
+..............
+..o.........x.
+...........x..
+o.............
+.........x..o.
+.o...x........
+""",
+}
+SKY_PILLAR_FLOORS = ("1F", "2F", "3F", "4F", "5F")
+
+
+def sky_pillar_floor(floor=None):
+    """A floor's walls, and its rubble of the tiles no floor before it has."""
+    seen = set()
+    for f in SKY_PILLAR_FLOORS[:SKY_PILLAR_FLOORS.index(floor)] if floor else ():
+        seen |= set(SKY_PILLAR_RUBBLE[f]) - set(".\n")
+    out = []
+    for y, row in enumerate(SKY_PILLAR_RUBBLE[floor].split() if floor else ()):
+        for x, c in enumerate(row):
+            if c in "oxO" and c not in seen:
+                out.append(piece("rubble_%d_%d" % (x, y + 2), [("ellipse", x * 16 + 8, y * 16 + 39.5, 8, 7.5)],
+                                 9, round="dome"))
+    return out + room_shell(224, 224, side=(0, 0, 16, 32))
+
+
+SKY_PILLAR_GROUND = {"1F": 0x2bd, "2F": 0x234, "3F": 0x2bd, "4F": 0x234, "5F": 0x2bd}
+SPECS += [{"name": "sky_pillar_%s%s" % (f.lower(), clean.lower()),
+           "interior": {"layout": "LAYOUT_SKY_PILLAR_%s%s" % (f, clean),
+                        "ground": [SKY_PILLAR_GROUND[f]],
+                        "pieces": own_shell(sky_pillar_floor(None if clean else f))}}
+          for f in SKY_PILLAR_FLOORS for clean in ("", "_CLEAN")]
+
+
+# The Abandoned Ship (#179): the S.S. Tidal's twin, wrecked. Its cabins are
+# the Tidal's, cabin for cabin - the beds, tables and bins are the Tidal's
+# pieces found again (reuse_pieces); the chairs, not blocked, stay drawn as
+# they do there - and so is the block of cabins down its corridors. What the wreck adds: passages broken through between
+# cabins, a door burst open, and breaches in the walls and floor (blocked,
+# drawn dark), which stay drawn.
+
+def ship_cabin(name, x0, top, foot, end, gap=None, side_gaps=(), cells=7):
+    """A cabin `cells` wide from x0: its back wall from `top`, standing on
+    `foot` (round a passage broken through it: `gap`, (x0, x1)), and its side
+    walls from it to `end`, open where a passage runs through them
+    (`side_gaps`, [(side, z0, z1)])."""
+    x1 = x0 + 16 * cells
+    side = (x0, top, x0 + 16, foot)
+    out = []
+    for i, (a, b) in enumerate([(x0, gap[0]), (gap[1], x1)] if gap else [(x0, x1)]):
+        out.append(piece("wall_%s%s" % (name, "_%d" % i if gap else ""), [(a, top, b, foot)], 32,
+                         fill=16, foot=foot, side=side))
+    for s, x in (("w", x0), ("e", x1)):
+        cuts = sorted((z0, z1) for (t, z0, z1) in side_gaps if t == s)
+        runs, z = [], foot
+        for z0, z1 in cuts:
+            runs.append((z, z0)); z = z1
+        runs.append((z, end))
+        for i, (a, b) in enumerate(runs):
+            out.append(piece("side_%s_%s%s" % (name, s, "_%d" % i if len(runs) > 1 else ""), [], 32, side=side,
+                             walls=[((x, b), (x, a)) if s == "w" else ((x, a), (x, b))]))
+    return out
+
+
+def ship_corridors_1f():
+    """Two corridors either side of the dark between them, each round its
+    block of cabins (the Tidal's: 26 px, its roof white, its doors - one of
+    them burst - on its south face, painted on). By the back wall, a door to
+    the stairs, walked into (drawn), and a stand of bottles."""
+    side = (16, 0, 32, 32)
+    return [
+        piece("block_w", [(32, 57, 80, 159)], 26, solid=True, side=(32, 132, 48, 158)),
+        piece("block_e", [(160, 57, 256, 159)], 26, solid=True, side=(160, 132, 176, 158)),
+        piece("wall_w", [(0, 0, 112, 32)], 32, fill=16, foot=32, side=side),
+        piece("wall_e", [(128, 0, 288, 32)], 32, fill=16, foot=32, side=side),
+        piece("side_div_w", [], 32, side=side, walls=[((112, 32), (112, 192))]),
+        piece("side_div_e", [], 32, side=side, walls=[((128, 192), (128, 32))]),
+        piece("bottles", [(96, 35, 112, 53)], 12),
+        piece("bottles_e", [(272, 35, 288, 53)], 12),
+    ]
+
+
+def ship_rooms_1f():
+    """Four cabins: a passage broken between the two below (row 13), and one
+    down from the north-east cabin through the south-east one's back wall."""
+    return (ship_cabin("n0", 16, 0, 32, 128) + ship_cabin("n1", 160, 0, 32, 128)
+            + ship_cabin("s0", 16, 144, 176, 272, side_gaps=[("e", 208, 224)])
+            + ship_cabin("s1", 160, 144, 176, 272, gap=(208, 224), side_gaps=[("w", 208, 224)]))
+
+
+def ship_rooms2_1f():
+    """Two cabins, a passage broken down from the north one through the
+    south one's back wall."""
+    return ship_cabin("n0", 16, 0, 32, 128) + ship_cabin("s0", 16, 144, 176, 272, gap=(64, 80))
+
+
+def ship_corridors_b1f():
+    """Below: two blocks of cabins running off the map's top edge, their
+    doors on their south faces - the north-west one's burst open, painted on,
+    and the north-east one's (11,4) left drawn, its script changing it, a
+    lintel over it - and the back wall beside the stairs, which stay drawn.
+    Across the south, a third block's roof, its front past the map's edge:
+    its cabins' doors are on its back edge, walked onto, as 1F's are."""
+    side = (0, 0, 16, 32)
+    return [
+        piece("block_nw", [(32, 0, 128, 79)], 26, solid=True, side=(32, 54, 48, 78)),
+        piece("block_ne_w", [(160, 0, 176, 79)], 26, solid=True, side=(160, 54, 176, 78)),
+        piece("block_ne_lintel", [(176, 0, 192, 64)], 26, solid=True, foot=79, side=(160, 54, 176, 78)),
+        piece("block_ne_e", [(192, 0, 208, 79)], 26, solid=True, side=(160, 54, 176, 78)),
+        piece("block_s", [(64, 121, 208, 160)], 26, solid=True, side=(64, 121, 80, 147)),
+        piece("wall_w", [(0, 0, 32, 32)], 32, fill=16, foot=32, side=side),
+        piece("wall_mid", [(128, 0, 160, 32)], 32, fill=16, foot=32, side=side),
+    ]
+
+
+def ship_hidden_corridors():
+    """The hidden floor's corridor round its block of cabins (one row higher
+    than 1F's: its face rows 7-8). Its script changes the doors' bottoms at
+    (3,8) and (6,8) and the indents on its back edge at (3,3) and (9,3):
+    those cells are in no piece, a lintel over each door, the columns under
+    the indents a row shorter. The flooded corner stays drawn."""
+    side = (16, 0, 32, 32)
+    face = (32, 117, 48, 142)
+    return [piece("block_%d" % (x0 // 16), [(x0, y0, x1, y1)], 26, solid=True, side=face,
+                  **({"foot": 143} if y1 < 143 else {}))
+            for (x0, y0, x1, y1) in ((32, 57, 48, 143), (48, 64, 64, 128), (64, 57, 96, 143),
+                                     (96, 57, 112, 128), (112, 57, 144, 143), (144, 64, 160, 143),
+                                     (160, 57, 176, 143))] + [
+        piece("wall", [(0, 0, 208, 32)], 32, fill=16, foot=32, side=side),
+    ]
+
+
+def ship_hidden_rooms():
+    """Six cabins, wider than the others (12 and 13 cells), the dark between
+    them beyond the rooms; a passage broken between the north-middle and
+    north-east cabins (row 3). Their writing desks, each with its chair
+    tucked in, are the Tidal's: its east column is the Tidal's piece found
+    again, its west column (taller there in the Tidal's cabin) their own."""
+    out = [piece("desk_%d_%d" % (x, y), [(x * 16, y * 16 + 2, x * 16 + 16, y * 16 + 31)], 10)
+           for (x, y) in ((22, 2), (40, 2), (40, 10))]
+    for i, (x0, n) in enumerate(((16, 12), (240, 13), (480, 13))):
+        gaps_n = [("e", 48, 64)] if i == 1 else [("w", 48, 64)] if i == 2 else []
+        out += ship_cabin("n%d" % i, x0, 0, 32, 112, side_gaps=gaps_n, cells=n)
+        out += ship_cabin("s%d" % i, x0, 128, 160, 240, cells=n)
+    return out
+
+
+# the deck's own greens and the shadows on it, seen between a railing's bars
+SHIP_DECK_SEE = ("acb494", "839473", "dedec5", "6a7b41")
+
+
+def ship_deck():
+    """The deck: its railings (the bars seen through, named as its edges -
+    the harbor's and the shipyard's railings share their tiles, and a deck
+    rail found there would take their pixels), the post at (7,4) - the
+    shipyard's pilaster with another top; the others, and the side rails,
+    are the shipyard's and the harbor's, found again - and the tall orange
+    stacks (the Aqua Hideout's cargo, drawn alike: two tubes to a cell,
+    banded at their feet), boxes 8 px deep with their drawing on them, the
+    two in the north-west running off the map's top edge. Its levels - the
+    hull, the cabins' fronts and the bridge, the stairs between them - stay
+    drawn: what stands on them is terrain."""
+    see = SHIP_DECK_SEE
+    rails = (("low_w", (0, 192, 208, 208)), ("low_e", (240, 192, 368, 208)),
+             ("mid_w", (48, 112, 160, 128)), ("mid_e", (192, 112, 224, 128)),
+             ("isle_n", (0, 48, 32, 64)), ("isle_s", (0, 112, 32, 128)),
+             ("bridge", (112, 48, 224, 64)), ("top", (144, 16, 192, 32)), ("east", (224, 80, 368, 96)))
+    stacks = ((80, 0, 96, 64, 56), (96, 0, 112, 80, 72), (256, 32, 272, 80, 40),
+              (272, 16, 288, 80, 56), (320, 32, 336, 80, 40))
+    return ([piece("edge_rail_" + n, [r], 12, through=True, leave=see) for n, r in rails]
+            + [piece("pilaster_7_4", [(112, 64, 128, 99)], 35, back=96, leave=see)]
+            + [piece("stack_%d" % (x0 // 16), [(x0, y0, x1, y1)], h)
+               for (x0, y0, x1, y1, h) in stacks])
+
+
+ABANDONED_SHIP_ROOMS = [
+    ("abandoned_ship_corridors_1f", "LAYOUT_ABANDONED_SHIP_CORRIDORS_1F", 0x203, ship_corridors_1f),
+    ("abandoned_ship_rooms_1f", "LAYOUT_ABANDONED_SHIP_ROOMS_1F", 0x238, ship_rooms_1f),
+    ("abandoned_ship_rooms2_1f", "LAYOUT_ABANDONED_SHIP_ROOMS2_1F", 0x238, ship_rooms2_1f),
+    ("abandoned_ship_corridors_b1f", "LAYOUT_ABANDONED_SHIP_CORRIDORS_B1F", 0x202, ship_corridors_b1f),
+    # three cabins in a row, the middle one's floor broken through to the
+    # water below (drawn)
+    ("abandoned_ship_rooms_b1f", "LAYOUT_ABANDONED_SHIP_ROOMS_B1F", 0x238,
+     lambda: sum((ship_cabin("c%d" % i, x0, 0, 32, 128) for i, x0 in enumerate((16, 160, 304))), [])),
+    # two cabins, a passage broken between them (row 4)
+    ("abandoned_ship_rooms2_b1f", "LAYOUT_ABANDONED_SHIP_ROOMS2_B1F", 0x238,
+     lambda: ship_cabin("w", 16, 0, 32, 128, side_gaps=[("e", 64, 80)])
+     + ship_cabin("e", 160, 0, 32, 128, side_gaps=[("w", 64, 80)])),
+    ("abandoned_ship_room_b1f", "LAYOUT_ABANDONED_SHIP_ROOM_B1F", 0x238,
+     lambda: ship_cabin("c", 16, 0, 32, 128)),
+    ("abandoned_ship_hidden_floor_corridors", "LAYOUT_ABANDONED_SHIP_HIDDEN_FLOOR_CORRIDORS", 0x202,
+     ship_hidden_corridors),
+    ("abandoned_ship_hidden_floor_rooms", "LAYOUT_ABANDONED_SHIP_HIDDEN_FLOOR_ROOMS", 0x238,
+     ship_hidden_rooms),
+    # the captain's office, in Stern's Shipyard's tiles: its model ship on
+    # its desk and its blueprint table are the shipyard's, found again; its
+    # back wall (the machines along it painted on) and the locker by the west
+    # wall its own
+    ("abandoned_ship_captains_office", "LAYOUT_ABANDONED_SHIP_CAPTAINS_OFFICE", 0x202,
+     lambda: [piece("locker", [(0, 47, 16, 80)], 20),
+              piece("wall", [(0, 0, 144, 32)], 32, fill=16, foot=32, side=(32, 0, 48, 32))]),
+    ("abandoned_ship_deck", "LAYOUT_ABANDONED_SHIP_DECK", 0x228, ship_deck),
+    # the flooded rooms the player dives to: their back walls (Underwater 2's
+    # hole through to Underwater 1 painted on); the breaches stay drawn
+    ("abandoned_ship_underwater1", "LAYOUT_ABANDONED_SHIP_UNDERWATER1", 0x2c9,
+     lambda: [piece("wall", [(0, 0, 128, 32)], 32, fill=16, foot=32, side=(16, 0, 32, 32))]),
+    ("abandoned_ship_underwater2", "LAYOUT_ABANDONED_SHIP_UNDERWATER2", 0x2cf,
+     lambda: [piece("wall", [(0, 0, 336, 32)], 32, fill=16, foot=32, side=(16, 0, 32, 32))]),
+]
+SPECS += [{"name": n, "interior": {"layout": lid, "ground": [g], "pieces": own_shell(f())}}
+          for (n, lid, g, f) in ABANDONED_SHIP_ROOMS]
+
+
+
+# The Aqua Hideout (#179), in the Facility tiles of Stern's Shipyard and the
+# harbor: its machines, desks, capsules, bins and crates are theirs, found
+# again (reuse_pieces). Its own: the partitions between its rooms - their
+# white tops and grey faces, 23 px, a piece to each rectangle of them, the
+# floor cut away round them (`leave`, as Sootopolis's gym) - the back walls,
+# the same partition with its top above the map's edge, and the railings
+# round its pools and channels: the long ones a cell deep, the side ones
+# half a cell, the floor and the water seen between their bars. The water,
+# its rock banks and the steps down into it stay drawn. Each floor's map:
+# `#` partition, `-` a long railing, `[` and `]` the west and east side
+# railings.
+
+AQUA_TANKS = {"1F": ((2, 16), (24, 19), (2, 23), (24, 24)), "B2F": ((17, 7), (21, 8), (25, 8), (28, 8))}
+AQUA_FLOOR = ("acb494", "839473", "dedec5", "6a7b41", "8bb4ac", "a4cdbd", "9c8b94", "628b83", "739c8b")
+AQUA_SEE = AQUA_FLOOR + ("526ad5", "29418b", "39529c", "6a83d5", "acc5e6", "8ba4de")
+AQUA_MAPS = {
+    "1F": """
+.....######################.
+.....#################.####.
+.#####....................#.
+.#####....................#.
+.#........................#.
+.#......------------......#.
+.#......[..........]......#.
+.#......[..........]......#.
+.#......------------......#.
+.#........................#.
+.#........................#.
+.#...--------..--------...#.
+.#...[................]...#.
+.#...[................]...#.
+.#...[................]...#.
+.#...[................]...#.
+.#...-................-...#.
+.#........................#.
+.#........................#.
+.#...-................-...#.
+.#...[................]...#.
+.#...[................]...#.
+.#...[................]...#.
+.#...[................]...#.
+.#...-................-...#.
+.#........................#.
+.#........................#.
+.#........................#.
+.#........................#.
+............................
+""",
+    "B1F": """
+.......###########################......###########
+.......#####.#####.##########.####......###########
+########......#..........#.......#......#.........#
+###.####......#..........#.......#......#.........#
+#.............#..........#.......#......#.........#
+#.............#..........#.......#......#.........#
+#.............####################......#---------#
+#.............####################......#[.......]#
+#.............#..........#.......#......#---------#
+#.............#..........#.......#......#.........#
+#.............#..........#.......#......#---------#
+#.............#..........#.......#......#[.......]#
+##########################.......#......#---------#
+##########################.......#......#.........#
+#........................#########......#---------#
+#........................#########......#[.......]#
+#---------------.................#......#---------#
+#[.............].................#......#.........#
+#[.............].................#......#.........#
+#---------------.................#......###########
+#................................#......###########
+#................................#.................
+##################################.................
+##################################.................
+""",
+    "B2F": """
+......########################...#
+......######.#####.###############
+#######.......#..................#
+###.###.......#..................#
+#.....#.......#..................#
+#.....#.......#..................#
+#.....#.......#..................#
+#.....#.......#..................#
+#.....#.......#..................#
+#.....#.......#..................#
+###############..................#
+###############..................#
+#.............#..................#
+#.............#..................#
+#.............#.........##########
+#-------------#.........##########
+#..............---------.........#
+#......................].........#
+#......................-.........#
+#................................#
+#......................-.........#
+#......................].........#
+#......................-##########
+#-----------------------##########
+""",
+}
+
+
+def aqua_hideout(floor):
+    rows = AQUA_MAPS[floor].strip("\n").split("\n")
+    at = lambda ch: [(x, y) for y, r in enumerate(rows) for x, c in enumerate(r) if c == ch]
+    out = rect_pieces("partition", runs_of(at("#")), 23, leave=AQUA_FLOOR)
+    longs = run_rects(runs_of(at("-")))
+    # a side railing's long faces, which the drawing never shows: the bars of
+    # the floor's first long railing
+    x0, y0 = longs[0][0], longs[0][1]
+    bars = (x0 + 2, y0, x0 + 14, y0 + 8)
+    out += [piece("edge_rail_%d_%d" % (a // 16, b // 16), [(a, b, c, d)], 12, through=True, leave=AQUA_SEE)
+            for (a, b, c, d) in longs]
+    # a west side railing two cells long or more is the harbor's or the
+    # shipyard's, found again (theirs share its tiles): those single cells
+    # long are the floor's own, and the east ones (mirrored) all are
+    for ch, dx in (("[", 0), ("]", 8)):
+        out += [piece("edge_rail_%s_%d_%d" % ("w" if ch == "[" else "e", a // 16, b // 16),
+                      [(a + dx, b, a + dx + 8, d)], 12, through=True, leave=AQUA_SEE, side=bars)
+                for (a, b, c, d) in run_rects(runs_of(at(ch))) if ch == "]" or d - b == 16]
+    # the tanks with pipes and a control panel along the walls, each floor's
+    # own (named as blocks: drawn alike, found from one floor in the other
+    # they would stand twice)
+    out += [piece("block_tank_%d_%d" % (x, y), [(x * 16, y * 16, x * 16 + 32, y * 16 + 32)], 20,
+                  leave=AQUA_FLOOR)
+            for (x, y) in AQUA_TANKS.get(floor, ())]
+    return out
+
+
+SPECS += [{"name": "aqua_hideout_%s" % f.lower(),
+           "interior": {"layout": "LAYOUT_AQUA_HIDEOUT_%s" % f, "ground": [0x228],
+                        "pieces": own_shell(aqua_hideout(f))}}
+          for f in ("1F", "B1F", "B2F")]
+
+
+# The Magma Hideout (#179): a cave, its rock walls and lava the cave's own
+# (#179 asks whether they're the mountains' work), and the machines in it -
+# seven kinds, each modelled in the room that has fewest of it and found
+# again in the others (reuse_pieces): on 3F 2R the consoles with a dish on
+# top, the cream tank and the drills boring into the rock, on 3F 3R the
+# domed robot, on 2F 1R the tall capsule and the console under a dish (4F's
+# small dish boxes are the same, found again), and on 4F, the only floor
+# with them, the drills standing on the floor. The cave floor round them
+# cut away (`leave`).
+
+MAGMA_FLOOR = ("d59c8b", "bd8373", "9c6252")
+MAGMA_MACHINES = {
+    "3F_2R": [("console", 3, 6, 2, 3, 24), ("console", 5, 6, 2, 3, 24), ("tank", 20, 3, 2, 3, 30),
+              ("drill", 7, 1, 2, 2, 16), ("drill", 9, 1, 2, 2, 16), ("drill", 11, 1, 2, 2, 16)],
+    "3F_3R": [("robot", 18, 20, 2, 2, 16)],
+    "2F_1R": [("capsule", 16, 16, 2, 3, 32), ("dish_console", 14, 16, 2, 3, 24)],
+    "4F": [("drill_floor", 12, 2, 2, 2, 16), ("drill_floor", 14, 2, 2, 2, 16), ("drill_floor", 9, 3, 2, 2, 16),
+           ("drill_floor", 47, 14, 2, 2, 16)],
+}
+SPECS += [{"name": "magma_hideout_%s" % f.lower(),
+           "interior": {"layout": "LAYOUT_MAGMA_HIDEOUT_%s" % f, "ground": [0x3a2],
+                        "pieces": [piece("%s_%d_%d" % (k, x, y), [(x * 16, y * 16, (x + w) * 16, (y + h) * 16)],
+                                         ht, leave=MAGMA_FLOOR)
+                                   for (k, x, y, w, h, ht) in machines]}}
+          for f, machines in MAGMA_MACHINES.items()]

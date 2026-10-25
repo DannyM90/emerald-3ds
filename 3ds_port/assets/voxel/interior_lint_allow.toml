@@ -188,3 +188,41 @@ under = "its body is drawn in the floor's own grey, inside its rim: it is the bi
 
 [allow.trick_house_puzzle8_jar_3_21]
 backdrop = "its mouth is drawn in the tatami's colours, inside its outline: it is the jar, not the room round it"
+
+# The Sky Pillar's 1F: its boulders (0x20f, and 0x207 under the back wall)
+
+[allow.sky_pillar_1f_rubble_7_2]
+under = "the boulder and its stones are drawn in the floor's own greys, inside their outline: their feet are the rubble's, not the floor under it"
+
+[allow.sky_pillar_1f_rubble_12_2]
+under = "the boulder and its stones are drawn in the floor's own greys, inside their outline: their feet are the rubble's, not the floor under it"
+
+[allow.sky_pillar_1f_rubble_8_3]
+under = "the boulder and its stones are drawn in the floor's own greys, inside their outline: their feet are the rubble's, not the floor under it"
+
+[allow.sky_pillar_1f_rubble_2_6]
+under = "the boulder and its stones are drawn in the floor's own greys, inside their outline: their feet are the rubble's, not the floor under it"
+
+[allow.sky_pillar_1f_rubble_0_7]
+under = "the boulder and its stones are drawn in the floor's own greys, inside their outline: their feet are the rubble's, not the floor under it"
+
+[allow.sky_pillar_1f_rubble_10_7]
+under = "the boulder and its stones are drawn in the floor's own greys, inside their outline: their feet are the rubble's, not the floor under it"
+
+[allow.sky_pillar_1f_rubble_0_8]
+under = "the boulder and its stones are drawn in the floor's own greys, inside their outline: their feet are the rubble's, not the floor under it"
+
+[allow.sky_pillar_1f_rubble_11_8]
+under = "the boulder and its stones are drawn in the floor's own greys, inside their outline: their feet are the rubble's, not the floor under it"
+
+[allow.sky_pillar_1f_rubble_3_10]
+under = "the boulder and its stones are drawn in the floor's own greys, inside their outline: their feet are the rubble's, not the floor under it"
+
+[allow.sky_pillar_1f_rubble_13_10]
+under = "the boulder and its stones are drawn in the floor's own greys, inside their outline: their feet are the rubble's, not the floor under it"
+
+[allow.sky_pillar_1f_rubble_9_11]
+under = "the boulder and its stones are drawn in the floor's own greys, inside their outline: their feet are the rubble's, not the floor under it"
+
+[allow.sky_pillar_1f_rubble_13_13]
+under = "the boulder and its stones are drawn in the floor's own greys, inside their outline: their feet are the rubble's, not the floor under it"
