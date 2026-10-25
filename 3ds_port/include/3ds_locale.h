@@ -29,5 +29,7 @@
 
 /* A text only English and Portuguese have. */
 #define CTR_TEXT_PT(english, portuguese) CTR_TEXT(english, english, english, english, portuguese, english)
+/* The same with a German text. */
+#define CTR_TEXT_PT_DE(english, portuguese, german) CTR_TEXT(english, english, english, english, portuguese, german)
 
 #endif
