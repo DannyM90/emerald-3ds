@@ -5439,6 +5439,11 @@ static bool8 DirtyRect(const ViewState *now, const ViewState *shown, Rect *r)
     probe.clockMinute = shown->clockMinute;
     probe.repelSteps = shown->repelSteps;
     probe.focus = shown->focus;
+    /* The area's name on the title, crossing into another: off the MAP
+     * (whose mark moves with it, MoveMapCursor) and the SAVE file (which
+     * shows it in its panel), it is on the title alone. */
+    if (now->screen != SCR_MAP && now->screen != SCR_SAVE)
+        probe.mapsec = shown->mapsec;
     /* The options' panel, and their tabs. */
     if (now->screen == SCR_OPTION)
     {
@@ -5508,6 +5513,13 @@ static bool8 DirtyRect(const ViewState *now, const ViewState *shown, Rect *r)
         int x0, y0, x1, y1;
 
         RepelRect(&x0, &y0, &x1, &y1);
+        RectAdd(r, x0, y0, x1, y1);
+    }
+    if (now->mapsec != shown->mapsec)
+    {
+        int x0, y0, x1, y1;
+
+        TitleRect(now, &x0, &y0, &x1, &y1);
         RectAdd(r, x0, y0, x1, y1);
     }
     if (now->pressed != shown->pressed && !(RectAddHit(r, now->pressed) && RectAddHit(r, shown->pressed)))
@@ -7233,6 +7245,9 @@ static bool8 BattleIntro(u8 mode)
     return FALSE;
 }
 
+/* Frames an area's new name waits for (CtrBottom_Frame). */
+#define TITLE_WAIT_FRAMES 6
+
 static void BottomProfile(u32 frame, u8 mode, const uint64_t ticks[3], unsigned kind)
 {
     static u32 last;
@@ -7586,6 +7601,22 @@ void CtrBottom_Frame(void)
     }
     ticks[1] = CtrPlatform_Ticks();
     Snapshot(&sState, mode, pressed);
+    /* Walking into another area, its name waits a few frames: the frame of
+     * the crossing loads the map and moves the voxel world, and the title's
+     * 2 ms on top of that were a drop on an Old 3DS. */
+    {
+        static u8 titleWait;
+
+        if (!sForceRedraw && sShown.mode != 0xFF && mode == MODE_FIELD
+         && sState.mapsec != sShown.mapsec && sState.mapsec != MAPSEC_NONE && sShown.mapsec != MAPSEC_NONE
+         && titleWait < TITLE_WAIT_FRAMES)
+        {
+            ++titleWait;
+            sState.mapsec = sShown.mapsec;
+        }
+        else
+            titleWait = 0;
+    }
     CtrVideo_SetBottomNative(sState.native != NATIVE_NONE);
     CtrVideo_SetNativeMenus(!sClassicMenus);
 

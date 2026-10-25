@@ -35,6 +35,9 @@
 #define VOXEL_SPRITE_SLOT_DIM   64u
 #define VOXEL_SPRITE_COLUMNS    (VOXEL_SPRITE_ATLAS_W / VOXEL_SPRITE_SLOT_DIM)
 #define VOXEL_SPRITE_SLOTS      32u
+/* The last of them holds no sprite: it is the frame of a door opening or
+ * closing (voxel_entities.c, EmitDoor), 32x32 at most. */
+#define VOXEL_DOOR_SLOT         (VOXEL_SPRITE_SLOTS - 1u)
 #define VOXEL_SPRITE_PIXELS     (VOXEL_SPRITE_ATLAS_W * VOXEL_SPRITE_ATLAS_H)
 #define VOXEL_CAST_SHADOW_VERTICES 6u
 /* A reflection is cut across its card into strips, each over the water under

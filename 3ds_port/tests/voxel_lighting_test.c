@@ -284,6 +284,15 @@ int main(void)
                 assert(reference[h][z][x] == VoxelLighting_Sample(x * 0.31f - 1, h * 0.4f, z * 0.31f - 1));
             }
     sCeilingOverride = 0.0f;
+    /* A lone sample (a sprite's card) skips the blocks' bound: the same
+     * answers, cold. */
+    for (int h = 0; h < 3; ++h)
+        for (int z = 0; z < 25; ++z)
+            for (int x = 0; x < 25; ++x)
+            {
+                VoxelLighting_Reset();
+                assert(reference[h][z][x] == VoxelLighting_SampleAlone(x * 0.31f - 1, h * 0.4f, z * 0.31f - 1));
+            }
     VoxelLighting_Reset();
     /* Rays jump from cell to cell instead of visiting every point: the same
      * answers as the point-by-point march, over the whole reference grid. */

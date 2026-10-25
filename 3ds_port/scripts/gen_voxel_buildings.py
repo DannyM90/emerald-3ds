@@ -629,6 +629,11 @@ def fill_hidden(pc, k, owner, fpx, walls):
     return fill
 
 
+def _around(px):
+    """`px` and every pixel beside one of them."""
+    return px | {(x + dx, y + dy) for (x, y) in px for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))}
+
+
 def _inside_grid(shape, W, H):
     """[[_inside(shape, x, y) for x in range(W)] for y in range(H)], asked only
     within the shape's bounds (a pixel beyond them by more than one is out)."""
@@ -1330,6 +1335,39 @@ def ball_fit(obj, base, seg=16, rings=8):
         grow += 0.125
 
 
+def post_parts(obj, pw, ph):
+    """`obj` (a row of little turned things, drawn side by side `pw` wide,
+    each column of them one behind another `ph` down the drawing) cut into
+    one image to each: a pixel is the one whose top it is under, the
+    lowest one's down to the column's foot."""
+    W, H = obj.size
+    opx = obj.load()
+    own = [(u, v) for v in range(H) for u in range(W) if opx[u, v][3] >= 128]
+    count = {}
+    for (u, _) in own:
+        count[u // pw] = count.get(u // pw, 0) + 1
+    # (a column of them by the rectangle's own grid; a stray pixel or two of
+    # a neighbour's outline is the nearest one's)
+    strips = [i for i, n in count.items() if 2 * n >= pw * ph] or list(count)
+    near = {i: min(strips, key=lambda j: abs(j - i)) for i in count}
+    out = {}
+    for strip in sorted(strips):
+        mine = [(u, v) for (u, v) in own if near[u // pw] == strip]
+        top, foot = min(v for _, v in mine), max(v for _, v in mine) + 1
+        n = max(1, (foot - top) // ph)
+        step = {}
+        for (u, v) in mine:
+            step.setdefault(min((v - top) // ph, n - 1), []).append((u, v))
+        # (one nearly all hidden by what stands before it is the next one's)
+        kept = [i for i, px in step.items() if 4 * len(px) >= pw * ph] or list(step)
+        for i, px in step.items():
+            j = min(kept, key=lambda j: (abs(j - i), j))
+            img = out.setdefault((strip, j), Image.new("RGBA", (W, H), (0, 0, 0, 0)))
+            for (u, v) in px:
+                img.putpixel((u, v), opx[u, v])
+    return [out[k] for k in sorted(out)]
+
+
 def lathe_fit(obj, height, base, squash=0.7, bands=4, seg=16):
     """A turned thing drawn standing (a jar, its mouth open on top): a
     surface of revolution on its support's top at `base`, `height` tall,
@@ -1547,6 +1585,8 @@ def side_image(pc, mine, filled, fpx, shell, foot):
         [rect, ...]       stretches one under another, as wide as the first
                           (a television's casing over its stand's);
         "plain"           its front's stuff, row by row (plain_side);
+        "cell"            the first whole cell of its own (a rock's grain,
+                          where no stretch of it is plain);
         "front"           its own front's columns (pick_side), as it was.
 
     Furniture with no `side` is "plain"; a shell, or furniture with gaps
@@ -1559,6 +1599,14 @@ def side_image(pc, mine, filled, fpx, shell, foot):
         return None, None
     if side == "plain":
         return plain_side(mine, fpx, int(pc["height"]), foot), frozenset()
+    if side == "cell":
+        cells = sorted({(y // 16, x // 16) for (x, y) in mine})
+        whole = [(cy, cx) for (cy, cx) in cells
+                 if all((cx * 16 + i, cy * 16 + j) in mine for j in range(16) for i in range(16))]
+        if not whole:
+            return None, None
+        cy, cx = whole[0]
+        side = (cx * 16, cy * 16, cx * 16 + 16, cy * 16 + 16)
     rects = [side] if isinstance(side[0], (int, float)) else list(side)
     width = rects[0][2] - rects[0][0]
     img = Image.new("RGBA", (width, sum(r[3] - r[1] for r in rects)), (0, 0, 0, 0))
@@ -1750,6 +1798,28 @@ def decal_cells(art, cells, origin, v_offset):
     return out, boxes
 
 
+def floor_under(layout, pc, ground, places, w, h):
+    """{(x, y): [(i, j, image)]}: under a piece put at `places` (cells of its
+    rectangle's corner), the floor as drawn there where that is not
+    `ground`'s - a cell's lower layer, if that is floor alone (a wall's
+    shadow across it), not the post it draws itself."""
+    floorish = set(pc.get("leave", ())) | {
+        "%02x%02x%02x" % c[:3] for c in layout.cell_image(ground).getdata()}
+    plain = layout.cell_image(ground, layers=(0,)).convert("RGBA").tobytes()
+    under = {}
+    for (ax, ay) in places:
+        for j in range(h):
+            for i in range(w):
+                if not (0 <= ax + i < layout.w and 0 <= ay + j < layout.h):
+                    continue
+                mt = layout.metatile(ax + i, ay + j)
+                lower = layout.cell_image(mt, layers=(0,)).convert("RGBA")
+                colours = {"%02x%02x%02x" % c[:3] for c in lower.getdata()}
+                if mt != ground and colours <= floorish and lower.tobytes() != plain:
+                    under.setdefault((ax, ay), []).append((i, j, lower))
+    return under
+
+
 def drawn_as(layout_id, draw=None):
     """A layout's drawing, the cells `draw` names ({(x, y): metatile}) laid
     with those metatiles: the room as a script leaves it (setmetatile), the
@@ -1864,6 +1934,67 @@ def interior_specs(spec):
         else:
             shade.update("%02x%02x%02x" % c[:3] for c in layout.cell_image(m).getdata())
     owner = [[None] * W for _ in range(H)]
+    variant_px = {}
+    # the room's shell, where a piece's copies never take a pixel
+    walls_at = [[any(grids[j][y][x] for j, p_ in enumerate(pieces)
+                     if p_.get("fill") or p_["name"].split("_")[0] in SHELL_PIECES)
+                 for x in range(W)] for y in range(H)]
+    # (the floor the terrain lays under a piece's cells)
+    floor_hexes = {"%02x%02x%02x" % c[:3] for c in layout.cell_image(room["ground"][0]).getdata()}
+
+    def variant_groups(k, pc, x0, y0, w, h):
+        """{what it draws round its shape, a pixel out, then the marks on
+        the floor in its rectangle (None: bare floor): [the places it is
+        drawn so]} - a `variants` piece's ways of being drawn, at its own
+        place and its `at`. variant_px[k][4] lists those pixels."""
+        _, _, around, floorish = variant_px[k][:4]
+        rect = [(x0 * 16 + u, y0 * 16 + v) for v in range(h * 16) for u in range(w * 16)]
+        if len(variant_px[k]) == 4:
+            variant_px[k] += (sorted(around), rect)
+        groups = {}
+        for (ax, ay) in [(x0, y0)] + list(pc.get("at", ())):
+            dx, dy = (ax - x0) * 16, (ay - y0) * 16
+            key = []
+            for (x, y) in sorted(around):
+                X, Y = x + dx, y + dy
+                own_px = (0 <= X < W and 0 <= Y < H and owner[Y][X] in (k, -1)
+                          and not ground[Y][X] and hexes[Y][X] not in floorish)
+                key.append(fpx[X, Y] if own_px else None)
+            for (x, y) in rect:
+                # (its shadow, drawn with it on the floor's metatile - on
+                # another of the room's floors, too, in a colour not the
+                # floor's the terrain lays under it)
+                X, Y = x + dx, y + dy
+                # (and where it is the piece's own, a shadow its outline
+                # closes in: its floor's, as at every other place it stands)
+                mark = (0 <= X < W and 0 <= Y < H
+                        and (owner[Y][X] is None
+                             or owner[Y][X] in (k, -1) and hexes[Y][X] in floorish)
+                        and (not ground[Y][X] or hexes[Y][X] not in floor_hexes))
+                key.append(fpx[X, Y] if mark else None)
+            groups.setdefault(tuple(key), []).append((ax, ay))
+        return groups
+
+    def variant_art(k, art, key, x0, y0, h, shape_only=False):
+        """`art` textured with one of variant_groups' ways of being drawn
+        (`shape_only`: what stands, not its marks on the floor)."""
+        _, _, _, _, around, rect = variant_px[k]
+        vart = art.copy()
+        vpx = vart.load()
+        for v in range(2 * h * 16):
+            for u in range(art.width):
+                vpx[u, v] = (0, 0, 0, 0)
+        n = len(around)
+        for (x, y), c in zip(around, key[:n]):
+            if c is not None:
+                vpx[x - x0 * 16, y - y0 * 16] = c
+        for (x, y), c in zip(rect, key[n:]):
+            if c is not None and not shape_only:
+                # (in its drawing too, as any piece's marks are)
+                vpx[x - x0 * 16, y - y0 * 16 + h * 16] = c
+                if vpx[x - x0 * 16, y - y0 * 16][3] < 128:
+                    vpx[x - x0 * 16, y - y0 * 16] = c
+        return vart
     # the furniture an earlier room has modelled, standing here as it is:
     # its pixels are no piece's of this room's
     reused, reused_cells = place_reused(layout, room["ground"][0], room.get("pit", ()))
@@ -1955,6 +2086,34 @@ def interior_specs(spec):
             cand -= taken
         for (x, y) in cand:
             owner[y][x] = k
+        if pc.get("at") and cand:
+            # the same piece again (`at`): where the room draws its pixels at
+            # each place it stands, they are that copy's, no other piece's.
+            # With `variants`, whatever it draws there round its own shape
+            # (a pixel out, for an outline it shares with a neighbour) but
+            # the floor: each copy textured as drawn where it stands
+            cx0, cy0 = min(x for x, _ in cand) // 16, min(y for _, y in cand) // 16
+            around = ({(x, y) for (x, y) in _around(cand) if 0 <= x < W and 0 <= y < H and inside[y][x]}
+                      if pc.get("variants") else cand)
+            floorish = set(pc.get("leave", ())) | shade
+            if pc.get("variants"):
+                # (and so its own: its turned shape is fitted to all of it)
+                for (x, y) in around:
+                    if owner[y][x] is None and not ground[y][x] and hexes[y][x] not in floorish:
+                        owner[y][x] = k
+            for (ax, ay) in pc["at"]:
+                dx, dy = (ax - cx0) * 16, (ay - cy0) * 16
+                for (x, y) in around:
+                    X, Y = x + dx, y + dy
+                    if not (0 <= X < W and 0 <= Y < H) or owner[Y][X] is not None:
+                        continue
+                    if walls_at[Y][X]:
+                        continue    # (a wall's, the copy only standing against it)
+                    if (fpx[X, Y] == fpx[x, y] if not pc.get("variants")
+                            else not ground[Y][X] and hexes[Y][X] not in floorish):
+                        owner[Y][X] = -1
+            if pc.get("variants"):
+                variant_px[k] = (cx0, cy0, around, floorish)
     if DIAGNOSTICS is not None:
         # the claims, for the eye: each piece a colour, floor dark, marks white
         claims = Image.new("RGB", (W, H))
@@ -2164,7 +2323,10 @@ def interior_specs(spec):
                         # the room's bare floor showing round a chair's legs
                         # from any other angle. Not behind a card (a plant):
                         # that floor is in view, and its drawing never was
-                        under = mark_under(x, y)
+                        # (not on its foot's last row: lifted off the floor,
+                        # the mark would stand before its foot at 45 degrees)
+                        under = (mark_under(x, y) if y + 1 < H and owner[y + 1][x] is not None
+                                 else None)
                         if under is not None:
                             apx[lx, ly + uo] = under
         # what the proofs judge it against: its drawing, floor marks and all
@@ -2296,8 +2458,34 @@ def interior_specs(spec):
             elif pc.get("round") == "lathe":
                 # turned (a jar): its belly, shoulder and neck as drawn, its
                 # drawing projected on it - exact at 45 degrees
-                cx, cz, profile = lathe_fit(obj, pc["height"], pc.get("base", 0))
-                parts = [vb.ProjLathe(pc["name"], cx, cz, profile, squash=0.7, seg=16)]
+                if k in variant_px:
+                    # (its shape round every way it is drawn: where one
+                    # of them has no pixel, its texels are clear)
+                    obj = obj.copy()
+                    for key in variant_groups(k, pc, x0, y0, w, h):
+                        obj.alpha_composite(variant_art(k, art, key, x0, y0, h, True)
+                                            .crop((0, 0, w * 16, h * 16)))
+                if pc.get("posts"):
+                    # a row of little ones (`posts`: each one's width and
+                    # how far down the drawing the next stands), each
+                    # turned on its own pixels, the last down to the foot
+                    # (`turn`: (sides, bands) - a plain drum takes few:
+                    # the console's chunks hold so many triangles)
+                    seg, bands = pc.get("turn") or (12, 4)
+                    parts = []
+                    for n, post in enumerate(post_parts(obj, *pc["posts"])):
+                        cx, cz, profile = lathe_fit(post, pc["height"], pc.get("base", 0),
+                                                    bands=bands, seg=seg)
+                        parts.append(vb.ProjLathe("%s_post%d" % (pc["name"], n), cx, cz, profile,
+                                                  squash=0.7, seg=seg))
+                else:
+                    # (`squash`: its plan that deep for its width - a
+                    # column round, one in a row touching the next)
+                    sq = pc.get("squash") or 0.7
+                    seg, bands = pc.get("turn") or (16, 4)
+                    cx, cz, profile = lathe_fit(obj, pc["height"], pc.get("base", 0), squash=sq,
+                                                bands=bands, seg=seg)
+                    parts = [vb.ProjLathe(pc["name"], cx, cz, profile, squash=sq, seg=seg)]
             elif pc.get("round") == "dome":
                 # round, not a drawing pushed back: a smooth cap with its
                 # drawing projected on it, exact at 45 degrees
@@ -2358,6 +2546,14 @@ def interior_specs(spec):
         # only the cells with a mark, each quad only over its marks: the
         # export keeps the texels a face reads, and clear ones read for
         # nothing take room on the page
+        if k in variant_px:
+            # (the marks of every way it is drawn, each its own on its model)
+            cells = [(x0 + i, y0 + j) for j in range(h) for i in range(w)]
+            marks = Image.new("RGBA", (art.width, h * 16), (0, 0, 0, 0))
+            for key in variant_groups(k, pc, x0, y0, w, h):
+                marks.alpha_composite(variant_art(k, art, key, x0, y0, h)
+                                      .crop((0, h * 16, art.width, 2 * h * 16)))
+            art.paste(marks, (0, h * 16))
         local, local_box = decal_cells(art, cells, (x0, y0), h * 16)
         if local:
             parts.append(vb.Decal(pc["name"] + "_floor", local, h * 16, boxes=local_box))
@@ -2375,27 +2571,14 @@ def interior_specs(spec):
         # it stands again with its rectangle at each of those cells. Either
         # stands only where it is put
         extra = {}
-        # (and a piece of a room's other drawing stands only in that room)
-        if pc.get("when") or pc.get("at") or room.get("draw"):
+        # (and a piece of a room's other drawing stands only in that room, as
+        # does one that leaves all its cells to the map: no cell to find it by)
+        if pc.get("when") or pc.get("at") or room.get("draw") or owned == set():
             g0 = room["ground"][0]
             extra["placed"] = [(room["layout"], ax, ay, g0)
                                for (ax, ay) in [(x0, y0)] + list(pc.get("at", ()))]
-            # under it at each place the floor as drawn there, where that is
-            # not the ground's: its lower layer, if that is floor alone (the
-            # wall's shadow across it) - not the post it draws itself
-            floorish = set(pc.get("leave", ())) | {
-                "%02x%02x%02x" % c[:3] for c in layout.cell_image(g0).getdata()}
-            under = {}
-            for (_, ax, ay, _) in extra["placed"]:
-                for j in range(h):
-                    for i in range(w):
-                        mt = layout.metatile(ax + i, ay + j)
-                        lower = layout.cell_image(mt, layers=(0,)).convert("RGBA")
-                        colours = {"%02x%02x%02x" % c[:3] for c in lower.getdata()}
-                        if (mt != g0 and colours <= floorish
-                                and lower.tobytes() != layout.cell_image(g0, layers=(0,))
-                                .convert("RGBA").tobytes()):
-                            under.setdefault((ax, ay), []).append((i, j, lower))
+            under = floor_under(layout, pc, g0, [(ax, ay) for (_, ax, ay, _) in extra["placed"]],
+                                w, h)
             if under:
                 extra["placed_patches"] = under
         if pc.get("when"):
@@ -2427,6 +2610,25 @@ def interior_specs(spec):
                         "posts": [(r["u0"], legs_of[k] - y0 * 16, r["u1"], foot_row - y0 * 16)
                                   for r in plan[0] if r["kind"] == "post"]}
                        if plan else {})})
+        if k in variant_px:
+            # `variants`: the same shape at every place it stands, each
+            # textured as the room draws it there - a column with another
+            # before it, its body a lighter green; one a neighbour's outline
+            # joins - one model to each way it is drawn
+            g0 = room["ground"][0]
+            groups = variant_groups(k, pc, x0, y0, w, h)
+            base = out.pop()
+            for n, (key, places) in enumerate(sorted(groups.items(), key=lambda kv: -len(kv[1]))):
+                vart = variant_art(k, art, key, x0, y0, h)
+                model = dict(base, art=vart, drawing=None,
+                             placed=[(room["layout"], ax, ay, g0) for (ax, ay) in places])
+                if n:
+                    model["name"] = "%s_v%d" % (base["name"], n)
+                model.pop("placed_patches", None)
+                under = floor_under(layout, pc, g0, places, w, h)
+                if under:
+                    model["placed_patches"] = under
+                out.append(model)
         # `alone`: a room's own shell - its walls, a doorway's recess - which
         # another room does not repeat by having the same floor along an edge
         if not (pc.get("alone") or extra.get("placed")):
