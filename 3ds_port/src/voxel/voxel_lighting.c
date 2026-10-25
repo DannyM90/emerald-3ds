@@ -70,6 +70,8 @@ VoxelSun gVoxelSun = {0.85f, 0.55f, 1.0f, 0};
 static float sAmbient = VOXEL_AMBIENT;
 static float sStepInverseX = 4.0f / 0.85f, sStepInverseZ = 4.0f / 0.55f;
 static unsigned sRays;
+/* Lit without the blocks' bound (VoxelLighting_SampleAlone). */
+static bool sAlone;
 
 /*
  * No caster anywhere on screen is taller than this, so a ray that has climbed
@@ -701,7 +703,7 @@ static bool Lit(float x, float y, float z)
         VoxelLighting_Reset();
     ceiling = RayCeiling(x, z);
     stretched = RayStretched(x, z);
-    blocks = VoxelWorld_InstanceCount() == sMapCeilings;
+    blocks = !sAlone && VoxelWorld_InstanceCount() == sMapCeilings;
     for (int step = 1; step <= VOXEL_LIGHT_REACH * 4;)
     {
         float rx, ry, rz;
@@ -893,6 +895,16 @@ float VoxelLighting_Sample(float x, float y, float z)
     const LightSample *sample = CachedSample(x, y, z);
 
     return (sample->lit ? 1.0f : sAmbient) * sample->contact;
+}
+
+float VoxelLighting_SampleAlone(float x, float y, float z)
+{
+    float shade;
+
+    sAlone = true;
+    shade = VoxelLighting_Sample(x, y, z);
+    sAlone = false;
+    return shade;
 }
 
 uint32_t VoxelLighting_Hash(int x0, int z0, int x1, int z1)
