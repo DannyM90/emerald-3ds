@@ -1202,8 +1202,12 @@ static struct
 
 /* Pages that failed to read are not asked for again: retrying one every
  * frame would only log the same error for as long as its map is on screen.
- * One flag a page, for as many pages as buildings.bin can name. */
-#define VOXEL_MAX_PAGES 256
+ * One flag a page, for as many pages as buildings.bin can name: a page to
+ * each layout that places anything (gen_voxel_buildings.py, CONSOLE_PAGES),
+ * 247 of them with the interiors done, and the caves and dungeons to come.
+ * Eleven bytes a page here; a page's texels are read only while its map is
+ * on screen. */
+#define VOXEL_MAX_PAGES 1024
 static bool sBadPages[VOXEL_MAX_PAGES];
 
 /*
