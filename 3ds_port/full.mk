@@ -458,8 +458,9 @@ VOXEL_GFX_SOURCES := $(wildcard $(ROOT)/data/tilesets/primary/*/tiles.png $(ROOT
 VOXEL_GFX_SOURCES += $(wildcard $(ROOT)/data/tilesets/primary/*/palettes/*.pal $(ROOT)/data/tilesets/secondary/*/palettes/*.pal)
 VOXEL_GFX_SOURCES += $(wildcard $(ROOT)/graphics/intro/scene_1/bg.png)
 # The tileset animations a model's texels follow (voxel_building_specs.py
-# FOUNTAIN_ANIM: Rustboro's fountain).
+# FOUNTAIN_ANIM: Rustboro's fountain; MAUVILLE_GYM_GATES: the gym's beams).
 VOXEL_GFX_SOURCES += $(wildcard $(ROOT)/data/tilesets/secondary/rustboro/anim/fountain/*.png)
+VOXEL_GFX_SOURCES += $(wildcard $(ROOT)/data/tilesets/secondary/mauville_gym/anim/electric_gates/*.png)
 VOXEL_GFX_OUTPUTS := $(patsubst %.png,%.4bpp,$(filter %.png,$(VOXEL_GFX_SOURCES)))
 VOXEL_GFX_OUTPUTS += $(patsubst %.pal,%.gbapal,$(filter %.pal,$(VOXEL_GFX_SOURCES)))
 ifneq ($(strip $(VOXEL_GFX_OUTPUTS)),)
