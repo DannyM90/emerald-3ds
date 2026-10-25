@@ -964,6 +964,36 @@ typedef struct
 static CellGrid sCellGrids[CELL_GRIDS];
 static unsigned sCellGridNext;
 
+/*
+ * The placements whose rectangle reaches each row of a layout, in placement
+ * order, for a few layouts at a time: the faces of a cell (CollectFronts) are
+ * looked for among those alone. Walked whole, Route 110's thousand placements
+ * were read for every cell under a walker the front cache had not seen - all
+ * of them after a crossing (VoxelBuildings_MapChanged): sprites=4-5 ms on an
+ * Old 3DS on the crossing frame (port.log, 2026-10-25).
+ */
+#define ROW_INDEXES 3u
+
+typedef struct
+{
+    int layout;          /* layout id + 1; 0: empty */
+    int rows;            /* past the last row any placement covers */
+    uint32_t *start;     /* rows + 1 offsets into `placements` */
+    uint16_t *placements;
+} RowIndex;
+
+static RowIndex sRowIndexes[ROW_INDEXES];
+static unsigned sRowIndexNext;
+
+static void FreeRowIndex(RowIndex *r)
+{
+    free(r->start);
+    free(r->placements);
+    r->start = NULL;
+    r->placements = NULL;
+    r->layout = 0;
+}
+
 static void FreeCellGrids(void)
 {
     for (unsigned i = 0; i < CELL_GRIDS; ++i)
@@ -973,6 +1003,67 @@ static void FreeCellGrids(void)
         sCellGrids[i].layout = -1;
     }
     sCellGridNext = 0;
+    for (unsigned i = 0; i < ROW_INDEXES; ++i)
+        FreeRowIndex(&sRowIndexes[i]);
+    sRowIndexNext = 0;
+}
+
+/* The row index of the layout `p` and `count` are the placements of; NULL
+ * when it cannot be had (the placements are then walked whole). */
+static const RowIndex *RowIndexOf(const VoxelMapInstance *inst, const BuildingPlacement *p,
+                                  unsigned count)
+{
+    int layout = BuildingLayout(inst);
+    RowIndex *r;
+    uint32_t total = 0;
+    int rows = 0;
+
+    for (unsigned i = 0; i < ROW_INDEXES; ++i)
+        if (sRowIndexes[i].layout == layout + 1)
+            return &sRowIndexes[i];
+    if (count >= NO_CELL)
+        return NULL;
+    for (unsigned i = 0; i < count; ++i)
+    {
+        int h = sModels[sPageModels[p[i].pageModel].model].h;
+
+        if ((int)p[i].y + h > rows)
+            rows = (int)p[i].y + h;
+        total += (uint32_t)h;
+    }
+    r = &sRowIndexes[sRowIndexNext];
+    sRowIndexNext = (sRowIndexNext + 1) % ROW_INDEXES;
+    FreeRowIndex(r);
+    r->start = calloc((size_t)rows + 1u, sizeof(uint32_t));
+    r->placements = malloc((total ? total : 1u) * sizeof(uint16_t));
+    if (r->start == NULL || r->placements == NULL)
+    {
+        FreeRowIndex(r);
+        return NULL;
+    }
+    /* counted per row, offsets, then filled in placement order */
+    for (unsigned i = 0; i < count; ++i)
+        for (int y = p[i].y; y < (int)p[i].y + sModels[sPageModels[p[i].pageModel].model].h; ++y)
+            ++r->start[y + 1];
+    for (int y = 0; y < rows; ++y)
+        r->start[y + 1] += r->start[y];
+    {
+        uint32_t *fill = malloc((size_t)rows * sizeof(uint32_t));
+
+        if (fill == NULL)
+        {
+            FreeRowIndex(r);
+            return NULL;
+        }
+        memcpy(fill, r->start, (size_t)rows * sizeof(uint32_t));
+        for (unsigned i = 0; i < count; ++i)
+            for (int y = p[i].y; y < (int)p[i].y + sModels[sPageModels[p[i].pageModel].model].h; ++y)
+                r->placements[fill[y]++] = (uint16_t)i;
+        free(fill);
+    }
+    r->rows = rows;
+    r->layout = layout + 1;
+    return r;
 }
 
 static const CellGrid *CellGridOf(const VoxelMapInstance *inst, const BuildingPlacement *p,
@@ -984,14 +1075,16 @@ static const CellGrid *CellGridOf(const VoxelMapInstance *inst, const BuildingPl
 
     if (count >= NO_CELL)
         return NULL;
-    /* a grid worked out once cannot follow a placement that comes and goes */
-    for (unsigned i = 0; i < count; ++i)
-        if (p[i].when != NO_CONDITION)
-            return NULL;
+    /* Looked up first: this runs for every cell the lighting reads, and a
+     * layout has a grid only if none of its placements comes and goes. */
     for (unsigned i = 0; i < CELL_GRIDS; ++i)
         if (sCellGrids[i].cells != NULL && sCellGrids[i].layout == layout
          && sCellGrids[i].width == inst->width && sCellGrids[i].height == inst->height)
             return &sCellGrids[i];
+    /* a grid worked out once cannot follow a placement that comes and goes */
+    for (unsigned i = 0; i < count; ++i)
+        if (p[i].when != NO_CONDITION)
+            return NULL;
     g = &sCellGrids[sCellGridNext];
     sCellGridNext = (sCellGridNext + 1) % CELL_GRIDS;
     free(g->cells);
@@ -1210,10 +1303,22 @@ static unsigned CollectFronts(const VoxelMapInstance *inst, int x, int y, float 
 {
     unsigned count;
     const BuildingPlacement *p = LayoutPlacements(inst, &count);
+    const RowIndex *rows = p != NULL ? RowIndexOf(inst, p, count) : NULL;
+    int row = y - inst->originY;
+    uint32_t n = count, first = 0;
     unsigned found = 0;
 
-    for (unsigned i = 0; p != NULL && i < count; ++i)
+    /* Only the placements that reach the cell's row, in the same order. */
+    if (rows != NULL)
     {
+        if (row < 0 || row >= rows->rows)
+            return 0;
+        first = rows->start[row];
+        n = rows->start[row + 1] - first;
+    }
+    for (uint32_t t = 0; p != NULL && t < n; ++t)
+    {
+        unsigned i = rows != NULL ? rows->placements[first + t] : t;
         const BuildingModel *m = &sModels[sPageModels[p[i].pageModel].model];
         const VoxelVertex *v = &sVertices[m->firstVertex];
         int lx = x - inst->originX - p[i].x, ly = y - inst->originY - p[i].y;
