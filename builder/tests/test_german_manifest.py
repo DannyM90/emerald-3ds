@@ -57,6 +57,33 @@ class GermanManifestTests(unittest.TestCase):
         for text in unmapped:
             self.assertTrue(text["reason"], text)
 
+    def test_battle_healthbox_is_german(self):
+        # "KP" instead of "HP", and the German status icons of all four
+        # battlers, as whole raw tiles of the cartridge's own table
+        graphics = {path: (offset, size) for path, offset, size in manifest()["graphics"]}
+        expected = {"hpbar": 384, "status": 480, "status2": 480, "status3": 480, "status4": 480}
+        for name, size in expected.items():
+            self.assertEqual(graphics["graphics/battle_interface/%s.4bpp" % name][1], size, name)
+        hpbar = graphics["graphics/battle_interface/hpbar.4bpp"][0]
+        self.assertEqual(graphics["graphics/battle_interface/status.4bpp"][0], hpbar + 384 + 288)
+
+    def test_naming_keyboard_has_nine_columns(self):
+        edits = manifest()["files"]["src/naming_screen.c"]["edits"]
+        rows = [edit for edit in edits if edit[4] == "c" and edit[3] == 9]
+        self.assertEqual(len(rows), 12)  # 3 pages of 4 rows
+        self.assertEqual([edit[3] for edit in edits if edit[4] == "u8rows9"], [27])
+
+    def test_easy_chat_lists_have_their_german_order(self):
+        # the four move and Pokemon lists are read from the cartridge in the
+        # German alphabetical order; the symbol table must point at all four
+        symbols = gzip.decompress((ROOT / "tools/locales/german-symbols.s.gz").read_bytes()).decode()
+        for name in ("gEasyChatGroup_Move1", "gEasyChatGroup_Move2",
+                     "gEasyChatGroup_Pokemon", "gEasyChatGroup_Pokemon2"):
+            address = int(re.search(r"\.equ %s, (\d+)" % name, symbols)[1])
+            size = int(re.search(r"\.size %s, (\d+)" % name, symbols)[1])
+            self.assertTrue(0x08000000 <= address < address + size <= 0x08000000 + ROM_SIZE, name)
+            self.assertTrue(size > 0 and size % 2 == 0, name)
+
 
 def ctr_texts():
     """Every CTR_TEXT(...) of the port whose six arguments are string literals."""
@@ -102,6 +129,28 @@ class GermanPortTextTests(unittest.TestCase):
         for name, args in ctr_texts():
             missing = sorted(set(args[5]) - drawn - {"\n"})
             self.assertFalse(missing, "%s: %r has %r" % (name, args[5], missing))
+
+    def test_no_port_message_falls_back_to_english(self):
+        # CTR_TEXT_PT gives German the English text; only the English ROM's
+        # own hint may use it, the rest says it in German too
+        literal = r'"(?:[^"\\]|\\.)*"'
+        german_hints = 0
+        for folder in ("src", "include"):
+            for path in sorted((ROOT / "3ds_port" / folder).glob("*")):
+                if path.suffix not in (".c", ".h", ".inc"):
+                    continue
+                source = path.read_text(encoding="utf-8")
+                for match in re.finditer(r"\bCTR_TEXT_PT\(\s*(" + literal + ")", source):
+                    self.assertTrue(match.group(1).startswith('"Only Pokemon Emerald (USA'),
+                                    "%s: %s" % (path.name, match.group(1)))
+                for match in re.finditer(r"\bCTR_TEXT_PT_DE\(((?:\s*" + literal + r"\s*,?)+)\)", source):
+                    parts = re.split(r",\s*(?=\")", match.group(1).strip())
+                    self.assertEqual(len(parts), 3, path.name)
+                    german = "".join(ast.literal_eval(p) for p in re.findall(literal, parts[2]))
+                    self.assertTrue(german.strip(), path.name)
+                    self.assertTrue(german.isascii(), "%s: %r" % (path.name, german))
+                    german_hints += 1
+        self.assertGreaterEqual(german_hints, 5)
 
 
 if __name__ == "__main__":
