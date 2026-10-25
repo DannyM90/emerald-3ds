@@ -11,7 +11,8 @@ from the German pret decompilation (pokeemerald-german), which rebuilds BPED
 byte for byte: every text edit is found by its English bytes in the BPEE
 build and read from the same object of the BPED build; the LZ77 graphics are
 decompressed; the 55 credits pages and the four Trainer Hill floor tables
-come from the ROM directly. Console play testing is pending.
+come from the ROM directly. Played on a 3DS (to the fifth badge as of
+2026-10-25); a full playthrough is still pending.
 """
 from __future__ import annotations
 
@@ -189,7 +190,7 @@ def stage(tree: Path, rom_path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     (tree / ".emerald3ds-locale").write_text("BPED experimental\n")
-    print("German game data staged; console play testing is pending.")
+    print("German game data staged; a full playthrough is still pending.")
 
 
 def main() -> None:
