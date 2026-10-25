@@ -5,9 +5,9 @@ Emerald 3DS läuft mit dem sauberen deutschen ROM von
 Übersetzung wird nicht mitgeliefert: Sie kommt aus deinem eigenen ROM, auf deinem
 Computer oder im Browser.
 
-Die Variante ist **experimentell**. Sie wurde kompiliert und gelinkt, und das Datenpaket
-lässt sich aus BPED bauen. Auf einer Konsole oder in einem Emulator ist sie noch nicht
-getestet, und das Abenteuer wurde noch nicht durchgespielt.
+Die Variante ist **experimentell**. Sie wird seit dem 22.10.2026 auf einem echten 3DS
+gespielt, mit einem Datenpaket aus einem selbst ausgelesenen BPED-Modul. Das Abenteuer
+wurde aber noch nicht ganz durchgespielt.
 
 ## Dein Modul auslesen
 
