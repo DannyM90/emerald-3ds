@@ -2242,16 +2242,16 @@ def interior_specs(spec):
         xs = [x for x, _ in pts]
         ys = [y for _, y in pts]
         rects.append((min(xs) // 16, min(ys) // 16, max(xs) // 16 + 1, max(ys) // 16 + 1))
-    marks = {}
+    under_marks = {}
 
     def mark_under(x, y):
         """The floor mark a piece hides at (x, y): the same mark where the
         row runs out of the piece both ways - a rug under a chair, a stripe
         running on under it. Anything else (the shade down a room's edge on
         one side) is left to the floor."""
-        if (x, y) not in marks:
-            marks[x, y] = _mark_under(x, y)
-        return marks[x, y]
+        if (x, y) not in under_marks:
+            under_marks[x, y] = _mark_under(x, y)
+        return under_marks[x, y]
 
     def _mark_under(x, y):
         found = []
