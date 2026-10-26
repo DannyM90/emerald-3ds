@@ -16,6 +16,14 @@ paths = [
     # the same executables inside Emerald3DS-WebPayload.zip
     "payload/Emerald3DS.3dsx",
     "payload/*/Emerald3DS.3dsx",
+    # Recipes carry the precompiled voxel programs (docs/VOXEL_PRECOMPILE.md):
+    # the port's own geometry and tables, and the game's texels only as
+    # references into the ROM. The audit decompresses them, scans them for the
+    # ROM's bytes and fails on any texel written literally (audit_programs).
+    "Emerald3DS-v*-Windows/payload/emerald3ds.recipe",
+    "Emerald3DS-v*-Windows/payload/*/emerald3ds.recipe",
+    "payload/emerald3ds.recipe",
+    "payload/*/emerald3ds.recipe",
 ]
 
 [media]

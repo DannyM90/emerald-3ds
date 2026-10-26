@@ -458,8 +458,9 @@ VOXEL_GFX_SOURCES := $(wildcard $(ROOT)/data/tilesets/primary/*/tiles.png $(ROOT
 VOXEL_GFX_SOURCES += $(wildcard $(ROOT)/data/tilesets/primary/*/palettes/*.pal $(ROOT)/data/tilesets/secondary/*/palettes/*.pal)
 VOXEL_GFX_SOURCES += $(wildcard $(ROOT)/graphics/intro/scene_1/bg.png)
 # The tileset animations a model's texels follow (voxel_building_specs.py
-# FOUNTAIN_ANIM: Rustboro's fountain).
+# FOUNTAIN_ANIM: Rustboro's fountain; MAUVILLE_GYM_GATES: the gym's barriers).
 VOXEL_GFX_SOURCES += $(wildcard $(ROOT)/data/tilesets/secondary/rustboro/anim/fountain/*.png)
+VOXEL_GFX_SOURCES += $(wildcard $(ROOT)/data/tilesets/secondary/mauville_gym/anim/electric_gates/*.png)
 VOXEL_GFX_OUTPUTS := $(patsubst %.png,%.4bpp,$(filter %.png,$(VOXEL_GFX_SOURCES)))
 VOXEL_GFX_OUTPUTS += $(patsubst %.pal,%.gbapal,$(filter %.pal,$(VOXEL_GFX_SOURCES)))
 ifneq ($(strip $(VOXEL_GFX_OUTPUTS)),)
@@ -503,6 +504,7 @@ romfs/voxel/trees.rgba5551: scripts/gen_voxel_trees.py \
 romfs/voxel/buildings.bin: scripts/gen_voxel_buildings.py scripts/voxel_building.py scripts/voxel_night.py \
 		scripts/voxel_building_specs.py scripts/voxel_bridge.py scripts/dump_region_art.py scripts/voxel_props.py \
 		scripts/voxel_relief_fixes.py assets/voxel/relief_fixes.json \
+		scripts/gen_voxel_relief.py \
 		scripts/voxel_defect_scan.py assets/voxel/interior_lint_allow.toml \
 		$(ROOT)/data/layouts/layouts.json
 	@mkdir -p $(@D)

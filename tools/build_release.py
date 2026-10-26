@@ -8,21 +8,25 @@ Steps (each can be skipped when its output is already there):
 
 1. `make release` in 3ds_port: dist/Emerald3DS.3dsx and .smdh, engine files only;
 2. the recipe (tools/gen_recipe.py) from the build's staging and the ROM;
-3. the payload: executable, recipe and the voxel generator scripts; with
+3. the voxel generators run once from each ROM, as the builder runs them
+   (tools/voxel_precompile.py): the recipe gets the programs that rebuild
+   their outputs from the player's ROM in seconds, and the run fails unless
+   they are exactly the files the executable was built with;
+4. the payload: executable, recipe and the voxel generator scripts; with
    --spanish-rom / --french-rom / --italian-rom / --german-rom also payload/es/ (resp. payload/fr/, payload/it/, payload/de/), that
    language's executable and its recipe,
    built from a copy of this tree localized from that ROM (build/release-es);
-4. the standalone builder (PyInstaller, one folder, no UPX);
-5. dist/Emerald3DS-v<version>-Windows.zip with the builder, the payload,
+5. the standalone builder (PyInstaller, one folder, no UPX);
+6. dist/Emerald3DS-v<version>-Windows.zip with the builder, the payload,
    README.txt and LICENSES/;
-6. the standalone dist/Emerald3DS.3dsx and dist/Emerald3DS.smdh (quick update
+7. the standalone dist/Emerald3DS.3dsx and dist/Emerald3DS.smdh (quick update
    of the executable when the data ABI did not change; dist/Emerald3DS-es.3dsx
    for the Spanish variant), and the HOME Menu
    forwarder dist/Emerald3DS-Forwarder.cia (3ds_port/forwarder, needs makerom
    and bannertool; --skip-cia leaves it out);
-7. dist/Emerald3DS-WebPayload.zip and dist/web-manifest.json for the web
+8. dist/Emerald3DS-WebPayload.zip and dist/web-manifest.json for the web
    builder (tools/build_web_payload.py);
-8. tools/release_audit.py over every ZIP (and a scan for any run of the ROMs'
+9. tools/release_audit.py over every ZIP (and a scan for any run of the ROMs'
    bytes), then SHA256SUMS.txt over every release asset.
 
 Attach everything in dist/ listed in SHA256SUMS.txt, and SHA256SUMS.txt itself,
@@ -122,10 +126,26 @@ def build_localized_variant(args, tag: str, out: Path, locale: dict) -> None:
              "--gba-elf", reference, "--image-elf", port / "build/gamedata_image.elf",
              "--image-map", port / "build/gamedata_image.map", "--nm", args.nm, "--decomp", tree,
              "--report", DIST / ("recipe-literal-report-%s.txt" % locale["code"])])
+    precompile(recipe, locale["rom"], port)
     out.mkdir(parents=True, exist_ok=True)
     for name in ("Emerald3DS.3dsx", "Emerald3DS.smdh"):
         shutil.copy2(port / "dist" / name, out / name)
     shutil.copy2(recipe, out / "emerald3ds.recipe")
+
+
+VOXEL_GENERATE: list[str] = []      # --voxel-generate: files left to the builders' generators
+
+
+def precompile(recipe: Path, rom: Path, port: Path) -> None:
+    """The voxel generators run once here, from the ROM as the builder runs
+    them, and their outputs go into the recipe as programs
+    (tools/voxel_precompile.py): the players' builders run those instead.
+    Always run, even on a reused recipe: it fails unless the generators of
+    this tree give exactly the files the executable was built with, so no
+    program can be older than the code that made them."""
+    run([sys.executable, ROOT / "tools/voxel_precompile.py", "--recipe", recipe, "--rom", rom,
+         "--port", port, "--report", recipe.with_suffix(".precompile.json")]
+        + [arg for path in VOXEL_GENERATE for arg in ("--generate", path)])
 
 
 def sha256(path: Path) -> str:
@@ -157,7 +177,11 @@ def main() -> None:
     ap.add_argument("--skip-cia", action="store_true", help="no HOME Menu forwarder (needs makerom, bannertool)")
     ap.add_argument("--allow-local-mk", action="store_true",
                     help="build even though 3ds_port/local.mk adds this machine's settings")
+    ap.add_argument("--voxel-generate", action="append", default=[], metavar="PATH",
+                    help="a voxel file (e.g. voxel/signposts.bin) the release does not precompile: "
+                         "the builders generate it as before (repeatable)")
     args = ap.parse_args()
+    VOXEL_GENERATE[:] = args.voxel_generate
 
     # The English variant is built in this tree, so 3ds_port/local.mk (ignored
     # by Git, e.g. a measurement aid such as -DCTR_MEASURE_AID) would reach the
@@ -189,6 +213,7 @@ def main() -> None:
              "--gba-elf", args.gba_elf, "--image-elf", PORT / "build/gamedata_image.elf",
              "--image-map", PORT / "build/gamedata_image.map", "--nm", args.nm,
              "--report", DIST / "recipe-literal-report.txt"])
+    precompile(recipe, args.rom, PORT)
 
     if release.exists():
         shutil.rmtree(release)

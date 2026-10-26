@@ -128,8 +128,16 @@ def run_step_inprocess(script: Path, args: list[str], cwd: Path) -> None:
 
 
 def run_generators(tree: Path, voxelgen: Path, expected: list[dict], progress=None,
-                   runner: str = "subprocess", timings: list | None = None) -> dict[str, bytes]:
+                   runner: str = "subprocess", timings: list | None = None,
+                   ready: dict[str, bytes] | None = None,
+                   numbering: tuple[int, int] | None = None) -> dict[str, bytes]:
     """Run the steps and check their outputs.
+
+    `ready` holds outputs already made (the release's precompiled files, by
+    their path in the pack): they are written into the tree for the steps
+    that read them (the relief reads buildings.bin) and their steps are not
+    run. `numbering` (done, total) numbers the steps in the progress after
+    `done` others out of `total` (default: these steps alone).
 
     progress(fraction, detail) is told when each step starts and how long it
     took; `timings`, when given, receives (step, seconds) for every step and
@@ -143,10 +151,17 @@ def run_generators(tree: Path, voxelgen: Path, expected: list[dict], progress=No
     port = tree / "3ds_port"
     shutil.copytree(voxelgen, port, dirs_exist_ok=True)
     (port / "romfs" / "voxel").mkdir(parents=True, exist_ok=True)
-    steps = [s for s in STEPS if (port / "scripts" / s[0]).exists()]
+    ready = ready or {}
+    for rel, data in ready.items():
+        (port / "romfs" / rel).parent.mkdir(parents=True, exist_ok=True)
+        (port / "romfs" / rel).write_bytes(data)
+    made = {"3ds_port/romfs/" + rel for rel in ready}
+    steps = [s for s in STEPS if (port / "scripts" / s[0]).exists() and s[2] not in made]
+
+    before, total = numbering or (0, len(steps))
 
     def label(i: int) -> str:
-        return "%s (%d/%d)" % (LABELS.get(steps[i][0], steps[i][0]), i + 1, len(steps))
+        return "%s (%d/%d)" % (LABELS.get(steps[i][0], steps[i][0]), before + i + 1, total)
 
     def timed(i: int) -> float:
         script, args, _ = steps[i]

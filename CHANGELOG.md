@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Builder: the 3D scenery takes seconds instead of minutes. The release runs
+  the voxel generators once per supported ROM and the recipe carries, for
+  each of their files, a program that writes it again from the player's ROM
+  (tools/voxel_precompile.py, docs/VOXEL_PRECOMPILE.md): the port's own
+  geometry as it is, every texel of the game's art as the tile, row and
+  palette of the ROM it comes from. The data pack is byte for byte the same.
+  A file without a program is still generated as before.
+
+- Web builder: the buildings came out different under Pyodide than on the
+  desktop, so the web build failed its check: a wall of Sootopolis's gym
+  took its colour from a tie broken by the order of a set, which follows a
+  32-bit hash in the browser. It now follows the desktop's order
+  (gen_voxel_relief.set_order, as the relief already did).
+
+- Builder: the Mauville gym's electric barriers' animation frames are among
+  the voxel inputs the builder rebuilds from the ROM (and built before the
+  generators in a fresh tree): the buildings generator reads them and failed
+  without them.
+
 - Builder: the terrain relief is made after the buildings, whose cells it
   reads. Made side by side, the relief depended on which finished first,
   and a data pack could fail to match the release.

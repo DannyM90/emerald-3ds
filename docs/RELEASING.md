@@ -67,16 +67,21 @@ version.
      `dist/Emerald3DS-WebPayload.zip` and the ROM, build, copy the ZIP to the SD
      card and boot the game. Use the payload from `dist/`, not the synthetic
      test payload.
-   - Optional, once per change to the voxel generators: compare the packs of
-     both runners (they must be byte-identical):
+   - The builders do not run the voxel generators: `build_release.py` ran
+     them (`tools/voxel_precompile.py`, below) and the recipe carries their
+     files as programs. To test the generators' own path as well
+     (`build_pack(..., precompiled_ok=False)`), once per change to the voxel
+     generators: compare the packs of both runners (they must be
+     byte-identical):
 
      ```
      python -c "import sys; sys.path.insert(0, 'builder'); from pathlib import Path; \
      from emerald3ds_builder.build import Payload, build_pack; \
      p = Payload(Path('dist/Emerald3DS-vX.Y.Z-Windows/payload')); \
-     build_pack(Path('baserom.gba'), p, Path('/tmp/sub.pak')); \
-     build_pack(Path('baserom.gba'), p, Path('/tmp/inp.pak'), runner='inprocess')"
-     cmp /tmp/sub.pak /tmp/inp.pak
+     build_pack(Path('baserom.gba'), p, Path('/tmp/pre.pak')); \
+     build_pack(Path('baserom.gba'), p, Path('/tmp/sub.pak'), precompiled_ok=False); \
+     build_pack(Path('baserom.gba'), p, Path('/tmp/inp.pak'), runner='inprocess', precompiled_ok=False)"
+     cmp /tmp/pre.pak /tmp/sub.pak && cmp /tmp/sub.pak /tmp/inp.pak
      ```
 5. **Publish the GitHub release**: tag `vX.Y.Z`, **published** (drafts are
    invisible to the site), not marked pre-release unless it really is one (a
@@ -171,7 +176,12 @@ python tools/build_release.py --version 0.1.0 --rom baserom.gba \
     --make "make -j8 PYTHON=python"
 ```
 
-This runs `make release`, writes the recipe, assembles
+This runs `make release`, writes the recipe, precompiles the voxel data into
+it (`tools/voxel_precompile.py`: the generators run from the ROM as the
+builder runs them, about as long as a player's build took before; it fails
+unless their files are exactly those the executable was built with, so no
+precompiled data older than the code can be published; each localized
+variant is precompiled from its own ROM and tree), assembles
 `dist/Emerald3DS-v0.1.0-Windows/` (builder, `payload/Emerald3DS.3dsx`,
 `payload/Emerald3DS.smdh`, `payload/emerald3ds.recipe`, `payload/voxelgen/`,
 `README.txt`, `LICENSES/`) and zips it, copies the standalone `.3dsx` and
