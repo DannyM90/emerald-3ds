@@ -14,8 +14,13 @@
  *
  * A map as a whole stands at its base: the level its ground is at in the
  * world (Fortree up on the plateau Route 119 climbs to), everything on it
- * raised by it, straight up. The cells' heights are over the base; only
- * VoxelRelief_LiftAt, a height in the world, counts it in.
+ * raised by it and, as the drawing has every point, drawn as far south: a
+ * point stands as far south as it is high in the world, base and relief
+ * (VoxelBuilder_StretchZ, VoxelRelief_ShiftAt). So two maps meeting at one
+ * height meet in the same row, whatever their bases - Fortree's west edge
+ * on its base and Route 119's plateau beside it, raised by its relief. The
+ * cells' heights and depths are over the base; only VoxelRelief_LiftAt and
+ * VoxelRelief_ShiftAt, a height and a depth in the world, count it in.
  */
 #ifndef CTR_VOXEL_RELIEF_H
 #define CTR_VOXEL_RELIEF_H
@@ -31,8 +36,13 @@ bool VoxelRelief_Init(void);
 void VoxelRelief_Shutdown(void);
 
 /* The level a map's ground stands at in the world, tiles (0 for a map the
- * file does not name). */
+ * file does not name), and its lift over that where it was placed. */
 float VoxelRelief_Base(const VoxelMapInstance *inst);
+
+/* Pixels to add to `b`'s lift for its edge to meet `a`'s at their seam, as
+ * most of the seam's cells ask (see voxel_relief.c); 0 when they do not
+ * touch or the seam asks no one step. */
+int VoxelRelief_SeamStep(const VoxelMapInstance *a, const VoxelMapInstance *b);
 
 /* The 25 heights (pixels, over the base) of a world cell, or NULL when it is
  * not lifted. */
@@ -55,11 +65,9 @@ unsigned VoxelRelief_Belt(const VoxelMapInstance *inst);
  * relief itself and not by any structure. */
 bool VoxelRelief_IsSlope(const int16_t *grid);
 
-/* The 25 depths (pixels) the cell's points are moved south by: its heights
- * again, (u, h, v + h), the drawing seen at 45 degrees. NULL when the cell
- * is not lifted; all zero on a level map (bit 15 of its width in the file),
- * whose heights lift it straight up as a base does - Route 108's sea, leaning
- * a level from Route 107's to Slateport's with no row moved south. */
+/* The 25 depths (pixels) the cell's points are moved south by, over its
+ * map's base: its heights again, (u, h, v + h), the drawing seen at 45
+ * degrees. NULL when the cell is not lifted. */
 const int16_t *VoxelRelief_Depth(const VoxelMapInstance *inst, int x, int y);
 
 /* Height in tiles over the base at the centre of a cell (0 when not lifted). */
@@ -72,7 +80,8 @@ float VoxelRelief_CellShift(const VoxelMapInstance *inst, int x, int y);
  * lattice: the base of the map there and the relief over it. */
 float VoxelRelief_LiftAt(float worldX, float worldZ);
 
-/* Depth in tiles at a world position, interpolated on the lattice. */
+/* Depth in tiles in the world at a world position, interpolated on the
+ * lattice: the base of the map there and the relief over it. */
 float VoxelRelief_ShiftAt(float worldX, float worldZ);
 
 /*
@@ -86,10 +95,12 @@ float VoxelRelief_StretchZ(const VoxelMapInstance *inst, float z);
 /*
  * A drawn map's surface as it stands on its base, for the sun (the lighting's
  * rays): its height in tiles over the base at a world position, 0 off any
- * drawn map; the highest of it over a cell; the highest of the map.
+ * drawn map; the highest of it over a cell (and in `bottom` the lowest:
+ * every SurfaceAt over the cell lies between the two); the highest of the
+ * map.
  */
 float VoxelRelief_SurfaceAt(float worldX, float worldZ);
-float VoxelRelief_SurfaceTop(const VoxelMapInstance *inst, int x, int z);
+float VoxelRelief_SurfaceTop(const VoxelMapInstance *inst, int x, int z, float *bottom);
 float VoxelRelief_DrawnTop(const VoxelMapInstance *inst);
 
 /*
@@ -118,6 +129,12 @@ float VoxelRelief_DrawnTop(const VoxelMapInstance *inst);
  * left a gap beside the corner that a camera steeper than the drawing saw
  * the ground below through. */
 #define VOXEL_RELIEF_GOES_ON_FACE (32u << 8)
+/* With VOXEL_RELIEF_GOES_ON_SOUTH instead, the rock that goes on under it is
+ * the cell south of it, a row back: a bridge's deck over a band (Route
+ * 120's ends over the slopes of its river's banks), whose row north is
+ * another plank. Walled down as a block, the bank stood under the deck as a
+ * vertical slab of rock. */
+#define VOXEL_RELIEF_GOES_ON_SOUTH (64u << 8)
 /*
  * `wall` (-1: none) says the cell has cliffs: wherever its west, east or
  * south edge stands over its neighbour's - a tile of rock reaching its own
@@ -140,9 +157,27 @@ float VoxelRelief_DrawnTop(const VoxelMapInstance *inst);
  * through the gap: walled down to the water it stood as a dam.
  */
 #define VOXEL_RELIEF_THIN_DECK (8u << 8)
+
+/* Its relief is drawn with its `wall`, not its own drawing: a tree's cell on
+ * the mountain's slope (the crown is the tree model's; laid on the rock as
+ * the cell's texture, a slab of leaves stood down Route 120's bank). */
+#define VOXEL_RELIEF_FACE_TOP (16u << 8)
+/* Its cut variant is a canopy cleared (a secondary tileset's crown of the
+ * small tree south of it, over the rim of Route 120's plateau): drawn whole
+ * on its relief, over a plate of `wall` - the ground the crown was drawn
+ * over - a pixel under it; `ground` at `foot` is the ground run on under it,
+ * as with no variant. The crown is the tree model's. */
+#define VOXEL_RELIEF_CANOPY (128u << 8)
 #define VOXEL_RELIEF_DECK_EDGE (4.0f / 16.0f)
 int VoxelRelief_Cut(const VoxelMapInstance *inst, int x, int y, float *foot, int *ground,
                     int *wall, unsigned *sides);
+/* Every cut record of a map's layout, in its own cells (x, y from the
+ * layout's corner), with the ground and the wall it draws (-1: none): ids
+ * the atlas must hold although a script may have changed the cell's own
+ * metatile since the relief was read off the layout (Route 120's bridge,
+ * its Kecleon gone). */
+typedef void (*VoxelReliefCutVisit)(int x, int y, int ground, int wall, void *ctx);
+void VoxelRelief_ForEachCut(const VoxelMapInstance *inst, VoxelReliefCutVisit visit, void *ctx);
 unsigned VoxelRelief_CutCount(void);
 bool VoxelRelief_CutVariant(unsigned i, unsigned *layout, unsigned *metatile,
                             const uint8_t **rows);

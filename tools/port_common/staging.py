@@ -130,7 +130,7 @@ def cmd_engine(args) -> None:
 # GAME_LANGUAGE its include/constants/global.h compiles.
 GAME_LANGUAGE_ROMS = {"LANGUAGE_ENGLISH": "BPEE", "LANGUAGE_SPANISH": "BPES",
                       "LANGUAGE_FRENCH": "BPEF", "LANGUAGE_ITALIAN": "BPEI",
-                      "LANGUAGE_JAPANESE": "BPEJ"}
+                      "LANGUAGE_GERMAN": "BPED", "LANGUAGE_JAPANESE": "BPEJ"}
 
 
 def cmd_pak(args) -> None:

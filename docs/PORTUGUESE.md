@@ -35,7 +35,7 @@ Ou, numa árvore já preparada, `make -C 3ds_port PORT_LANG=pt_br`. Trocar
 ## Como funciona
 
 `3ds_port/include/3ds_locale.h` escolhe cada texto do port com
-`CTR_TEXT(inglês, espanhol, francês, italiano, português, japonês)`, ou
+`CTR_TEXT(inglês, espanhol, francês, italiano, português, alemão, japonês)`, ou
 `CTR_TEXT_PT(inglês, português)` para os que as outras interfaces ainda mostram
 em inglês. Os rótulos da tela
 de baixo passam por `Ascii()` (`3ds_bottom_ui.c`), que aceita as letras

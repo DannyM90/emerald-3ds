@@ -326,6 +326,11 @@ verify: verify-logo-ptbr
 verify-logo-ptbr:
 	"$(PYTHON)" tests/logo_ptbr_test.py --cc "$(HOSTCC)"
 
+.PHONY: verify-battle-hud-fill
+verify: verify-battle-hud-fill
+verify-battle-hud-fill:
+	"$(PYTHON)" tests/battle_hud_fill_test.py --cc "$(HOSTCC)" --python "$(PYTHON)"
+
 .PHONY: verify-rng-seeding
 verify: verify-rng-seeding
 .PHONY: verify-battle-speed
@@ -354,6 +359,13 @@ build/field_view_test$(EXESUFFIX): tests/field_view_test.c src/3ds_field_view.c 
 .PHONY: verify-encounters
 verify-encounters: build/encounters_test.exe
 	./build/encounters_test.exe
+
+# Reads the decomp's maps and headers, so it needs the bootstrapped tree:
+# part of `verify` there, not of the standalone host tests
+.PHONY: verify-underwater-encounters
+verify: verify-underwater-encounters
+verify-underwater-encounters:
+	"$(PYTHON)" -B tests/underwater_encounters_test.py --tree $(ROOT)
 
 build/encounters_test.exe: tests/encounters_test.c src/3ds_encounters.c include/3ds_encounters.h
 	@mkdir -p build

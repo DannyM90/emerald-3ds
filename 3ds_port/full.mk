@@ -185,12 +185,15 @@ $(CTR_GBA_STAGE_OBJS): FULLCFLAGS += -DCTR_GBA_STAGE -include $(abspath compat/c
 $(CTR_GBA_STAGE_OBJS): compat/ctr_gba_stage.h $(ROOT)/include/gba/defines.h
 # GBA screens shown centred, margins only from layers that wrap on the GBA
 # (compat/ctr_gba_centred.h).
-CTR_GBA_CENTRED_SRCS := region_map field_region_map main_menu naming_screen wallclock \
+CTR_GBA_CENTRED_SRCS := region_map field_region_map main_menu option_menu naming_screen wallclock \
 	pokemon_summary_screen starter_choose shop link berry_blender pokemon_jump dodrio_berry_picking \
-	contest contest_util
+	contest contest_util slot_machine
 CTR_GBA_CENTRED_OBJS := $(patsubst %,build/root/src/%.o,$(CTR_GBA_CENTRED_SRCS))
 $(CTR_GBA_CENTRED_OBJS): FULLCFLAGS += -DCTR_GBA_STAGE -include $(abspath compat/ctr_gba_centred.h)
 $(CTR_GBA_CENTRED_OBJS): compat/ctr_gba_centred.h $(ROOT)/include/gba/defines.h
+# option_menu.c: the game's OPTION screen, from the title menu (and from the
+# start menu where the bottom screen does not replace it). Built wide it was
+# drawn in the top-left corner, between two centred title menus.
 # link.c: the communication error screen, whose text windows are as wide as
 # the screen (wider than its layer at 400 pixels: they wrapped and overlapped).
 # berry_blender.c: the Berry Blender, its bowl turned about the middle of the
@@ -199,6 +202,12 @@ $(CTR_GBA_CENTRED_OBJS): compat/ctr_gba_centred.h $(ROOT)/include/gba/defines.h
 # drawn in the top left corner of the wide one.
 # contest.c, contest_util.c: a contest and its results, the same; the
 # contest also slid its panels off by DISPLAY_WIDTH and DISPLAY_HEIGHT.
+# slot_machine.c: the Game Corner's slot machine, the same: its four 32x32
+# maps and its sprites placed for 240x160 were drawn in the top left corner,
+# the rows under the machine showing below it, and its ReelTime machine
+# started at x=368 (off the GBA screen, on the wide one) and slid to
+# DISPLAY_WIDTH - 32; the digital display's window closed from DISPLAY_WIDTH
+# and stopped at 348 instead of 208.
 # Which centred screen each of those is, for how its margins are filled.
 build/root/src/main_menu.o: FULLCFLAGS += -DCTR_CENTRED_MAIN_MENU
 build/root/src/naming_screen.o: FULLCFLAGS += -DCTR_CENTRED_NAMING
@@ -481,7 +490,7 @@ romfs/voxel/signposts.bin: scripts/gen_voxel_sign_masks.py scripts/voxel_sign_ma
 
 romfs/voxel/trees.rgba5551: scripts/gen_voxel_trees.py \
 		assets/voxel/trees/tree_crown.png assets/voxel/trees/tree_trunk.png \
-		assets/voxel/trees/tree_small_crown.png assets/voxel/trees/tree_small_trunk.png 		assets/voxel/trees/tree_2_small_crown.png assets/voxel/trees/tree_2_small_trunk.png
+		assets/voxel/trees/tree_small_crown.png assets/voxel/trees/tree_small_trunk.png 		assets/voxel/trees/tree_2_small_crown.png assets/voxel/trees/tree_2_small_trunk.png 		assets/voxel/trees/tree_small_trunk_jungle.png assets/voxel/trees/tree_small_trunk_grass_road.png 		assets/voxel/trees/tree_small_trunk_volcan.png assets/voxel/trees/tree_crown_base_floor.png 		assets/voxel/trees/tree_crown_base.png assets/voxel/trees/tree_crown_base_open.png
 	@mkdir -p $(@D)
 	"$(PYTHON)" scripts/gen_voxel_trees.py --output $@
 
@@ -508,9 +517,13 @@ verify-voxel-buildings:
 	"$(PYTHON)" scripts/gen_voxel_buildings.py --verify
 
 # Terrain relief read off the drawing: gen_voxel_relief.py explains it.
+# It leaves a building's cells to its model and reads which cells those are
+# from buildings.bin (voxel_terraces.modelled), so it comes after it: made
+# beside it, the relief depended on which of the two finished first.
 romfs/voxel/relief.bin: scripts/gen_voxel_relief.py scripts/voxel_cells.py scripts/voxel_props.py \
 		scripts/voxel_art.py scripts/voxel_building.py scripts/dump_region_art.py \
 		scripts/voxel_relief_fixes.py scripts/voxel_terraces.py assets/voxel/relief_fixes.json \
+		scripts/voxel_engine_view.py romfs/voxel/buildings.bin \
 		$(ROOT)/data/layouts/layouts.json
 	@mkdir -p $(@D)
 	"$(PYTHON)" scripts/gen_voxel_relief.py --output $@
@@ -543,6 +556,30 @@ build/voxel_world_hash_test.exe: tests/voxel_world_hash_test.c src/voxel/voxel_w
 	@mkdir -p $(@D)
 	$(HOSTCC) -std=gnu99 -O2 -DPORTABLE -DMODERN=1 -D__INTELLISENSE__ \
 		-iquote compat -iquote ../include -Isrc/voxel tests/voxel_world_hash_test.c -o $@
+
+# The field's banks of other tilesets in 2D (3ds_tile_banks.h).
+verify: verify-tile-banks
+.PHONY: verify-tile-banks
+verify-tile-banks: build/tile_banks_test.exe
+	./build/tile_banks_test.exe
+
+build/tile_banks_test.exe: tests/tile_banks_test.c include/3ds_tile_banks.h
+	@mkdir -p $(@D)
+	$(HOSTCC) -std=c99 -O2 -Wall -Wextra -Werror -Iinclude tests/tile_banks_test.c -o $@
+
+# What stands on the current map follows the live grid (voxel_building.h,
+# VoxelBuildings_SetDrawings), on a fixture of its own.
+verify: verify-voxel-building-live
+.PHONY: verify-voxel-building-live
+verify-voxel-building-live: build/voxel_building_live_test.exe
+	./build/voxel_building_live_test.exe
+
+build/voxel_building_live_test.exe: tests/voxel_building_live_test.c src/voxel/voxel_building.c \
+		src/voxel/voxel_building.h src/voxel/voxel_world.h src/voxel/voxel_mesh_builder.h
+	@mkdir -p $(@D)
+	$(HOSTCC) -std=c99 -O2 -Wall -Wextra -Werror -Iinclude -Isrc/voxel -iquote ../include \
+		$(HOST_VOXEL_DEFS) -DVOXEL_BUILDINGS_PATH=\"build/voxel_building_live.bin\" \
+		tests/voxel_building_live_test.c src/voxel/voxel_building.c -lm -o $@
 
 verify: verify-voxel-arena
 .PHONY: verify-voxel-arena
@@ -635,7 +672,7 @@ check-voxel-relief:
 .PHONY: verify-voxel-relief
 verify: verify-voxel-relief
 verify-voxel-relief: build/voxel_relief_test.exe romfs/voxel/relief.bin
-	./build/voxel_relief_test.exe $$("$(PYTHON)" -c "import json; l = json.load(open('$(ROOT)/data/layouts/layouts.json'))['layouts']; ids = [e['id'] for e in l]; print(ids.index('LAYOUT_ROUTE101') + 1, ids.index('LAYOUT_ROUTE116') + 1, ids.index('LAYOUT_RUSTURF_TUNNEL') + 1, ids.index('LAYOUT_ROUTE108') + 1)")
+	./build/voxel_relief_test.exe $$("$(PYTHON)" -c "import json; l = json.load(open('$(ROOT)/data/layouts/layouts.json'))['layouts']; ids = [e['id'] for e in l]; print(ids.index('LAYOUT_ROUTE101') + 1, ids.index('LAYOUT_ROUTE116') + 1, ids.index('LAYOUT_RUSTURF_TUNNEL') + 1, ids.index('LAYOUT_ROUTE108') + 1, ids.index('LAYOUT_LILYCOVE_CITY') + 1, ids.index('LAYOUT_ROUTE124') + 1, ids.index('LAYOUT_ROUTE126') + 1)")
 
 build/voxel_relief_test.exe: tests/voxel_relief_test.c src/voxel/voxel_relief.c src/voxel/voxel_relief.h
 	@mkdir -p $(@D)
@@ -689,6 +726,14 @@ verify-voxel-regions: romfs/voxel/regions.bin
 verify: verify-voxel-building-anim
 verify-voxel-building-anim: romfs/voxel/buildings.bin
 	"$(PYTHON)" -B tests/voxel_building_anim_test.py --cc "$(HOSTCC)"
+
+# The placements a script switches (VXB9's conditions: Mauville's beams),
+# loaded by voxel_building.c: each stands only while its cell holds its
+# metatile; a VXB8 file still loads, every placement standing always.
+.PHONY: verify-voxel-building-when
+verify: verify-voxel-building-when
+verify-voxel-building-when:
+	"$(PYTHON)" -B tests/voxel_building_when_test.py --cc "$(HOSTCC)"
 
 # A room's pieces judged by what the 45-degree proof cannot see
 # (scripts/voxel_defect_scan.py on gen_voxel_buildings' room facts): every

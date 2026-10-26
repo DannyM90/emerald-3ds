@@ -84,9 +84,10 @@ typedef bool bool8;
 #define POKEMON_NAME_LENGTH 10
 #define PLAYER_NAME_LENGTH 7
 #define MAX_MON_MOVES 4
+#define MAX_BATTLERS_COUNT 4
 #define ITEM_NONE 0
 #define MAPSEC_NONE 213
-#define CTR_TEXT(english, spanish, french, italian, portuguese, japanese) spanish
+#define CTR_TEXT(english, spanish, french, italian, portuguese, german, japanese) spanish
 #define SPECIES_NONE 0
 #define FLAG_GET_SEEN 0
 #define VAR_REPEL_STEP_COUNT 0x4021
@@ -110,6 +111,7 @@ struct CtrDexView { u8 state, national, data[300]; };
     source += define(bottom, 'HIT_OPTION_BACK')
     source += between(bottom, 'enum\n{\n    MODE_OFF,', '};')
     source += between(bottom, 'typedef struct\n{\n    u16 species;      /* SPECIES_NONE: empty slot */', '} MonView;')
+    source += between(bottom, 'typedef struct\n{\n    u16 species, iconSpecies, hp, maxHp;', '} TargetView;')
     source += between(bottom, '#define ENC_ROWS', '} EncRow;')
     for name in ('ENC_SHOWN', 'OPT_ROWS_SHOWN', 'NUZ_TEXT'):
         source += define(bottom, name)

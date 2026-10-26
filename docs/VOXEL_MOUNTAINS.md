@@ -78,6 +78,11 @@ map or a cell. The current ones (`voxel_terraces.py`):
   rock, it is filled with that rock's own block, not the ground behind.
 - Steps carved in a face are not cut away (their shaded treads are not
   ground).
+- **Cuts follow the drawing**: a rock tile's background is cut pixel for
+  pixel, never straightened into a polygon (that lifted background with the
+  rock, painted its colour). Water drawing a boulder the hand lifted is cut
+  the same way, its water left at the river's level. A house or a prop is
+  never the ground behind a cut.
 - **Ridge boulders**: the lower half (09b/09c) under a band is the ridge's
   rounded end (rock); the upper half (093/094) next to a higher top is that
   top's rounded flank (a band); over a band it takes the band's piece.
@@ -126,10 +131,19 @@ for one map.
 
 ## Never
 
-- **Ledges and berry soil are never touched.** `ledgecheck.py` must report 0
-  differences.
+- **Berry soil is never touched, nor a ledge's shape.** A ledge on level
+  land stays the generator's berm. A ledge between two levels (the ground it
+  is jumped from higher than the ground it is jumped to) is a step, its lip
+  falling from one to the other; ledges one behind the other the way they
+  are jumped share one drop, on the cells whose lip is drawn; a ledge whose
+  far side reads higher (a mountain's top beside it) stays a berm on the
+  ground it is jumped from; ground walled in by ledges alone, jumped
+  into from one level and out of to a lower one, is a landing half way
+  (`voxel_terraces.py`, "ledges between two levels"). `ledgecheck.py` must
+  report 0 differences outside those.
 - No per-map or per-cell exceptions in the code.
-- No fractional levels: a piece is a whole top, face, band or corner.
+- No fractional levels: a piece is a whole top, face, band or corner. The
+  one exception is ground between ledges (a landing), at half a level.
 - No geometry outside the 16 px grid, no slants, hips or stretched pieces.
 - No west/east side walls the drawing does not have: with the camera's
   perspective they read as dark slits.
@@ -218,7 +232,7 @@ From `3ds_port/scripts` (`--relief X.bin` checks a trial relief instead of
 | `python voxel_grid_check.py LAYOUT[,LAYOUT...] --holes` | every triangle a top, a vertical wall on the grid, or a band; 0 deformations |
 | `python voxel_art_check.py LAYOUT` | every drawn pixel on a surface of its class; split seams |
 | `python voxel_terraces.py LAYOUT --check` | `open edges: 0` |
-| `python ledgecheck.py OLD.bin NEW.bin` | ledges and berry soil unchanged: 0 differences |
+| `python ledgecheck.py OLD.bin NEW.bin` | ledges and berry soil unchanged: 0 differences (but ledges between two levels) |
 
 The full relief: `VOXEL_RELIEF_CACHE=build/relief_cache python3
 scripts/gen_voxel_relief.py --output build/relief_new.bin` from
