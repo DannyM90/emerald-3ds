@@ -61,6 +61,10 @@ typedef struct
     int originX, originY;
     int width, height;
     bool indoor;
+    /* Pixels the map stands over its base here, the way it was reached: what
+     * the seams walked from the current map ask (VoxelRelief_SeamStep), so it
+     * meets each map it was placed from whatever Hoenn's loops add up to. */
+    int lift;
 } VoxelMapInstance;
 
 /* Cheap enough to call once per frame: no payload is touched. */

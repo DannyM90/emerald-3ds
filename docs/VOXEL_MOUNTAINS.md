@@ -134,7 +134,10 @@ for one map.
 - **Berry soil is never touched, nor a ledge's shape.** A ledge on level
   land stays the generator's berm. A ledge between two levels (the ground it
   is jumped from higher than the ground it is jumped to) is a step, its lip
-  falling from one to the other; ground walled in by ledges alone, jumped
+  falling from one to the other; ledges one behind the other the way they
+  are jumped share one drop, on the cells whose lip is drawn; a ledge whose
+  far side reads higher (a mountain's top beside it) stays a berm on the
+  ground it is jumped from; ground walled in by ledges alone, jumped
   into from one level and out of to a lower one, is a landing half way
   (`voxel_terraces.py`, "ledges between two levels"). `ledgecheck.py` must
   report 0 differences outside those.

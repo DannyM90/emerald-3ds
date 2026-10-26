@@ -196,6 +196,48 @@ def test_landings():
     assert vt.ledge_landings(c, flat) == {}
 
 
+def test_ledge_chains_and_uphill():
+    # two ledges one after the other the way they are jumped (Route 112):
+    # one drop from the ground behind to the ground in front, on the cell
+    # whose lip is drawn; the grass before it stays at the top
+    rows = ["......",
+            "..>>..",
+            "......"]
+    c = LedgeCells(rows)
+    flat = {cell: (2 * L if cell[0] < 2 else L) for cell in c.src if cell not in c.jumps}
+    with patch.object(vt, "ledge_drawn", lambda c, cell: cell == (3, 1)):
+        sides = vt.ledge_sides(c, None, flat)
+    assert sides[(2, 1)] == {(1, 0): [2 * L, 2 * L]}, sides[(2, 1)]
+    assert sides[(3, 1)] == {(1, 0): [2 * L, L]}, sides[(3, 1)]
+    # both drawn: half the drop each
+    with patch.object(vt, "ledge_drawn", lambda c, cell: True):
+        sides = vt.ledge_sides(c, None, flat)
+    assert sides[(2, 1)] == {(1, 0): [2 * L, 1.5 * L]}, sides[(2, 1)]
+    assert sides[(3, 1)] == {(1, 0): [1.5 * L, L]}, sides[(3, 1)]
+    # the lip's top marked: the grass before it falls to there
+    with patch.object(vt, "ledge_drawn", lambda c, cell: cell == (3, 1)):
+        sides = vt.ledge_sides(c, None, flat, {(3, 1): {"level": 1.5 * L}})
+    assert sides[(2, 1)] == {(1, 0): [2 * L, 1.5 * L]}, sides[(2, 1)]
+    assert sides[(3, 1)] == {(1, 0): [1.5 * L, L]}, sides[(3, 1)]
+
+    # jumped up (Route 113's, onto a mountain's top read beside it): a berm
+    # on the ground it is jumped from
+    rows = ["...",
+            ".v.",
+            "..."]
+    c = LedgeCells(rows)
+    flat = {cell: (0 if cell[1] < 1 else L) for cell in c.src if cell not in c.jumps}
+    ledges = vt.lay_ledges(c, None, flat, {}, {})
+    assert ledges["uphill"] == {(1, 1)}, ledges["uphill"]
+    assert ledges["sides"][(1, 1)] == {(0, 1): [0, 0]}, ledges["sides"][(1, 1)]
+    # a top marked under the foot takes the foot with it (and a foot over
+    # the top, the top)
+    marked = vt.ledge_sides(c, None, flat, {(1, 1): {"level": -L}})
+    assert marked[(1, 1)] == {(0, 1): [-L, -L]}, marked[(1, 1)]
+    marked = vt.ledge_sides(c, None, flat, {(1, 1): {"foot": 2 * L}})
+    assert marked[(1, 1)] == {(0, 1): [2 * L, 2 * L]}, marked[(1, 1)]
+
+
 def test_real_ledges():
     # Lilycove: its two rings of ledges between the hill and the town below
     # stand half way, every ledge round them a step; none jumped up
@@ -210,6 +252,13 @@ def test_real_ledges():
     ring = [at[(x, y)] for x in range(47, 55) for y in (9, 11)] + [at[(47, 10)], at[(54, 10)]]
     assert set(ring) <= sol["ledges"]["steps"], set(ring) - sol["ledges"]["steps"]
     assert not sol["ledges"]["uphill"], sol["ledges"]["uphill"]
+    # a ledge marked with a piece of the mountain is that piece, no ledge
+    auto = vt.solve_auto(lid)
+    cell = at[(48, 9)]
+    rock = vt.finish(auto, {cell: {"level": hill, "piece": "S"}})
+    assert rock["pieces"][cell] == ("S", hill), rock["pieces"][cell]
+    assert cell not in rock["cells"].jumps and cell not in rock["kept"]
+    assert cell in auto["cells"].jumps and cell in c.jumps
 
 
 if __name__ == "__main__":

@@ -553,7 +553,104 @@ static const ReliefLayout *LayoutOf(const VoxelMapInstance *inst)
 float VoxelRelief_Base(const VoxelMapInstance *inst)
 {
     const ReliefLayout *l = LayoutOf(inst);
-    return l != NULL ? l->base / 16.0f : 0.0f;
+
+    if (inst == NULL)
+        return 0.0f;
+    return ((l != NULL ? l->base : 0) + inst->lift) / 16.0f;
+}
+
+/*
+ * Hoenn does not close. Route 119 climbs six levels to Fortree's plateau, and
+ * nothing on Routes 120 and 121 comes down again: Lilycove's sea stands where
+ * Fortree does, the open sea round it (Routes 122 and 124) where Slateport's
+ * does. Whatever level the world gives each map, some seam round that loop
+ * asks for a step, and a step moved off one seam turns up at the next.
+ *
+ * No view sees the whole loop, though: only the maps round the player. So a
+ * map is not placed at one level for good - each is placed from the map it
+ * was reached by, as high as their seam asks, starting from the current map
+ * (voxel_world.c AddConnections). The two sides of a seam always meet, and
+ * what the loop adds up to is only ever where the view does not reach. A map
+ * keeps the level it was placed at across a crossing (the new current map
+ * keeps its lift), so nothing moves when the player walks over a seam.
+ *
+ * The step a seam asks: every cell along it compares the edge both maps
+ * share, base and relief, the mean of its lattice points; the commonest
+ * difference, where three cells in four agree on it (a seam whose maps only
+ * differ in places - an island, a ledge - has none), in 4-pixel steps (a
+ * lattice step of the sun's surface table). The pixels to add to `b`'s lift
+ * for it to meet `a` as `a` stands; 0 for maps that do not touch.
+ */
+#define SEAM_CELLS_MAX 256
+
+int VoxelRelief_SeamStep(const VoxelMapInstance *a, const VoxelMapInstance *b)
+{
+    const ReliefLayout *la = LayoutOf(a), *lb = LayoutOf(b);
+    const unsigned last = VOXEL_RELIEF_SIDE - 1;
+    int diff[SEAM_CELLS_MAX];
+    int from, to, ax, ay, bx, by, dx, dy;
+    unsigned ai, aj, bi, bj, di, dj, count = 0, best = 0, n = 0;
+    int step = 0;
+
+    if (a == NULL || b == NULL || (la == NULL && lb == NULL))
+        return 0;
+    if (a->originX + a->width == b->originX || b->originX + b->width == a->originX)
+    {
+        bool east = a->originX + a->width == b->originX;
+
+        from = a->originY > b->originY ? a->originY : b->originY;
+        to = a->originY + a->height < b->originY + b->height ? a->originY + a->height
+                                                             : b->originY + b->height;
+        ax = east ? a->originX + a->width - 1 : a->originX;
+        bx = east ? b->originX : b->originX + b->width - 1;
+        ay = by = from;
+        dx = 0, dy = 1;
+        ai = east ? last : 0, bi = east ? 0 : last, aj = bj = 0, di = 0, dj = 1;
+    }
+    else if (a->originY + a->height == b->originY || b->originY + b->height == a->originY)
+    {
+        bool south = a->originY + a->height == b->originY;
+
+        from = a->originX > b->originX ? a->originX : b->originX;
+        to = a->originX + a->width < b->originX + b->width ? a->originX + a->width
+                                                           : b->originX + b->width;
+        ay = south ? a->originY + a->height - 1 : a->originY;
+        by = south ? b->originY : b->originY + b->height - 1;
+        ax = bx = from;
+        dx = 1, dy = 0;
+        aj = south ? last : 0, bj = south ? 0 : last, ai = bi = 0, di = 1, dj = 0;
+    }
+    else
+        return 0;
+    for (int c = from; c < to && n < SEAM_CELLS_MAX; ++c, ++n)
+    {
+        const int16_t *ga = VoxelRelief_Cell(a, ax + dx * (c - from), ay + dy * (c - from));
+        const int16_t *gb = VoxelRelief_Cell(b, bx + dx * (c - from), by + dy * (c - from));
+        int sum = 0;
+
+        for (unsigned p = 0; p < VOXEL_RELIEF_SIDE; ++p)
+        {
+            unsigned ka = (aj + dj * p) * VOXEL_RELIEF_SIDE + ai + di * p;
+            unsigned kb = (bj + dj * p) * VOXEL_RELIEF_SIDE + bi + di * p;
+
+            sum += (la != NULL ? la->base : 0) + (ga != NULL ? ga[ka] : 0)
+                 - (lb != NULL ? lb->base : 0) - (gb != NULL ? gb[kb] : 0);
+        }
+        /* to the nearest 4 pixels */
+        diff[n] = (int)floorf(sum / (4.0f * VOXEL_RELIEF_SIDE) + 0.5f) * 4;
+    }
+    for (unsigned i = 0; i < n; ++i)
+    {
+        count = 0;
+        for (unsigned j = 0; j < n; ++j)
+            count += diff[j] == diff[i];
+        if (count > best)
+        {
+            best = count;
+            step = diff[i];
+        }
+    }
+    return n != 0 && 4u * best >= 3u * n ? step : 0;
 }
 
 const int16_t *VoxelRelief_Cell(const VoxelMapInstance *inst, int x, int y)
@@ -834,7 +931,8 @@ float VoxelRelief_SurfaceAt(float worldX, float worldZ)
     if (l == NULL || l->surface == NULL)
         return 0.0f;
     fx = (worldX - inst->originX) * n;
-    fz = (worldZ - inst->originY) * n;
+    /* the table is of the drawing on its base: a lift moves it south too */
+    fz = (worldZ - inst->originY) * n - inst->lift / 4.0f;
     i = FloorI(fx);
     k = FloorI(fz);
     fx -= i;
@@ -855,7 +953,8 @@ float VoxelRelief_SurfaceTop(const VoxelMapInstance *inst, int x, int z, float *
         return 0.0f;
     x -= inst->originX;
     z -= inst->originY;
-    for (int k = z * n; k <= z * n + n; ++k)
+    /* (a lift is in 4-pixel steps, one of the table's rows each) */
+    for (int k = z * n - inst->lift / 4; k <= z * n + n - inst->lift / 4; ++k)
         for (int i = x * n; i <= x * n + n; ++i)
         {
             float v = SurfacePoint(l, i, k);

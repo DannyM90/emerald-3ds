@@ -334,6 +334,7 @@ static void FillInstance(VoxelMapInstance *inst, const struct MapHeader *header,
     inst->height = layout->height;
     inst->indoor = header->mapType == MAP_TYPE_INDOOR
                 || header->mapType == MAP_TYPE_SECRET_BASE;
+    inst->lift = 0;
 }
 
 /*
@@ -440,6 +441,8 @@ static void AddConnections(const VoxelMapInstance *from, bool near, bool keep)
         placed = &sPlaced[sPlacedCount++];
         FillInstance(placed, neighbour, NeighbourLayoutId(neighbour, conn->mapGroup, conn->mapNum),
                      conn->mapGroup, conn->mapNum, originX, originY);
+        /* as high as the seam with the map it is reached from asks */
+        placed->lift = from->lift + VoxelRelief_SeamStep(from, placed);
         if ((near || keep || gap <= VOXEL_WORLD_REACH) && sInstanceCount < MAX_VOXEL_MAP_INSTANCES)
             sInstances[sInstanceCount++] = *placed;
     }
@@ -483,9 +486,76 @@ static bool VariantFits(const VoxelMapInstance *inst, unsigned layoutId, unsigne
  * The set depends on the current map alone, never on the view: a change to
  * it is a new epoch, and every chunk in view verified again.
  */
+/*
+ * The lift each map last stood at (voxel_relief.c VoxelRelief_SeamStep): the
+ * map the player comes to keeps it, so the world is not moved under them -
+ * across a seam it is the lift the map already had on screen, through a
+ * warp the one it had when last seen, and the chunks built for it stand.
+ * Going round one of Hoenn's loops adds what the loop does not close by; a
+ * lift past LIFT_FORGET is let go at the next warp, the map back at its base.
+ */
+#define LIFT_MEMORY 32
+#define LIFT_FORGET (8 * 16)
+
+static struct
+{
+    bool used;
+    s16 mapGroup, mapNum;
+    s16 lift;
+} sLiftMemory[LIFT_MEMORY];
+static unsigned sLiftMemoryNext;
+
+static int RememberedLift(int mapGroup, int mapNum, bool *found)
+{
+    for (unsigned i = 0; i < LIFT_MEMORY; ++i)
+        if (sLiftMemory[i].used && sLiftMemory[i].mapGroup == mapGroup
+         && sLiftMemory[i].mapNum == mapNum)
+        {
+            *found = true;
+            return sLiftMemory[i].lift;
+        }
+    *found = false;
+    return 0;
+}
+
+static void RememberLift(const VoxelMapInstance *inst)
+{
+    unsigned slot = sLiftMemoryNext;
+
+    for (unsigned i = 0; i < LIFT_MEMORY; ++i)
+        if (sLiftMemory[i].used && sLiftMemory[i].mapGroup == inst->mapGroup
+         && sLiftMemory[i].mapNum == inst->mapNum)
+        {
+            sLiftMemory[i].lift = (s16)inst->lift;
+            return;
+        }
+    if (inst->lift == 0)
+        return;     /* forgotten is 0 */
+    sLiftMemory[slot].used = true;
+    sLiftMemory[slot].mapGroup = (s16)inst->mapGroup;
+    sLiftMemory[slot].mapNum = (s16)inst->mapNum;
+    sLiftMemory[slot].lift = (s16)inst->lift;
+    sLiftMemoryNext = (slot + 1u) % LIFT_MEMORY;
+}
+
+/* The lift the current map keeps: the one it had among the maps on screen
+ * (a crossing), else the one remembered (a warp). */
+static int CurrentLift(int mapGroup, int mapNum)
+{
+    bool found;
+    int lift;
+
+    for (unsigned i = 0; i < sInstanceCount; ++i)
+        if (sInstances[i].mapGroup == mapGroup && sInstances[i].mapNum == mapNum)
+            return sInstances[i].lift;
+    lift = RememberedLift(mapGroup, mapNum, &found);
+    return lift > LIFT_FORGET || lift < -LIFT_FORGET ? 0 : lift;
+}
+
 void VoxelWorld_BuildInstances(void)
 {
     unsigned near;
+    int lift = CurrentLift(gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum);
 
 #ifdef PLATFORM_3DS
     VoxelBuildings_SetVariantFits(VariantFits);
@@ -507,6 +577,7 @@ void VoxelWorld_BuildInstances(void)
      * (overworld.c, SetCurrentMapLayout). Keyed by the header's, the
      * relief, regions and buildings were the default layout's. */
     sPlaced[0].layoutId = gSaveBlock1Ptr->mapLayoutId;
+    sPlaced[0].lift = sPlaced[0].indoor ? 0 : lift;
     sInstances[0] = sPlaced[0];
     sInstances[0].live = true;
     sPlacedCount = sInstanceCount = 1;
@@ -515,6 +586,8 @@ void VoxelWorld_BuildInstances(void)
     /* Nearest first: the walk goes outwards a crossing at a time. */
     for (unsigned i = 1; i < sPlacedCount; ++i)
         AddConnections(&sPlaced[i], false, i < near);
+    for (unsigned i = 0; i < sInstanceCount; ++i)
+        RememberLift(&sInstances[i]);
 }
 
 unsigned VoxelWorld_InstanceCount(void)

@@ -3097,6 +3097,10 @@ static uint32_t SiteHash(const ChunkSite *site)
     uint32_t standing = sHaveBuildings && !site->border
                       ? VoxelBuildings_LiveSignature(site->inst) * 2654435761u : 0u;
 
+    /* the lift its map was placed at (the belt's: the current map's), all
+     * of it that much higher (VoxelRelief_Base) */
+    standing ^= (uint32_t)site->inst->lift * 0x9E3779B1u;
+
 #if CTR_VOXEL_LIGHTING
     if (!site->inst->indoor)
         return VoxelLighting_Hash(site->x0, site->y0, site->x1, site->y1) ^ standing;
@@ -5130,6 +5134,7 @@ static uint32_t InstanceSignature(void)
             (uint32_t)(uintptr_t)inst->primaryTileset,
             (uint32_t)(uintptr_t)inst->secondaryTileset,
             inst->indoor ? 1u : 0u,
+            (uint32_t)inst->lift,
         };
 
         for (unsigned f = 0; f < sizeof(fields) / sizeof(fields[0]); ++f)
