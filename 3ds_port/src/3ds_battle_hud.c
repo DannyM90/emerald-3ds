@@ -596,9 +596,15 @@ static void MakeLabels(const uint16_t *boxTileVram)
     if (!sExpLabel.made && sExpLabel.tries < LABEL_TRIES && boxTileVram)
     {
         /* "EXP": the player's box, row 4 of its tiles, columns 2 and 3,
-         * lines 2-4 - the label's olive top and yellow letters. */
+         * lines 2-4 - the label's olive top and yellow letters. German's
+         * "EP" has letters a line taller, down to line 5. */
+#if GAME_LANGUAGE == LANGUAGE_GERMAN
+        enum { EXP_LINES = 4 };
+#else
+        enum { EXP_LINES = 3 };
+#endif
         memset(bits, 0, sizeof(bits));
-        for (int y = 0; y < 3; ++y)
+        for (int y = 0; y < EXP_LINES; ++y)
             for (int x = 0; x < 16; ++x)
             {
                 const uint8_t *tile = (const uint8_t *)boxTileVram + (34 + x / 8) * 32;
@@ -606,7 +612,7 @@ static void MakeLabels(const uint16_t *boxTileVram)
 
                 bits[y * 16 + x] = (v == 4 || v == 9) && x >= 1 && x <= 12;
             }
-        Trace(&sExpLabel, bits, 16, 3);
+        Trace(&sExpLabel, bits, 16, EXP_LINES);
     }
 }
 
