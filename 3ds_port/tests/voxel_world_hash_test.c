@@ -61,6 +61,10 @@ int VoxelTree_Part(const void *secondaryTileset, int metatileId)
 int VoxelTree_GroundMetatile(const void *secondaryTileset, int metatileId)
 { (void)secondaryTileset; return metatileId; }
 bool VoxelRelief_IsDrawn(const VoxelMapInstance *inst) { (void)inst; return false; }
+bool VoxelRelief_EdgeFillAt(const VoxelMapInstance *ring, int worldX, int worldY, VoxelEdgeFill *fill)
+{ (void)ring; (void)worldX; (void)worldY; (void)fill; return false; }
+bool VoxelRelief_EdgeFills(unsigned layoutId, unsigned i, int *metatile)
+{ (void)layoutId; (void)i; (void)metatile; return false; }
 /* The row's seam between maps 3 and 4 asks map 4 a level up (Hoenn's loops
  * do not close: voxel_relief.c VoxelRelief_SeamStep). */
 static bool sSeamStep;

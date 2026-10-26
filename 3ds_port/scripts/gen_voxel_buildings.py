@@ -1537,6 +1537,16 @@ def front_gaps(mine, foot, rows=4):
     return False
 
 
+def _set_order(seq):
+    """list(set(seq)) as 64-bit CPython orders it (gen_voxel_relief.set_order).
+    plain_side's ties (Counter.most_common: the colour met first) and its
+    float sums follow the order its pixels come in; a set of them iterates
+    in hash() order, which is 32-bit on WebAssembly (the web builder's
+    Pyodide), and there a room's wall took another side than the release's."""
+    import gen_voxel_relief
+    return gen_voxel_relief.set_order(seq)
+
+
 def plain_side(mine, fpx, height, foot, width=16, ends=3):
     """A piece's side as its front shows its casing where the two meet, row
     by row: each of the front's `height` rows at its foot in the commonest
@@ -1545,7 +1555,8 @@ def plain_side(mine, fpx, height, foot, width=16, ends=3):
     stuff where its ends are all outline. An outline row inside it (a
     drawer's edge, a door's split) takes the stuff above it; its first and
     last rows keep their outline where the front has one at its ends. Laid
-    along a side it reads as the piece's own panel, not as its front again."""
+    along a side it reads as the piece's own panel, not as its front again.
+    `mine` in a fixed order (_set_order), not a set: the order breaks ties."""
     rgb = lambda xy: fpx[xy][:3]  # noqa: E731
     lum = lambda c: 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]  # noqa: E731
     # its outline: dark, or far darker than its stuff - than the mean of it
@@ -1610,7 +1621,10 @@ def side_image(pc, mine, filled, fpx, shell, foot):
     if side == "front":
         return None, None
     if side == "plain":
-        return plain_side(mine, fpx, int(pc["height"]), foot), frozenset()
+        # its pixels as the room's one pass found them, row by row: the
+        # order plain_side's ties go by (_set_order)
+        return plain_side(_set_order(sorted(mine, key=lambda p: (p[1], p[0]))), fpx,
+                          int(pc["height"]), foot), frozenset()
     if side == "cell":
         cells = sorted({(y // 16, x // 16) for (x, y) in mine})
         whole = [(cy, cx) for (cy, cx) in cells
@@ -1658,7 +1672,7 @@ def slab_side(obj, rows, depth, z_back, height, ends=2):
     lum = lambda c: 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]  # noqa: E731
     first, last = rows[0], rows[-1] + 1
     cols = [u for u in range(W) if all(own(u, v) for v in rows)]
-    plain = plain_side({(u, v) for u in cols for v in rows}, px, len(rows), last)
+    plain = plain_side(_set_order([(u, v) for u in cols for v in rows]), px, len(rows), last)
     img = Image.new("RGBA", (max(1, depth), len(rows)))
     ipx = img.load()
     if not cols or len(rows) > SLAB_ROWS:
@@ -1725,8 +1739,8 @@ def table_plan(obj, hem, foot, height, back):
     sides = [("slab", slab_side(obj, list(range(foot - height, hem)), depth, z_back, height))]
     for n, r in enumerate(runs):
         if r["kind"] != "post":
-            pts = {(u, v) for u in range(r["u0"], r["u1"]) for v in range(hem, r["last"])
-                   if own(u, v)}
+            pts = _set_order([(u, v) for u in range(r["u0"], r["u1"]) for v in range(hem, r["last"])
+                              if own(u, v)])
             sides.append((n, plain_side(pts, px, r["last"] - hem, r["last"])))
     img = Image.new("RGBA", (max(im.width for _, im in sides), sum(im.height for _, im in sides)))
     rects, top = {}, 0

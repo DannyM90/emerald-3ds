@@ -86,10 +86,10 @@ class GermanManifestTests(unittest.TestCase):
 
 
 def ctr_texts():
-    """Every CTR_TEXT(...) of the port whose six arguments are string literals."""
+    """Every CTR_TEXT(...) of the port whose seven arguments are string literals."""
     literal = r'"(?:[^"\\]|\\.)*"'
     call = re.compile(r"CTR_TEXT\(\s*(" + r"(?:" + literal + r"\s*)+" +
-                      r"(?:,\s*(?:" + literal + r"\s*)+){5})\)")
+                      r"(?:,\s*(?:" + literal + r"\s*)+){6})\)")
     for folder in ("src", "include"):
         for path in sorted((ROOT / "3ds_port" / folder).glob("*")):
             if path.suffix not in (".c", ".h", ".inc"):
@@ -99,7 +99,7 @@ def ctr_texts():
                 for arg in re.split(r",\s*(?=\")", match.group(1)):
                     args.append("".join(ast.literal_eval(part)
                                         for part in re.findall(literal, arg)))
-                if len(args) == 6:
+                if len(args) == 7:
                     yield path.name, args
 
 

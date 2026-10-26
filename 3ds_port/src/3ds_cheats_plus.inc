@@ -35,9 +35,9 @@
 #include "string_util.h"
 #include "constants/species.h"
 
-static const char *const sTapToSet[] = {CTR_TEXT("TAP TO SET", "TOCA PARA ACTIVAR", "ACTIVER", "ATTIVA", "TOQUE P/ ATIVAR", "ANTIPPEN")};
-static const char *const sTapToToggle[] = {CTR_TEXT("TAP: ON / OFF", "TOCA: SÍ / NO", "OUI / NON", "SÌ / NO", "TOQUE: SIM/NÃO", "AN / AUS")};
-static const char *const sTapToHeal[] = {CTR_TEXT("TAP TO HEAL", "TOCA PARA CURAR", "SOIGNER", "CURA", "TOQUE P/ CURAR", "HEILEN")};
+static const char *const sTapToSet[] = {CTR_TEXT("TAP TO SET", "TOCA PARA ACTIVAR", "ACTIVER", "ATTIVA", "TOQUE P/ ATIVAR", "ANTIPPEN", "TAP TO SET")};
+static const char *const sTapToToggle[] = {CTR_TEXT("TAP: ON / OFF", "TOCA: SÍ / NO", "OUI / NON", "SÌ / NO", "TOQUE: SIM/NÃO", "AN / AUS", "TAP: ON / OFF")};
+static const char *const sTapToHeal[] = {CTR_TEXT("TAP TO HEAL", "TOCA PARA CURAR", "SOIGNER", "CURA", "TOQUE P/ CURAR", "HEILEN", "TAP TO HEAL")};
 
 static void GiveTickets(void)
 {
@@ -217,7 +217,7 @@ static void GiveMonNow(void)
 extern const u8 EventScript_CtrOpenStorage[];
 extern const u8 EventScript_CtrMoveRelearner[];
 
-static const char *const sTapToOpen[] = {CTR_TEXT("TAP TO OPEN", "TOCA PARA ABRIR", "OUVRIR", "APRI", "TOQUE P/ ABRIR", "ÖFFNEN")};
+static const char *const sTapToOpen[] = {CTR_TEXT("TAP TO OPEN", "TOCA PARA ABRIR", "OUVRIR", "APRI", "TOQUE P/ ABRIR", "ÖFFNEN", "TAP TO OPEN")};
 
 static void RunFieldScript(const u8 *script)
 {
@@ -242,12 +242,12 @@ static void OpenMoveRelearner(void)
 
 /* TIME OF DAY: each step sets the clock to that part of the day. */
 static const char *const sTimesOfDay[] = {
-    CTR_TEXT("MORNING", "MAÑANA", "MATIN", "MATTINA", "MANHÃ", "MORGEN"),
-    CTR_TEXT("FORENOON", "MEDIA MAÑANA", "MATINÉE", "TARDA MATT.", "MEIO DA MANHÃ", "VORMITTAG"),
-    CTR_TEXT("AFTERNOON", "TARDE", "APRÈS-MIDI", "POMERIGGIO", "TARDE", "NACHMITTAG"),
-    CTR_TEXT("LATE AFTERN.", "TARDE TARDÍA", "FIN APRÈS-MIDI", "TARDO POM.", "FIM DA TARDE", "SPÄTER NACHM."),
-    CTR_TEXT("EVENING", "ATARDECER", "SOIR", "SERA", "ANOITECER", "ABEND"),
-    CTR_TEXT("NIGHT", "NOCHE", "NUIT", "NOTTE", "NOITE", "NACHT"),
+    CTR_TEXT("MORNING", "MAÑANA", "MATIN", "MATTINA", "MANHÃ", "MORGEN", "MORNING"),
+    CTR_TEXT("FORENOON", "MEDIA MAÑANA", "MATINÉE", "TARDA MATT.", "MEIO DA MANHÃ", "VORMITTAG", "FORENOON"),
+    CTR_TEXT("AFTERNOON", "TARDE", "APRÈS-MIDI", "POMERIGGIO", "TARDE", "NACHMITTAG", "AFTERNOON"),
+    CTR_TEXT("LATE AFTERN.", "TARDE TARDÍA", "FIN APRÈS-MIDI", "TARDO POM.", "FIM DA TARDE", "SPÄTER NACHM.", "LATE AFTERN."),
+    CTR_TEXT("EVENING", "ATARDECER", "SOIR", "SERA", "ANOITECER", "ABEND", "EVENING"),
+    CTR_TEXT("NIGHT", "NOCHE", "NUIT", "NOTTE", "NOITE", "NACHT", "NIGHT"),
 };
 /* 6:00 dawn, 10:00, 14:00, 16:30, 18:00 sunset, 22:00 (3ds_daynight.c's keys) */
 static const unsigned short sTimeOfDayMinutes[] = {360, 600, 840, 990, 1080, 1320};

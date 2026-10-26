@@ -42,7 +42,7 @@ class StagingRomProfileTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "does not match"):
                     staging.main(arguments + ["--rom", str(folder / "wrong.gba")])
             self.assertFalse(destination.exists())
-            configuration.write_text("#define GAME_LANGUAGE (LANGUAGE_JAPANESE)\n")
+            configuration.write_text("#define GAME_LANGUAGE (LANGUAGE_KOREAN)\n")
             with self.assertRaisesRegex(ValueError, "Cannot determine"):
                 staging.main(arguments)
             self.assertFalse(destination.exists())
