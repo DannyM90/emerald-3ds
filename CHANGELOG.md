@@ -10,6 +10,11 @@
   palette of the ROM it comes from. The data pack is byte for byte the same.
   A file without a program is still generated as before.
 
+- Releases are made with one fixed Python (upstream.lock: 3.13, Pillow
+  12.3.0) - the voxel data depends on it - and `tools/docker_release.py`
+  makes one in a pinned environment (devkitARM by digest, the original
+  game's ELF built with the pinned agbcc), from scratch.
+
 - Web builder: the buildings came out different under Pyodide than on the
   desktop, so the web build failed its check: a wall of Sootopolis's gym
   took its colour from a tie broken by the order of a set, which follows a
