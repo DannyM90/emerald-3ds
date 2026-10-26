@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- OPTIONS > ENHANCEMENTS > REAL-TIME PACING is on by default: a new
+  settings.txt starts with it on (and so does one that never had it). A
+  settings.txt that already chose off keeps off.
+
+- 3D world: the rain, the sandstorm and the volcanic ash fall in the scene
+  instead of sliding over the screen - streaks, blowing sand and drifting
+  flakes in the air at their own depth, hidden by roofs and fading into the
+  distance, with the light of each weather and the thunderstorm's lightning
+  on the world. They cost the console almost nothing, and the 3D world no
+  longer draws the old sand and ash pictures over itself, which were most
+  of an Old 3DS frame.
+
+- 2D field: the sandstorm and the volcanic ash are drawn in one batch
+  instead of some two thousand separate pieces a frame.
+
 - Builder: the 3D scenery takes seconds instead of minutes. The release runs
   the voxel generators once per supported ROM and the recipe carries, for
   each of their files, a program that writes it again from the player's ROM

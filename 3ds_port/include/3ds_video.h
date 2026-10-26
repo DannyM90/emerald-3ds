@@ -324,6 +324,8 @@ void CtrVideo_MarkScreenOam(unsigned first, unsigned end);
  * player (the healing machine's balls and monitors): drawn where the map has
  * the machine rather than where the window layer has its text. */
 void CtrVideo_MarkMachineOam(unsigned first, unsigned end);
+/* And Fly's bird and its rider, flying on that picture around the player. */
+void CtrVideo_MarkFlyOam(unsigned first, unsigned end);
 const CtrVideoStats *CtrVideo_GetStats(void);
 
 /* Pure, SDK-free address/format helpers, also used by host regression tests. */

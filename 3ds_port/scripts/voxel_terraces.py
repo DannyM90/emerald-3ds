@@ -64,6 +64,7 @@ sys.path.insert(0, HERE)
 import gen_voxel_relief as gr  # noqa: E402
 import voxel_building as vb  # noqa: E402
 import voxel_props  # noqa: E402
+import voxel_relief_fixes as vrf  # noqa: E402
 
 LEVEL = 16
 N = 4                       # lattice steps per cell side (5 x 5 points)
@@ -2526,11 +2527,9 @@ def behind_trees(c, flat, grids, pieces=None, marked=()):
 # seam in a cliff six levels tall over Route 114's flat drawing).
 JOIN = (("LAYOUT_ROUTE115", "LAYOUT_ROUTE114"),)
 
-# Layouts that are one map drawn twice (the game swaps them as the story
-# goes): the second takes the hand marks of the first, where it has none of
-# its own - Route 111 without its Mirage Tower is Route 111, and its marks
-# were lost the day the tower fell.
-TWINS = {"LAYOUT_ROUTE111_NO_MIRAGE_TOWER": "LAYOUT_ROUTE111"}
+# Layouts that are one map drawn twice: the second takes the hand marks of
+# the first, where it has none of its own (voxel_relief_fixes.TWINS).
+TWINS = vrf.TWINS
 
 
 def group_of(layout_id):

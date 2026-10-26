@@ -236,6 +236,17 @@ static C3D_Tex sFogTex, sGloomTex;
 static VoxelGpuVertex *sFogSheets;
 static bool sHaveFog, sHaveGloom, sOwnsFog;
 static float sGloomAmount;
+/* The rain's, the sand's and the ash's particles (MakeWeather, DrawWeather):
+ * their own program, the second in voxel.shbin, and two buffers made once. */
+typedef struct
+{
+    int8_t across, along, pad[2]; /* the corner, in 1/64 of the vectors */
+    int16_t x, y, z, alpha;       /* place in the box, 1/32768; 1/16384 */
+} WeatherVertex;
+static shaderProgram_s sWeatherProgram;
+static bool sHaveWeatherProgram, sOwnsWeather;
+static int sUniBoxOffset = -1, sUniBoxSize = -1, sUniBoxBase = -1, sUniAcross = -1, sUniAlong = -1;
+static WeatherVertex *sStreaks, *sFlakes;
 #if CTR_VOXEL_LIGHTING
 static float sGloomX, sGloomY;
 #endif
@@ -245,6 +256,8 @@ static void MakeRays(void);
 static void MakeMotes(void);
 static void MakeFog(void);
 static void MakeGloom(void);
+static void MakeWeather(void);
+static void LoadWeatherProgram(void);
 static void FadeFor(bool sprites);
 #endif
 /* Static models one chunk may place (their spots, not their geometry). */
@@ -2268,6 +2281,9 @@ bool CtrVoxel_Init(void)
         step = "locate shader uniforms";
         goto fail;
     }
+#if CTR_VOXEL_LIGHTING
+    LoadWeatherProgram();
+#endif
 
     /* First, while VRAM is still in one piece. */
     step = "chunk mesh VRAM";
@@ -2347,6 +2363,7 @@ bool CtrVoxel_Init(void)
     MakeMotes();
     MakeFog();
     MakeGloom();
+    MakeWeather();
 #endif
 
     /* Not fatal: without models the houses stay their cells' flat drawing. */
@@ -2455,6 +2472,10 @@ void CtrVoxel_Shutdown(void)
     linearFree(sFogSheets);
     sFogSheets = NULL;
     sHaveFog = sHaveGloom = sOwnsFog = false;
+    linearFree(sStreaks);
+    linearFree(sFlakes);
+    sStreaks = sFlakes = NULL;
+    sOwnsWeather = false;
     for (unsigned i = 0; i < VOXEL_BUILDING_PAGES; ++i)
     {
         memset(&sPageSlots[i], 0, sizeof(sPageSlots[i]));
@@ -2480,6 +2501,11 @@ void CtrVoxel_Shutdown(void)
     sStaging = NULL;
     linearFree(sDynamic);
     sDynamic = NULL;
+    if (sHaveWeatherProgram)
+    {
+        shaderProgramFree(&sWeatherProgram);
+        sHaveWeatherProgram = false;
+    }
     if (sDvlb != NULL)
     {
         shaderProgramFree(&sProgram);
@@ -6426,12 +6452,66 @@ static VoxelLight BaseLightFor(bool indoor)
             light.rays = 0.0f;
             light.bloom = 0.08f;
             light.motes = 0.0f;
+            /* The air grey with rain: the distance goes sooner, colder. */
+            light.hazeRgb[0] = 0.62f; light.hazeRgb[1] = 0.68f; light.hazeRgb[2] = 0.76f;
+            light.haze = 0.30f + 0.18f * VoxelWorld_WeatherAmount();
+            light.hazeStart = 0.85f;
+            {
+                /* A bolt: the world lit cold white for a moment. */
+                float bolt = VoxelWorld_Lightning();
+
+                for (int c = 0; c < 3; ++c)
+                {
+                    light.sun[c] += (1.55f - light.sun[c]) * bolt;
+                    light.shade[c] += (1.45f - light.shade[c]) * bolt;
+                    light.hazeRgb[c] += (0.92f - light.hazeRgb[c]) * bolt;
+                }
+                light.bloom += 0.30f * bolt;
+            }
             break;
+        case VOXEL_WEATHER_SAND:
+        {
+            /* A sandstorm: the sun a warm smudge, the shadows filled with
+             * the dust's own glow, and the distance gone into ochre. */
+            VoxelLight sand = light;
+
+            sand.sun[0] = 1.04f; sand.sun[1] = 0.93f; sand.sun[2] = 0.76f;
+            sand.shade[0] = 0.96f; sand.shade[1] = 0.86f; sand.shade[2] = 0.72f;
+            sand.haze = 0.72f;
+            sand.hazeRgb[0] = 0.86f; sand.hazeRgb[1] = 0.70f; sand.hazeRgb[2] = 0.48f;
+            sand.hazeStart = 0.55f;
+            sand.hazeRamp = 0.95f;
+            sand.dappleLow = sand.dappleHigh = 1.0f;
+            sand.rays = 0.0f;
+            sand.bloom = 0.16f;
+            sand.motes = 0.0f;
+            light = LightMix(&light, &sand, VoxelWorld_WeatherAmount());
+            break;
+        }
+        case VOXEL_WEATHER_ASH:
+        {
+            /* Under the volcano's plume: a dim, warm grey light, no hard sun
+             * to cast dapples, the far slopes lost in ash. */
+            VoxelLight ash = light;
+
+            ash.sun[0] = 0.90f; ash.sun[1] = 0.87f; ash.sun[2] = 0.84f;
+            ash.shade[0] = 0.80f; ash.shade[1] = 0.80f; ash.shade[2] = 0.83f;
+            ash.haze = 0.50f;
+            ash.hazeRgb[0] = 0.66f; ash.hazeRgb[1] = 0.63f; ash.hazeRgb[2] = 0.61f;
+            ash.hazeStart = 0.75f;
+            ash.hazeRamp = 0.90f;
+            ash.dappleLow = 0.96f; ash.dappleHigh = 1.01f;
+            ash.rays = 0.0f;
+            ash.bloom = 0.10f;
+            ash.motes = 0.0f;
+            light = LightMix(&light, &ash, VoxelWorld_WeatherAmount());
+            break;
+        }
         case VOXEL_WEATHER_FOG:
             light = FogLight(&light, VoxelWorld_Underground());
             break;
         case VOXEL_WEATHER_PARTICLES:
-            /* The weather's own ash or sand fills the air instead. */
+            /* The weather's own snow fills the air instead. */
             light.sun[0] = 0.93f; light.sun[1] = 0.92f; light.sun[2] = 0.88f;
             light.haze = 0.36f;
             light.dappleLow = 0.92f; light.dappleHigh = 1.03f;
@@ -6981,15 +7061,24 @@ static void DappleUniforms(int worldX, int worldZ, float lift)
 #define VOXEL_FOG_FADE 0.55f       /* ... share of that reach at which it starts to thin */
 #define VOXEL_FOG_SHEET_VERTICES (VOXEL_FOG_GRID * VOXEL_FOG_GRID * 6)
 
-static const struct
+typedef struct
 {
     float period;       /* tiles the pattern covers before it repeats */
     float height;       /* tiles above the player's ground */
     float driftX, driftZ; /* tiles per second */
     float strength;     /* the most the bank covers, at full fog */
-} sFogBanks[2] = {
+} FogBank;
+
+static const FogBank sFogBanks[2] = {
     {12.0f, 0.30f, -0.55f, 0.00f, 0.58f},
     {7.0f, 1.10f, -0.85f, -0.25f, 0.34f},
+};
+
+/* The sandstorm's dust on the same two sheets (their periods are the sheets'
+ * own): low and thick, swept along by the wind (DrawWeather). */
+static const FogBank sSandBanks[2] = {
+    {12.0f, 0.35f, -5.20f, 0.55f, 0.50f},
+    {7.0f, 1.30f, -7.80f, 0.25f, 0.30f},
 };
 
 /*
@@ -7425,6 +7514,11 @@ bool CtrVoxel_DrawsFog(void)
     return sReady && sOwnsFog;
 }
 
+bool CtrVoxel_DrawsWeather(void)
+{
+    return sReady && sOwnsWeather;
+}
+
 const C3D_Tex *CtrVoxel_Gloom(float *x, float *y, float *size, float *amount)
 {
 #if CTR_VOXEL_LIGHTING
@@ -7453,11 +7547,11 @@ const C3D_Tex *CtrVoxel_Gloom(float *x, float *y, float *size, float *amount)
  * the coverage unchanged (alpha = texture x shade, doubled back) while the
  * haze still sinks the far banks into the distance colour.
  */
-static void DrawFogBanks(const C3D_Mtx *view, const VoxelLight *light, bool cave, float density)
+static void DrawBanks(const C3D_Mtx *view, const VoxelLight *light, const FogBank *banks, uint32_t colour,
+                      float density)
 {
     double seconds = (double)svcGetSystemTick() / SYSCLOCK_ARM11;
     VoxelLight graded = *light;
-    uint32_t colour = cave ? 0xFFBFAB9Eu : 0xFFF2EBE6u; /* 0xAABBGGRR */
     C3D_TexEnv *env;
 
     for (int c = 0; c < 3; ++c)
@@ -7472,15 +7566,15 @@ static void DrawFogBanks(const C3D_Mtx *view, const VoxelLight *light, bool cave
 
     for (unsigned bank = 0; bank < 2; ++bank)
     {
-        float period = sFogBanks[bank].period;
-        float dx = (float)fmod(seconds * sFogBanks[bank].driftX, period);
-        float dz = (float)fmod(seconds * sFogBanks[bank].driftZ, period);
-        float strength = sFogBanks[bank].strength * density;
+        float period = banks[bank].period;
+        float dx = (float)fmod(seconds * banks[bank].driftX, period);
+        float dz = (float)fmod(seconds * banks[bank].driftZ, period);
+        float strength = banks[bank].strength * density;
         C3D_Mtx model;
 
         Mtx_Copy(&model, view);
         Mtx_Translate(&model, floorf(sCamera.targetX / period) * period + dx,
-                      sCamera.ground + sFogBanks[bank].height,
+                      sCamera.ground + banks[bank].height,
                       floorf(sCamera.targetZ / period) * period + dz, true);
         C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, sUniModelView, &model);
         SetOrigin(0.0f, 0.0f);
@@ -7507,6 +7601,377 @@ static void DrawFogBanks(const C3D_Mtx *view, const VoxelLight *light, bool cave
                        VOXEL_FOG_SHEET_VERTICES);
     }
     C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+    TerrainTexEnv(NULL);
+    SetGrade(light);
+}
+
+static void DrawFogBanks(const C3D_Mtx *view, const VoxelLight *light, bool cave, float density)
+{
+    DrawBanks(view, light, sFogBanks, cave ? 0xFFBFAB9Eu : 0xFFF2EBE6u, density); /* 0xAABBGGRR */
+}
+
+/*
+ * The rain, the sandstorm and the volcanic ash, in the scene instead of over
+ * it.
+ *
+ * On the GBA each is a handful of sprites laid over the screen: streaks that
+ * slide down the glass, a 64x64 picture of sand or ash scrolled across it
+ * (two thousand tiles of the 3DS's wide view, drawn every frame). Here they
+ * are particles in the air around the camera, at their own depth: a roof
+ * hides the rain that falls behind it, near drops are larger and faster than
+ * far ones, the distance haze swallows the far ones, and with the 3D slider
+ * every drop stands where it is.
+ *
+ * Each particle has a fixed place in a box (WeatherVertex) and nothing is
+ * rewritten as it falls: the weather's program (voxel_weather.v.pica) moves
+ * the box's contents by one offset a draw and wraps every particle back in,
+ * fading it out towards the box's sides so none is seen to wrap. The box
+ * follows the camera while the particles keep to the world: walking leaves
+ * the rain where it falls. A weather is two or three groups of particles,
+ * each its own draw with its own speed, wind and size, which gives the depth
+ * and the flutter one group could not. How many of each group are drawn
+ * follows the game's own weather as it comes and goes
+ * (VoxelWorld_WeatherAmount).
+ *
+ * The CPU cost is a dozen uniforms a draw. The buffers - VOXEL_STREAKS
+ * streaks, two triangles each, and VOXEL_FLAKES soft flakes, four - are made
+ * at start-up; the GPU draws at most a few thousand vertices and the thin
+ * fill of the particles themselves, and the sand's dust takes the fog's
+ * sheets (DrawBanks). The compositor drops the game's sprites meanwhile
+ * (CtrVoxel_DrawsWeather).
+ */
+#define VOXEL_STREAKS 768
+#define VOXEL_FLAKES 512
+#define VOXEL_STREAK_VERTICES 6
+#define VOXEL_FLAKE_VERTICES 12
+#define VOXEL_WEATHER_GROUPS 3
+/* A flake's corners against its middle: soft, but with a body to it. */
+#define VOXEL_FLAKE_RIM 0.35f
+/* The box's south side, tiles north of the camera's eye: the bottom of the
+ * picture looks down through the air just in front of it. */
+#define VOXEL_WEATHER_SOUTH 1.0f
+/* How sharply a particle fades in from the box's sides, its north and south
+ * and its top and bottom: x 1/2 the box, from where it is seen whole to the
+ * side. Narrow to the south, where the bottom of the picture is. */
+#define VOXEL_WEATHER_EDGE 8.0f
+#define VOXEL_WEATHER_EDGE_ALONG 24.0f
+#define VOXEL_WEATHER_TOP 6.0f
+/* Gone this near the lens, whole from LENS + RAMP tiles away: no streak
+ * smeared across the picture. */
+#define VOXEL_WEATHER_LENS 1.5f
+#define VOXEL_WEATHER_LENS_RAMP 1.6f
+
+typedef struct
+{
+    float velocity[3]; /* tiles per second */
+    float width;       /* a streak's width, or a flake's size */
+    float length;      /* a streak's length; 0: a flake */
+    float alpha;       /* x the weather's own */
+} WeatherGroup;
+
+typedef struct
+{
+    float box[3];       /* tiles: across, up, north to south */
+    float low;          /* the box's bottom, tiles over the player's ground */
+    uint32_t colour;    /* 0xAABBGGRR, alpha unused */
+    float alpha;        /* the most a particle is seen */
+    WeatherGroup groups[VOXEL_WEATHER_GROUPS];
+} WeatherKind;
+
+/* Cold and silver: long fast streaks in front, finer and slower ones behind
+ * them, the wind leaning them all the same way. */
+static const WeatherKind sRainKind = {
+    {24.0f, 8.5f, 28.0f}, -3.0f, 0xFFF4E8DEu, 0.62f,
+    {
+        {{-1.6f, -13.0f, 0.5f}, 0.034f, 0.95f, 1.00f},
+        {{-1.3f, -11.0f, 0.4f}, 0.028f, 0.75f, 0.85f},
+        {{-0.9f, -8.5f, 0.3f}, 0.020f, 0.45f, 0.60f},
+    },
+};
+
+/* Fine grains blown along the ground in long low gusts, warm. */
+static const WeatherKind sSandKind = {
+    {24.0f, 5.0f, 28.0f}, -1.5f, 0xFF7EB8E6u, 0.55f,
+    {
+        {{-13.0f, -0.6f, 1.0f}, 0.030f, 1.10f, 1.00f},
+        {{-17.0f, -0.3f, 0.6f}, 0.024f, 1.60f, 0.75f},
+        {{-9.5f, 0.4f, 1.6f}, 0.040f, 0.60f, 0.85f},
+    },
+};
+
+/* Soft pale flakes drifting down, each layer on its own breeze; large and
+ * light enough to read against the grey ground. */
+static const WeatherKind sAshKind = {
+    {24.0f, 8.0f, 28.0f}, -2.0f, 0xFFE2E6EAu, 1.00f,
+    {
+        {{-0.50f, -0.75f, 0.15f}, 0.120f, 0.0f, 1.00f},
+        {{-0.25f, -1.00f, -0.12f}, 0.100f, 0.0f, 0.95f},
+        {{-0.80f, -0.55f, 0.30f}, 0.145f, 0.0f, 0.85f},
+    },
+};
+
+static void LoadWeatherProgram(void)
+{
+    if (sDvlb->numDVLE < 2)
+    {
+        CtrLog_Write(CTR_LOG_ERROR, "VOXEL: voxel.shbin has no weather program");
+        return;
+    }
+    shaderProgramInit(&sWeatherProgram);
+    if (R_FAILED(shaderProgramSetVsh(&sWeatherProgram, &sDvlb->DVLE[1])))
+    {
+        CtrLog_Write(CTR_LOG_ERROR, "VOXEL: the weather program does not bind");
+        shaderProgramFree(&sWeatherProgram);
+        return;
+    }
+    sUniBoxOffset = shaderInstanceGetUniformLocation(sWeatherProgram.vertexShader, "boxOffset");
+    sUniBoxSize = shaderInstanceGetUniformLocation(sWeatherProgram.vertexShader, "boxSize");
+    sUniBoxBase = shaderInstanceGetUniformLocation(sWeatherProgram.vertexShader, "boxBase");
+    sUniAcross = shaderInstanceGetUniformLocation(sWeatherProgram.vertexShader, "across");
+    sUniAlong = shaderInstanceGetUniformLocation(sWeatherProgram.vertexShader, "along");
+    /* The world's uniforms must be where the world's program has them: one
+     * set of registers serves both (voxel_weather.v.pica). */
+    if (sUniBoxOffset < 0 || sUniBoxSize < 0 || sUniBoxBase < 0 || sUniAcross < 0 || sUniAlong < 0
+     || shaderInstanceGetUniformLocation(sWeatherProgram.vertexShader, "projection") != sUniProjection
+     || shaderInstanceGetUniformLocation(sWeatherProgram.vertexShader, "modelView") != sUniModelView
+     || shaderInstanceGetUniformLocation(sWeatherProgram.vertexShader, "fog") != sUniFog)
+    {
+        CtrLog_Write(CTR_LOG_ERROR, "VOXEL: the weather program's uniforms do not match");
+        shaderProgramFree(&sWeatherProgram);
+        return;
+    }
+    sHaveWeatherProgram = true;
+}
+
+static int16_t WeatherFraction(float f)
+{
+    return (int16_t)(f * 32767.0f);
+}
+
+static void WeatherCorner(WeatherVertex *v, int across, int along, const int16_t place[3], float alpha)
+{
+    v->across = (int8_t)across;
+    v->along = (int8_t)along;
+    v->pad[0] = v->pad[1] = 0;
+    v->x = place[0];
+    v->y = place[1];
+    v->z = place[2];
+    v->alpha = (int16_t)(alpha * VOXEL_SHADE_SCALE);
+}
+
+/*
+ * A streak runs from its head (along 0), where it is brightest, back up its
+ * fall to a tail that is gone (along 64): the eye's blur of a falling drop.
+ * A flake is a fan of four triangles, bright in the middle and fainter at
+ * its corners (VOXEL_FLAKE_RIM). Sizes, lengths and brightness vary a little from
+ * one to the next. Not fatal: without them the game's sprites stay.
+ */
+static void MakeWeather(void)
+{
+    sStreaks = linearAlloc(VOXEL_STREAKS * VOXEL_STREAK_VERTICES * sizeof(WeatherVertex));
+    sFlakes = linearAlloc(VOXEL_FLAKES * VOXEL_FLAKE_VERTICES * sizeof(WeatherVertex));
+    if (sStreaks == NULL || sFlakes == NULL)
+    {
+        CtrLog_Write(CTR_LOG_ERROR, "VOXEL: no linear memory for the weather");
+        linearFree(sStreaks);
+        linearFree(sFlakes);
+        sStreaks = sFlakes = NULL;
+        return;
+    }
+    for (unsigned i = 0; i < VOXEL_STREAKS; ++i)
+    {
+        WeatherVertex *v = sStreaks + i * VOXEL_STREAK_VERTICES;
+        int16_t place[3] = {WeatherFraction(MoteRandom(i, 21)), WeatherFraction(MoteRandom(i, 22)),
+                            WeatherFraction(MoteRandom(i, 23))};
+        int half = 44 + (int)(MoteRandom(i, 24) * 20.0f);
+        int tail = 38 + (int)(MoteRandom(i, 25) * 26.0f);
+        float alpha = 0.55f + 0.45f * MoteRandom(i, 26);
+
+        WeatherCorner(&v[0], -half, 0, place, alpha);
+        WeatherCorner(&v[1], half, 0, place, alpha);
+        WeatherCorner(&v[2], half, tail, place, 0.0f);
+        v[3] = v[0];
+        v[4] = v[2];
+        WeatherCorner(&v[5], -half, tail, place, 0.0f);
+    }
+    GSPGPU_FlushDataCache(sStreaks, VOXEL_STREAKS * VOXEL_STREAK_VERTICES * sizeof(WeatherVertex));
+    for (unsigned i = 0; i < VOXEL_FLAKES; ++i)
+    {
+        static const int fan[4][2][2] = {
+            {{0, 1}, {1, 0}}, {{1, 0}, {0, -1}}, {{0, -1}, {-1, 0}}, {{-1, 0}, {0, 1}},
+        };
+        WeatherVertex *v = sFlakes + i * VOXEL_FLAKE_VERTICES;
+        int16_t place[3] = {WeatherFraction(MoteRandom(i, 31)), WeatherFraction(MoteRandom(i, 32)),
+                            WeatherFraction(MoteRandom(i, 33))};
+        int size = 40 + (int)(MoteRandom(i, 34) * 24.0f);
+        float alpha = 0.70f + 0.30f * MoteRandom(i, 35), rim = alpha * VOXEL_FLAKE_RIM;
+
+        for (unsigned k = 0; k < 4; ++k)
+        {
+            WeatherCorner(&v[k * 3], 0, 0, place, alpha);
+            WeatherCorner(&v[k * 3 + 1], fan[k][0][0] * size, fan[k][0][1] * size, place, rim);
+            WeatherCorner(&v[k * 3 + 2], fan[k][1][0] * size, fan[k][1][1] * size, place, rim);
+        }
+    }
+    GSPGPU_FlushDataCache(sFlakes, VOXEL_FLAKES * VOXEL_FLAKE_VERTICES * sizeof(WeatherVertex));
+}
+
+static float Normalise3(float v[3])
+{
+    float length = sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+
+    if (length > 0.0001f)
+        for (int i = 0; i < 3; ++i)
+            v[i] /= length;
+    return length;
+}
+
+/* Where in the box the particles of a group are this frame, as a fraction of
+ * it wrapped to [0, 1): the world's drift since a fixed time, less the box's
+ * own corner. */
+static float WeatherOffset(double seconds, float velocity, float corner, float size)
+{
+    double f = (seconds * velocity - corner) / size;
+
+    return (float)(f - floor(f));
+}
+
+/*
+ * Colour is the weather's constant; alpha is the vertex's (shade x fade x
+ * haze, see the program) x the group's x the weather's, doubled back. Depth
+ * tested against the finished world, never written. A lightning bolt lights
+ * the rain up with it.
+ */
+static void DrawWeather(const C3D_Mtx *projection, const C3D_Mtx *view, const VoxelLight *light,
+                        VoxelWeatherClass weather, float amount)
+{
+    const WeatherKind *kind = weather == VOXEL_WEATHER_RAIN ? &sRainKind
+                            : weather == VOXEL_WEATHER_SAND ? &sSandKind : &sAshKind;
+    bool flakes = weather == VOXEL_WEATHER_ASH;
+    const WeatherVertex *vertices = flakes ? sFlakes : sStreaks;
+    unsigned count = flakes ? VOXEL_FLAKES : VOXEL_STREAKS;
+    unsigned per = flakes ? VOXEL_FLAKE_VERTICES : VOXEL_STREAK_VERTICES;
+    unsigned group = count / VOXEL_WEATHER_GROUPS;
+    /* One time a frame: the right eye's particles where the left eye's are. */
+    static double seconds;
+    float corner[3] = {sCamera.targetX - kind->box[0] * 0.5f, sCamera.ground + kind->low,
+                       sCamera.z - VOXEL_WEATHER_SOUTH - kind->box[2]};
+    float forward[3] = {sCamera.targetX - sCamera.x, sCamera.targetY - sCamera.y, sCamera.targetZ - sCamera.z};
+    float flash = weather == VOXEL_WEATHER_RAIN ? VoxelWorld_Lightning() : 0.0f;
+    float alpha = kind->alpha * (1.0f + 0.5f * flash);
+    uint32_t colour = kind->colour;
+    VoxelLight graded = *light;
+    C3D_AttrInfo *attr;
+    C3D_BufInfo *buf;
+    C3D_TexEnv *env;
+    C3D_Mtx model;
+
+    if (sDrawEye != 1)
+        seconds = fmod((double)svcGetSystemTick() / SYSCLOCK_ARM11, 86400.0);
+    Normalise3(forward);
+    if (flash > 0.0f)
+        colour = 0xFFFFFFFFu;
+    C3D_BindProgram(&sWeatherProgram);
+    attr = C3D_GetAttrInfo();
+    AttrInfo_Init(attr);
+    AttrInfo_AddLoader(attr, 1, GPU_BYTE, 4);
+    AttrInfo_AddLoader(attr, 0, GPU_SHORT, 4);
+    buf = C3D_GetBufInfo();
+    BufInfo_Init(buf);
+    BufInfo_Add(buf, vertices, sizeof(WeatherVertex), 2, 0x10);
+
+    /* The rays left their own projection and model-view behind. */
+    C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, sUniProjection, projection);
+    Mtx_Copy(&model, view);
+    Mtx_Translate(&model, (float)sDrawAnchorX, 0.0f, (float)sDrawAnchorZ, true);
+    C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, sUniModelView, &model);
+    /* The haze as the world's, with no grade: only fog is read. */
+    for (int c = 0; c < 3; ++c)
+        graded.sun[c] = graded.shade[c] = 1.0f;
+    SetGrade(&graded);
+    C3D_FVUnifSet(GPU_VERTEX_SHADER, sUniBoxSize, kind->box[0], kind->box[1], kind->box[2],
+                  VOXEL_WEATHER_EDGE);
+    C3D_FVUnifSet(GPU_VERTEX_SHADER, sUniBoxBase, corner[0] - (float)sDrawAnchorX, corner[1],
+                  corner[2] - (float)sDrawAnchorZ, VOXEL_WEATHER_TOP);
+
+    env = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env);
+    C3D_TexEnvSrc(env, C3D_RGB, GPU_CONSTANT, GPU_CONSTANT, GPU_CONSTANT);
+    C3D_TexEnvFunc(env, C3D_RGB, GPU_REPLACE);
+    C3D_TexEnvSrc(env, C3D_Alpha, GPU_PRIMARY_COLOR, GPU_CONSTANT, GPU_CONSTANT);
+    C3D_TexEnvOpAlpha(env, GPU_TEVOP_A_SRC_R, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA);
+    C3D_TexEnvFunc(env, C3D_Alpha, GPU_MODULATE);
+    C3D_TexEnvScale(env, C3D_Alpha, GPU_TEVSCALE_2);
+    env = C3D_GetTexEnv(1);
+    C3D_TexEnvInit(env);
+    C3D_TexEnvSrc(env, C3D_Alpha, GPU_PREVIOUS, GPU_CONSTANT, GPU_CONSTANT);
+    C3D_TexEnvFunc(env, C3D_Alpha, GPU_MODULATE);
+    C3D_TexEnvInit(C3D_GetTexEnv(2));
+    FadeFor(false);
+
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
+    C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_COLOR);
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD,
+                   GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ZERO, GPU_ONE);
+
+    for (unsigned g = 0; g < VOXEL_WEATHER_GROUPS; ++g)
+    {
+        const WeatherGroup *w = &kind->groups[g];
+        unsigned shown = (unsigned)(group * amount + 0.5f);
+        float strength = alpha * w->alpha;
+        float across[3], along[3];
+
+        if (shown == 0 || strength <= 0.0f)
+            continue;
+        if (shown > group)
+            shown = group;
+        if (w->length > 0.0f)
+        {
+            /* Back up the fall, and across it as the camera sees it. */
+            float back[3] = {-w->velocity[0], -w->velocity[1], -w->velocity[2]};
+
+            Normalise3(back);
+            across[0] = back[1] * forward[2] - back[2] * forward[1];
+            across[1] = back[2] * forward[0] - back[0] * forward[2];
+            across[2] = back[0] * forward[1] - back[1] * forward[0];
+            Normalise3(across);
+            for (int c = 0; c < 3; ++c)
+            {
+                across[c] *= w->width;
+                along[c] = back[c] * w->length;
+            }
+        }
+        else
+        {
+            /* Turned to the camera: the view's right and up rows. */
+            across[0] = view->r[0].x * w->width;
+            across[1] = view->r[0].y * w->width;
+            across[2] = view->r[0].z * w->width;
+            along[0] = view->r[1].x * w->width;
+            along[1] = view->r[1].y * w->width;
+            along[2] = view->r[1].z * w->width;
+        }
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, sUniAcross, across[0], across[1], across[2], VOXEL_WEATHER_LENS);
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, sUniAlong, along[0], along[1], along[2],
+                      1.0f / VOXEL_WEATHER_LENS_RAMP);
+        C3D_FVUnifSet(GPU_VERTEX_SHADER, sUniBoxOffset,
+                      WeatherOffset(seconds, w->velocity[0], corner[0], kind->box[0]),
+                      WeatherOffset(seconds, w->velocity[1], corner[1], kind->box[1]),
+                      WeatherOffset(seconds, w->velocity[2], corner[2], kind->box[2]),
+                      VOXEL_WEATHER_EDGE_ALONG);
+        C3D_TexEnvColor(C3D_GetTexEnv(0), (colour & 0xFFFFFFu) | 0xFF000000u);
+        C3D_TexEnvColor(C3D_GetTexEnv(1),
+                        (uint32_t)((strength > 1.0f ? 1.0f : strength) * 255.0f + 0.5f) << 24);
+        C3D_DrawArrays(GPU_TRIANGLES, (int)(g * group * per), (int)(shown * per));
+    }
+
+    /* The world's program and vertices back, for what draws after. */
+    C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+    C3D_BindProgram(&sProgram);
+    attr = C3D_GetAttrInfo();
+    AttrInfo_Init(attr);
+    AttrInfo_AddLoader(attr, 1, GPU_FLOAT, 2);
+    AttrInfo_AddLoader(attr, 0, GPU_SHORT, 4);
     TerrainTexEnv(NULL);
     SetGrade(light);
 }
@@ -7896,6 +8361,11 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
 #if CTR_VOXEL_LIGHTING
     float fog = !indoor && sHaveFog ? VoxelWorld_FogDensity() : 0.0f;
     bool cave = fog > 0.0f && VoxelWorld_Underground();
+    VoxelWeatherClass weather = indoor ? VOXEL_WEATHER_CLEAR : VoxelWorld_Weather();
+    bool ownsWeather = sHaveWeatherProgram && sStreaks != NULL
+                    && (weather == VOXEL_WEATHER_RAIN || weather == VOXEL_WEATHER_SAND
+                        || weather == VOXEL_WEATHER_ASH);
+    float weatherAmount = ownsWeather ? VoxelWorld_WeatherAmount() * (1.0f - neutral) : 0.0f;
 #endif
 
     sBloomStrength = 0.0f;
@@ -7903,6 +8373,7 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
     sDrawEye = eye;
     sGloomAmount = 0.0f;
     sOwnsFog = false;
+    sOwnsWeather = false;
     if (!sReady || sDrawCount == 0)
         return;
     const CtrDayNightLight *cycle = CtrDayNight_Get();
@@ -7929,6 +8400,7 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
                          << (channel * 8u);
 #if CTR_VOXEL_LIGHTING
     sOwnsFog = !indoor && sHaveFog;
+    sOwnsWeather = ownsWeather;
 #endif
 
     sBloomStrength = light.bloom;
@@ -8208,6 +8680,12 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
         FadeFor(false);
         DrawFogBanks(&view, &light, cave, fog * (1.0f - neutral));
     }
+    /* The sand's dust is the fog's sheets, sweeping along the ground. */
+    if (weather == VOXEL_WEATHER_SAND && sHaveFog && weatherAmount > 0.0f)
+    {
+        FadeFor(false);
+        DrawBanks(&view, &light, sSandBanks, 0xFF88BEE0u, weatherAmount);
+    }
     /* Before the rays, which leave the orthographic projection behind. */
     if (sMotes != NULL && light.motes > 0.005f)
         DrawMotes(&view, &light, &unlit);
@@ -8224,6 +8702,25 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
         }
         if (dapples || rays)
             ReleaseDappleUnit();
+    }
+    /* Last: the rays put their own projection in. */
+    if (weatherAmount > 0.0f)
+    {
+        /* Its CPU time in the log, every 600 draws (the measure of it). */
+        static uint64_t weatherTicks;
+        static unsigned weatherDraws;
+        uint64_t start = svcGetSystemTick();
+
+        DrawWeather(&projection, &view, &light, weather, weatherAmount);
+        weatherTicks += svcGetSystemTick() - start;
+        if (++weatherDraws == 600)
+        {
+            CtrLog_Write(CTR_LOG_VIDEO, "VOXEL weather class=%u amount=%.2f lightning=%.2f cpu=%.3f ms a draw",
+                         (unsigned)weather, weatherAmount, VoxelWorld_Lightning(),
+                         weatherTicks * 1000.0f / SYSCLOCK_ARM11 / weatherDraws);
+            weatherTicks = 0;
+            weatherDraws = 0;
+        }
     }
 #endif
     C3D_AlphaTest(false, GPU_ALWAYS, 0);

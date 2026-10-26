@@ -96,6 +96,12 @@ EDGE_FMT = "<HBBhhh4H"
 EDGE_BYTES = 18
 EDGES = {"W": 1, "E": 2, "N": 4, "S": 8}
 EDGE_TOP, EDGE_WATER_SHIFT = 2, 4
+# Layouts that are one map drawn twice (the game swaps them as the story
+# goes): the second takes the fixes of the first, where it has none of its
+# own - Route 111 without its Mirage Tower is Route 111, and its marks (its
+# edge fills too: they stood at the edge's level on a save past the tower)
+# were lost the day the tower fell. voxel_terraces reads its hand marks so.
+TWINS = {"LAYOUT_ROUTE111_NO_MIRAGE_TOWER": "LAYOUT_ROUTE111"}
 
 
 # --- relief.bin, read and written without loss ---------------------------------
@@ -432,7 +438,11 @@ def apply(relief, fixes, report=None):
     """The fixes over a parsed relief, in place. `report`, a list, gets one
     line per map changed."""
     pieces = fixes.get("pieces", {})
-    for name, spec in fixes.get("layouts", {}).items():
+    layouts = dict(fixes.get("layouts", {}))
+    for twin, first in TWINS.items():
+        if first in layouts:
+            layouts[twin] = dict(layouts[first], **layouts.get(twin, {}))
+    for name, spec in layouts.items():
         index = layout_index(name)
         entry = layout_entry(name)
         if index is None:

@@ -545,11 +545,13 @@ void CtrVideo_MarkVoxelWeatherOam(unsigned first, unsigned end)
 /* OAM entries of sprites placed on the screen rather than on the map. */
 static uint32_t sScreenOam[4];
 static uint32_t sMachineOam[4];
+static uint32_t sFlyOam[4];
 
 void CtrVideo_ClearScreenOam(void)
 {
     memset(sScreenOam, 0, sizeof(sScreenOam));
     memset(sMachineOam, 0, sizeof(sMachineOam));
+    memset(sFlyOam, 0, sizeof(sFlyOam));
 }
 
 void CtrVideo_MarkScreenOam(unsigned first, unsigned end)
@@ -565,6 +567,14 @@ void CtrVideo_MarkMachineOam(unsigned first, unsigned end)
     if (end > 128) end = 128;
     for (unsigned i = first; i < end; ++i)
         sMachineOam[i >> 5] |= 1u << (i & 31);
+}
+
+/* Fly's bird and its rider, on that picture around the player too. */
+void CtrVideo_MarkFlyOam(unsigned first, unsigned end)
+{
+    if (end > 128) end = 128;
+    for (unsigned i = first; i < end; ++i)
+        sFlyOam[i >> 5] |= 1u << (i & 31);
 }
 
 /* OAM entries of the fog's sprites (CtrVideo_MarkFogOam). */
@@ -5267,10 +5277,27 @@ static void DrawAffineBg(unsigned bg)
  * monitors were placed by hand on the picture around the player (the player's
  * tile centre at GBA (120, 80)), so they go where the map's machine is: in
  * the 2D field the picture's offset on the view, in the voxel one the
- * machine's tile seen by the camera.
+ * machine's tile seen by the camera. Fly's bird and its rider fly round the
+ * player on that picture: they are moved with it, whole, in the voxel field
+ * to where the camera sees the player (the GBA's (120, 80), as the circle of
+ * a dark cave) - not projected, which would bend the bird's arc.
  */
 static void PlaceScreenObject(int i, unsigned boxW, unsigned boxH, bool voxel, int *x, int *y)
 {
+    if (sFlyOam[i >> 5] & (1u << (i & 31)))
+    {
+        float px, py, scaleX, scaleY;
+
+        if (voxel && CtrVoxel_PlayerLightSpot(&px, &py, &scaleX, &scaleY))
+        {
+            *x += (int)lroundf(px) - 120;
+            *y += (int)lroundf(py) - 80;
+            return;
+        }
+        *x += CTR_STAGE_X;
+        *y += CTR_STAGE_Y - 8;
+        return;
+    }
     if (sMachineOam[i >> 5] & (1u << (i & 31)))
     {
         if (voxel)
@@ -5306,7 +5333,10 @@ static void PlaceScreenObject(int i, unsigned boxW, unsigned boxH, bool voxel, i
  * right of the screen bare, and the 8-bit y of a row past the bottom read as
  * a row further down instead of the one at the top. The lattice does not
  * care which sprite it starts from, so any wrap of x or y is harmless here.
- * The 64 tiles are looked up once and drawn at every place.
+ * The 64 tiles are looked up once and drawn at every place, batched as the
+ * sprites are (TileWalkSlot): the sandstorm's and the ash's lattice is some
+ * two thousand tiles over the wide view, and one Citro2D quad each was most
+ * of an Old 3DS frame.
  */
 static void DrawFogLattice(unsigned attr2, unsigned bank, unsigned width, unsigned height, bool color256,
                            int x, int y, bool flipX, bool flipY)
@@ -5314,6 +5344,7 @@ static void DrawFogLattice(unsigned attr2, unsigned bank, unsigned width, unsign
     int slots[8 * 8];
     unsigned columns = width / 8, rows = height / 8;
     int x0 = x % (int)width, y0 = y % (int)height;
+    bool batch;
 
     if (columns * rows > sizeof(slots) / sizeof(slots[0])) return;
     for (unsigned ty = 0; ty < rows; ++ty)
@@ -5326,20 +5357,28 @@ static void DrawFogLattice(unsigned attr2, unsigned bank, unsigned width, unsign
         }
     if (x0 > sClipX0) x0 -= (int)width * ((x0 - sClipX0 + (int)width - 1) / (int)width);
     if (y0 > sClipY0) y0 -= (int)height * ((y0 - sClipY0 + (int)height - 1) / (int)height);
+    batch = TileWalkBegin();
     for (int py = y0; py < sClipY1; py += (int)height)
         for (int px = x0; px < sClipX1; px += (int)width)
         {
             if (px + (int)width <= sClipX0 || py + (int)height <= sClipY0) continue;
             for (unsigned ty = 0; ty < rows; ++ty)
+            {
+                int top = py + (int)ty * 8;
+
+                /* Only the tiles in the clip: a band of a window partition
+                 * is a strip of the view. */
+                if (top >= sClipY1 || top + 8 <= sClipY0) continue;
                 for (unsigned tx = 0; tx < columns; ++tx)
                 {
-                    int slot = slots[ty * columns + tx];
+                    int slot = slots[ty * columns + tx], left = px + (int)tx * 8;
 
-                    if (slot >= 0)
-                        DrawSlot(slot, px + CTR_VIEW_X + sLayerShift + (int)tx * 8,
-                                 py + CTR_VIEW_Y + (int)ty * 8, flipX, flipY);
+                    if (slot >= 0 && left < sClipX1 && left + 8 > sClipX0)
+                        TileWalkSlot(batch, slot, left + CTR_VIEW_X + sLayerShift, top + CTR_VIEW_Y, flipX, flipY);
                 }
+            }
         }
+    TileWalkEnd(batch);
 }
 
 /*
@@ -5504,6 +5543,9 @@ static void DrawObjects(unsigned priority, bool effects)
         if ((fog && fogDrawn) || (lattice && latticeDrawn)) continue;
         /* The voxel world draws a fog of its own, in the scene. */
         if (fog && sVoxelObjPass != VOXEL_OBJ_NONE && CtrVoxel_DrawsFog()) continue;
+        /* ... and its own rain, sand and ash (DrawWeather): the sand's
+         * swirls too, which are particles. */
+        if ((lattice || particle) && sVoxelObjPass != VOXEL_OBJ_NONE && CtrVoxel_DrawsWeather()) continue;
         if (sVoxelObjPass != VOXEL_OBJ_NONE)
         {
             bool weather = (sVoxelWeatherOam[i >> 5] & (1u << (i & 31))) != 0;
