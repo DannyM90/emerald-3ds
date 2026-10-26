@@ -53,6 +53,7 @@ gen_voxel_relief.py runs it over its own output for the maps in GROUPS
 
 import argparse
 import collections
+import copy
 import math
 import os
 import sys
@@ -3060,10 +3061,25 @@ _LIPS = {}
 
 
 def ledge_lip(lid):
-    """gen_voxel_relief.ledge_lip of a layout, read off its own drawing."""
+    """gen_voxel_relief.ledge_lip of a layout, read off its own drawing. A
+    ledge it reads no lip in (walled in by rock, trees and other ledges: no
+    ground round it to tell the lip from - Route 112's two cells deep, the
+    same tile twice) has its tile's, as another ledge of the map shows it."""
     if lid not in _LIPS:
         art = vb.LayoutArt(lid) if gr.alias_of(lid) else gr.layout_art(lid)
-        _LIPS[lid] = gr.ledge_lip(gr.open_roles(lid), art)[1]
+        cells, lip = gr.ledge_lip(gr.open_roles(lid), art)
+        lip = dict(lip)
+        shape, bare = {}, []
+        for (x, y) in sorted(cells):
+            px = {(i, j) for j in range(16) for i in range(16) if lip.get((x * 16 + i, y * 16 + j))}
+            if px:
+                shape.setdefault(art.metatile(x, y), px)
+            else:
+                bare.append((x, y))
+        for (x, y) in bare:
+            for (i, j) in shape.get(art.metatile(x, y), ()):
+                lip[(x * 16 + i, y * 16 + j)] = True
+        _LIPS[lid] = lip
     return _LIPS[lid]
 
 
@@ -3152,12 +3168,31 @@ def ledge_landings(c, flat):
     return out
 
 
+def ledge_drawn(c, cell):
+    """Whether a ledge cell has its lip drawn (a cell can be jumped with no
+    lip in it: the grass before the lip of a ledge two cells deep)."""
+    lid, x, y = c.src[cell]
+    lip = ledge_lip(lid)
+    return any(lip.get((x * 16 + i, y * 16 + j)) for j in range(16) for i in range(16))
+
+
 def ledge_sides(c, pieces, flat, marks=None):
     """{ledge cell: {(dx, dy): [high, low]}}: the level each way a ledge is
     jumped from and to. A ledge cell with rock or another ledge on a side
     takes that side from the ledges beside it jumped the same way (a ring's
-    corner, a run's end against the cliff); the marks' "level" sets the
-    top, "foot" the foot."""
+    corner, a run's end against the cliff) - beside, never behind or in
+    front: ledges one after another the way they are jumped (Route 112's
+    two cells deep) share one drop, from the ground behind the first to the
+    ground in front of the last, among the cells whose lip is drawn. The
+    marks' "level" sets the top, "foot" the foot; a top marked under the
+    foot takes the foot down with it (a foot over the top, the top up)."""
+    def only(n, d):
+        return tuple(c.jumps.get(n, ())) == (d,)
+
+    def chained(a, b, d):
+        # (a ring's corner, jumped two ways, is no link: it reads its arms)
+        return only(a, d) and only(b, d)
+
     out = {}
     for cell, dirs in c.jumps.items():
         x, y = cell
@@ -3172,6 +3207,8 @@ def ledge_sides(c, pieces, flat, marks=None):
                     if hl[k] is not None:
                         continue
                     for n in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+                        if (abs(n[0] - x), abs(n[1] - y)) == (abs(d[0]), abs(d[1])) and chained(cell, n, d):
+                            continue    # behind or in front: the chain's, below
                         v = out.get(n, {}).get(d)
                         if v is not None and v[k] is not None:
                             hl[k] = v[k]
@@ -3179,12 +3216,47 @@ def ledge_sides(c, pieces, flat, marks=None):
                             break
         if not changed:
             break
+    chains = []
+    for cell in sorted(out):
+        for d in out[cell]:
+            if not only(cell, d) or chained((cell[0] - d[0], cell[1] - d[1]), cell, d):
+                continue        # not the first of a chain
+            chain = [cell]
+            while chained(chain[-1], (chain[-1][0] + d[0], chain[-1][1] + d[1]), d):
+                chain.append((chain[-1][0] + d[0], chain[-1][1] + d[1]))
+            if len(chain) > 1:
+                chains.append((d, chain))
+    for d, chain in chains:
+        hi, lo = out[chain[0]][d][0], out[chain[-1]][d][1]
+        if hi is None or lo is None:
+            continue
+        drawn = [n for n in chain if ledge_drawn(c, n)] or chain
+        v = hi
+        for n in chain:
+            top = v
+            if n in drawn:
+                v -= (hi - lo) / float(len(drawn))
+            out[n][d] = [top, v]
     for cell, m in (marks or {}).items():
         for hl in out.get(cell, {}).values():
             if m.get("level") is not None:
                 hl[0] = m["level"]
+                if m.get("foot") is None and hl[1] is not None and hl[1] > hl[0]:
+                    hl[1] = hl[0]
             if m.get("foot") is not None:
                 hl[1] = m["foot"]
+                if m.get("level") is None and hl[0] is not None and hl[0] < hl[1]:
+                    hl[0] = hl[1]
+    # in a chain, one ledge's foot is the next one's top: what the hand set
+    # of either the other follows (Route 112's lip marked at a level and a
+    # half: the grass before it falls to there, not to the land beyond)
+    marks = marks or {}
+    for d, chain in chains:
+        for a, b in zip(chain, chain[1:]):
+            if marks.get(b, {}).get("level") is not None and marks.get(a, {}).get("foot") is None:
+                out[a][d][1] = out[b][d][0]
+            elif marks.get(a, {}).get("foot") is not None and marks.get(b, {}).get("level") is None:
+                out[b][d][0] = out[a][d][1]
     return out
 
 
@@ -3201,8 +3273,10 @@ def step_grid(lip, x, y, sides):
         for i in range(N + 1):
             reads = gr.ledge_reads(lip, x, y, dirs, i, j)
             on, front, behind = [], [], []
-            for (_, _, dx, dy, f, b) in reads:
+            for (sx, sy, dx, dy, f, b) in reads:
                 hi, lo = sides[(dx, dy)]
+                if b and not f and not (x * 16 <= sx - dx < x * 16 + 16 and y * 16 <= sy - dy < y * 16 + 16):
+                    b = 0       # the lip behind is the ledge behind's (two cells deep)
                 if f:
                     on.append(lo + (hi - lo) * min(f, gr.LIP_WIDTH) / float(gr.LIP_WIDTH))
                 elif b:
@@ -3220,6 +3294,32 @@ def step_grid(lip, x, y, sides):
     return grid
 
 
+def berm_grid(lip, x, y, dirs, level):
+    """A ledge cell (x, y of its map) on level land at `level`, raised off
+    its drawing as gen_voxel_relief.ledge_berms raises it: (grid, the
+    lattice points in front of its lip, on the ground jumped to)."""
+    grid, front = [], set()
+    for j in range(N + 1):
+        row = []
+        for i in range(N + 1):
+            reads = gr.ledge_reads(lip, x, y, dirs, i, j)
+            v = 0.0
+            if all(f for (_, _, _, _, f, _) in reads):
+                v = min(gr.lip_height(f) for (_, _, _, _, f, _) in reads)
+            elif any(b and not f for (_, _, _, _, f, b) in reads):
+                front.add((i, j))
+            else:
+                # behind the lip: rising to where the line meets it
+                for (sx, sy, dx, dy, f, b) in reads:
+                    k = next((k for k in range(gr.LIP_BACK) if lip.get((sx + k * dx, sy + k * dy))), None)
+                    if k is not None:
+                        top = gr.lip_height(gr.lip_run(lip, sx + k * dx, sy + k * dy, dx, dy))
+                        v = max(v, top * (1.0 - k / float(gr.LIP_BACK)))
+            row.append(level + 2 * round(v / 2.0))
+        grid.append(row)
+    return grid, front
+
+
 def meet_edges(c, pieces, cell, grid):
     """A step's edge points where it meets a cell that is no ledge: that
     cell's (the cliff a ring of ledges runs into, the ground at a run's open
@@ -3235,7 +3335,14 @@ def meet_edges(c, pieces, cell, grid):
             continue
         g = piece_grid(*pieces[n])
         for (i, j) in points:
-            want[(i, j)].append(g[j - dy * N][i - dx * N])
+            v = g[j - dy * N][i - dx * N]
+            if dy < 0 and v < grid[j][i]:
+                # a face north of it falling lower than the step's back: it
+                # stands behind the step, its foot under it (Route 112's
+                # cliff over a ledge two cells deep) - pulled down, the back
+                # opened a trench across the cell
+                continue
+            want[(i, j)].append(v)
     for (i, j), vs in want.items():
         grid[j][i] = min(vs, key=lambda v: abs(v - grid[j][i]))
 
@@ -3244,7 +3351,9 @@ def lay_ledges(c, pieces, flat, kept, cuts, marks=None):
     """Every ledge between two levels as a step, in place in `kept` (its
     cut record dropped from `cuts`): {"sides":
     ledge_sides, "steps": cells laid as steps, "uphill": cells jumped up
-    (laid level at the higher side: the levels round them are wrong)}."""
+    (laid level at the side they are jumped from, a berm on the ground the
+    player stands on: the levels round them are wrong - Route 113's,
+    jumped onto a mountain's top read beside them)}."""
     sides = ledge_sides(c, pieces, flat, marks)
     steps, uphill = set(), set()
     if pieces is not None:
@@ -3269,7 +3378,7 @@ def lay_ledges(c, pieces, flat, kept, cuts, marks=None):
         for d, hl in known.items():
             if hl[0] < hl[1] - 0.5:
                 uphill.add(cell)
-                hl[0] = hl[1]
+                hl[1] = hl[0]
         if all(abs(hl[0] - hl[1]) <= 0.5 for hl in known.values()):
             # a berm on level land: as kept, standing on that land (a run
             # of ledges moved as one stood a level off where it met another)
@@ -3280,6 +3389,26 @@ def lay_ledges(c, pieces, flat, kept, cuts, marks=None):
                 kept[cell] = [[v + d for v in row] for row in kept[cell]]
                 if cell in cuts:
                     cuts[cell] = [cuts[cell][0], cuts[cell][1] + d] + list(cuts[cell][2:])
+            # the generator's ground left in it, standing off the land in
+            # front of its lip (Route 113's 58,15: the band of the mountain
+            # beside it run on into the cell, 10 px up at its foot): raised
+            # again off its drawing on that land, as a berm with no wall (its
+            # edges on that land too, as the generator lays a berm's)
+            if cell not in kept:
+                continue
+            lid, x, y = c.src[cell]
+            x0, y0 = cell
+            g, front = berm_grid(ledge_lip(lid), x, y, list(ways), lo)
+            if any(abs(kept[cell][j][i] - lo) > gr.LIP for (i, j) in front):
+                for j in range(N + 1):
+                    for i in range(N + 1):
+                        xs = (x0 - 1, x0) if i == 0 else (x0, x0 + 1) if i == N else (x0,)
+                        ys = (y0 - 1, y0) if j == 0 else (y0, y0 + 1) if j == N else (y0,)
+                        if not all((a, b) in c.jumps for a in xs for b in ys):
+                            g[j][i] = lo
+                kept[cell] = g
+                if cell in cuts:
+                    cuts[cell] = [cuts[cell][0], lo, cuts[cell][2], 0xFFFF, 255, cuts[cell][5]]
             continue
         for d in ways:
             if d not in known:
@@ -3396,6 +3525,14 @@ def corner_grid(c, lip, cell, kept, pieces, flat):
     return grid
 
 
+def soil_level(grid):
+    """The level a cell of berry soil or dirt lies at: its edge's, where it
+    meets the ground round it (a patch dug in the middle keeps its ditch
+    under it)."""
+    return collections.Counter(grid[j][i] for j in range(N + 1) for i in range(N + 1)
+                               if i in (0, N) or j in (0, N)).most_common(1)[0][0]
+
+
 def lay_soil(c, pieces, kept, cuts, marks, marked=()):
     """Berry soil and dirt patches on the ground round them as the marks
     leave it, in place in `kept` (and their cut records' feet): each patch
@@ -3429,10 +3566,16 @@ def lay_soil(c, pieces, kept, cuts, marks, marked=()):
             if not round_it:
                 continue
             want = round_it.most_common(1)[0][0]
-        d = want - now
-        if abs(d) < 0.5:
-            continue
         for cell in run:
+            # a cell marked stands at its mark, whatever the generator left
+            # it at beside the rest of its patch (Route 114's 31,46 and
+            # 32,46: 8 px over it, moved with it to half a level over the
+            # mark) - its edge, where it meets the ground (a patch dug in
+            # the middle, Route 115's, keeps its ditch under it)
+            own = marks.get(cell, {}).get("level")
+            d = own - soil_level(kept[cell]) if own is not None else want - now
+            if abs(d) < 0.5:
+                continue
             kept[cell] = [[v + d for v in row] for row in kept[cell]]
             if cell in cuts:
                 cuts[cell] = [cuts[cell][0], cuts[cell][1] + d] + list(cuts[cell][2:])
@@ -3761,9 +3904,21 @@ def finish(auto, marks=None):
     pieces, flat = dict(auto["pieces"]), dict(auto["flat"])
     if marks is None:
         marks = load_marks(c, zero=zero_of(auto))
+    # a ledge marked with a piece of the mountain is that piece, no ledge
+    # (Route 113's 67,9: the cliff's corner drawn, the cartridge letting it
+    # be jumped off)
+    rock = {cell for cell, m in marks.items() if cell in c.jumps and m.get("piece") not in (None, "auto")}
+    if rock:
+        c = copy.copy(c)
+        c.jumps = {k: v for k, v in c.jumps.items() if k not in rock}
+        c.keep, c.ledges = c.keep - rock, c.ledges - rock
+        kept = {k: v for k, v in kept.items() if k not in rock}
     marked = apply_marks(c, pieces, flat, kept, marks)
     # the ledges between the levels the marks leave, and as marked
     kept, cuts = dict(auto.get("kept_berm", kept)), dict(auto.get("kept_cuts_berm", auto.get("kept_cuts", {})))
+    for cell in rock:
+        kept.pop(cell, None)
+        cuts.pop(cell, None)
     ledge_marks = {cell: m for cell, m in marks.items() if cell in c.jumps}
     ledges = lay_ledges(c, pieces, flat, kept, cuts, ledge_marks)
     soil_marks = {cell: m for cell, m in marks.items() if cell in c.keep and cell not in c.jumps}
@@ -3774,7 +3929,7 @@ def finish(auto, marks=None):
     grids.update(kept)
     faces_at_landings(c, pieces, grids, ledges["steps"])
     behind_trees(c, flat, grids, pieces, marked)
-    return dict(auto, pieces=pieces, flat=flat, grids=grids, marked=marked, kept=kept,
+    return dict(auto, cells=c, pieces=pieces, flat=flat, grids=grids, marked=marked, kept=kept,
                 kept_cuts=cuts, ledges=ledges, under=under)
 
 

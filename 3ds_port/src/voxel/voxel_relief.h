@@ -36,8 +36,13 @@ bool VoxelRelief_Init(void);
 void VoxelRelief_Shutdown(void);
 
 /* The level a map's ground stands at in the world, tiles (0 for a map the
- * file does not name). */
+ * file does not name), and its lift over that where it was placed. */
 float VoxelRelief_Base(const VoxelMapInstance *inst);
+
+/* Pixels to add to `b`'s lift for its edge to meet `a`'s at their seam, as
+ * most of the seam's cells ask (see voxel_relief.c); 0 when they do not
+ * touch or the seam asks no one step. */
+int VoxelRelief_SeamStep(const VoxelMapInstance *a, const VoxelMapInstance *b);
 
 /* The 25 heights (pixels, over the base) of a world cell, or NULL when it is
  * not lifted. */

@@ -60,6 +60,17 @@ int VoxelTree_Part(const void *secondaryTileset, int metatileId)
 int VoxelTree_GroundMetatile(const void *secondaryTileset, int metatileId)
 { (void)secondaryTileset; return metatileId; }
 bool VoxelRelief_IsDrawn(const VoxelMapInstance *inst) { (void)inst; return false; }
+/* The row's seam between maps 3 and 4 asks map 4 a level up (Hoenn's loops
+ * do not close: voxel_relief.c VoxelRelief_SeamStep). */
+static bool sSeamStep;
+int VoxelRelief_SeamStep(const VoxelMapInstance *a, const VoxelMapInstance *b)
+{
+    if (!sSeamStep)
+        return 0;
+    if (a->mapNum == 3 && b->mapNum == 4)
+        return 16;
+    return a->mapNum == 4 && b->mapNum == 3 ? -16 : 0;
+}
 void VoxelRelief_ForEachCut(const VoxelMapInstance *inst, VoxelReliefCutVisit visit, void *ctx)
 { (void)inst; (void)visit; (void)ctx; }
 const struct MapLayout *Port_GetMapLayoutById(u16 mapLayoutId) { (void)mapLayoutId; return NULL; }
@@ -255,6 +266,27 @@ static void InstanceTests(void)
     /* Walking back west: map 0, now two crossings behind, stays. */
     EnterRowMap(1);
     assert(FindRowMap(0) != NULL && FindRowMap(3) != NULL && FindRowMap(4) != NULL);
+
+    /* A seam that asks a step: the maps past it stand as high as it asks,
+     * each placed from the one it was reached by. */
+    sSeamStep = true;
+    EnterRowMap(2);
+    assert(VoxelWorld_Instance(0)->lift == 0);
+    assert(FindRowMap(3)->lift == 0 && FindRowMap(4)->lift == 16 && FindRowMap(5)->lift == 16);
+    /* Across the seam nothing moves: map 4 keeps the lift it was seen at,
+     * and the maps behind it theirs. */
+    EnterRowMap(3);
+    EnterRowMap(4);
+    assert(VoxelWorld_Instance(0)->lift == 16);
+    assert(FindRowMap(3)->lift == 0 && FindRowMap(2)->lift == 0 && FindRowMap(5)->lift == 16);
+    /* Through a warp (nothing on screen), the lift it was last seen at. */
+    sInstanceCount = 0;
+    EnterRowMap(4);
+    assert(VoxelWorld_Instance(0)->lift == 16 && FindRowMap(3)->lift == 0);
+    sInstanceCount = 0;
+    EnterRowMap(2);
+    assert(VoxelWorld_Instance(0)->lift == 0 && FindRowMap(4)->lift == 16);
+    sSeamStep = false;
     sFixtureMaps = false;
     sInstanceCount = 0;
 }
@@ -316,7 +348,8 @@ int main(void)
     TileLoadTests();
     LayoutSwapTest();
     InstanceTests();
-    puts("PASS instances: maps within reach of the current one, kept across a crossing");
+    puts("PASS instances: maps within reach of the current one, kept across a crossing; "
+         "a seam's step lifts the maps past it, kept across a crossing and a warp");
     puts("PASS world hash: scalar equivalence, live digest, overlaps, negative origins, missing maps, live edits, clipping; Fortree puddle art");
     return 0;
 }
