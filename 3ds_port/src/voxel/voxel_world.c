@@ -1022,74 +1022,31 @@ void VoxelWorld_SetMaterialView(const int rect[4], int margin)
  * Rustboro's west, beyond its sea. Map by map, an edge (or a stretch of one)
  * can be filled with another metatile instead, one that goes on from what the
  * map shows there: the sea going on as sea. Voxel only; the 2D field keeps
- * the game's border. Water is laid level with the map's own sea there
+ * the game's border. The stretches are the map's fixes (relief_fixes.json
+ * "edges", set in the editor's mountain page), read with the relief
+ * (VoxelRelief_EdgeFill): the metatile, and the height its top stands at if
+ * given - else water is laid level with the map's own sea there
  * (BorderWaterLevel, voxel_mesh_builder.c), anything else as the border is.
- *
- * One row a stretch: the map, its edge (one of the EDGE_* below), the first
- * and last cell along that edge it covers - rows for the west and east edges,
- * columns for the north and south, both inclusive, -1, -1 for the whole edge
- * - and the metatile it is filled with (its id in the map's tilesets, as the
- * map's own blocks give it: map.bin or Porymap). A corner past two edges
- * takes the first row that covers either.
  */
-#define EDGE_W 1u
-#define EDGE_E 2u
-#define EDGE_N 4u
-#define EDGE_S 8u
-
-static const struct
-{
-    uint16_t map; /* MAP_* */
-    uint8_t edge;
-    int16_t first, last;
-    uint16_t metatile;
-} sEdgeFills[] =
-{
-    {MAP_RUSTBORO_CITY, EDGE_W, -1, -1, 0x170}, /* the sea */
-};
 
 /* The metatile an edge fill puts at (worldX, worldY), or -1. */
 static int EdgeFillAt(int worldX, int worldY)
 {
-    const VoxelMapInstance *map = sInstanceCount > 0 ? &sInstances[0] : NULL;
-    uint16_t id;
-    int lx, ly, cx, cy;
+    VoxelEdgeFill fill;
 
-    if (map == NULL || map->indoor || map->width <= 0 || map->height <= 0)
+    if (sInstanceCount == 0 || !VoxelRelief_EdgeFillAt(&sInstances[0], worldX, worldY, &fill))
         return -1;
-    id = (uint16_t)((map->mapGroup << 8) | map->mapNum);
-    lx = worldX - map->originX;
-    ly = worldY - map->originY;
-    cx = lx < 0 ? 0 : lx >= map->width ? map->width - 1 : lx;
-    cy = ly < 0 ? 0 : ly >= map->height ? map->height - 1 : ly;
-    for (unsigned i = 0; i < ARRAY_COUNT(sEdgeFills); ++i)
-    {
-        unsigned edge = sEdgeFills[i].edge;
-        int along;
-
-        if (sEdgeFills[i].map != id)
-            continue;
-        if ((edge == EDGE_W && lx < 0) || (edge == EDGE_E && lx >= map->width))
-            along = cy;
-        else if ((edge == EDGE_N && ly < 0) || (edge == EDGE_S && ly >= map->height))
-            along = cx;
-        else
-            continue;
-        if (sEdgeFills[i].first >= 0 && (along < sEdgeFills[i].first || along > sEdgeFills[i].last))
-            continue;
-        return sEdgeFills[i].metatile;
-    }
-    return -1;
+    return fill.metatile;
 }
 
 /* The edge fills' metatiles for this map, kept in its atlas. */
 static void MarkEdgeFills(const VoxelMapInstance *inst, uint8_t *used)
 {
-    uint16_t id = (uint16_t)((inst->mapGroup << 8) | inst->mapNum);
+    int metatile;
 
-    for (unsigned i = 0; i < ARRAY_COUNT(sEdgeFills); ++i)
-        if (sEdgeFills[i].map == id && sEdgeFills[i].metatile < NUM_METATILES_TOTAL)
-            used[sEdgeFills[i].metatile] = 2;
+    for (unsigned i = 0; VoxelRelief_EdgeFills((unsigned)inst->layoutId, i, &metatile); ++i)
+        if (metatile >= 0 && metatile < NUM_METATILES_TOTAL)
+            used[metatile] = 2;
 }
 
 /* The cut records' grounds and walls, in the window MarkUsedMetatiles reads
@@ -1320,7 +1277,7 @@ uint32_t VoxelWorld_BlockHash(int x0, int y0, int x1, int y1)
  * Whose border, and in which phase, is fieldmap.c's to say: the nearest map's
  * whose border the current tilesets draw, the same answer the 2D camera
  * gives, and the same from either side of a crossing. Past an edge filled
- * for the current map (sEdgeFills), its fill.
+ * for the current map (VoxelRelief_EdgeFill), its fill.
  */
 int VoxelWorld_BorderMetatile(int worldX, int worldY)
 {

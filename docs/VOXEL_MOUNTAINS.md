@@ -104,6 +104,29 @@ map or a cell. The current ones (`voxel_terraces.py`):
 - **Fins**: rock with the same ground west, east and behind that sticks out
   stays at that level.
 
+**Behind the backs (seen from above)**
+
+- A rim cell of rock or top with no mask of its own, half a level or more
+  over the ground north of it, is cut along the lip it draws (`lip_mask`):
+  every north corner follows its outline, with the ground behind under it.
+- A fill that would be a boulder's top over plain ground takes the map's
+  plainest top tile instead (`plain_top`).
+- A band on rough rock is cut by the colours of the ground it draws round
+  its corner; a boulder's upper half laid as a band (a crest's rounded head)
+  is cut as the head it is.
+- The engine closes a back k levels over the ground behind (`EmitNorthFace`):
+  the ground north of it goes on flat up to its north edge, and behind a
+  whole top a wall stands straight up from there, a tile a level of its
+  wall (never behind a cut tile: it showed through the cleared pixels).
+  Where the top slopes along that edge the wall steps, square to the north;
+  the cell's west and east walls stop at it. The border belt does the same
+  between its rows (`EmitBorderNorth`).
+- Which ground shows behind a back can be chosen by hand per cell
+  (`"behind"` in a map's fixes), and what fills past a map's edge per edge
+  and stretch, with its 2x2 block (as the game's border) and its height
+  (`"edges"`, read from relief.bin's `EDGE` table); a height only lifts or
+  lowers the fill, it stays against the map's edge.
+
 **Trees, rocks and small patches**
 
 - Trees are 3D models, so the mountain goes on under them as if they were

@@ -291,7 +291,7 @@ build/root/src/field_camera.o: $(ROOT)/src/field_camera.c Makefile full.mk
 	"$(CC)" $(FULLFLAGS) $(FULLCFLAGS) -MMD -MP -c $< -o $@
 
 # Asm data units go through cpp with PORT_BRIDGE, like the C units (FULLFLAGS).
-# sound_data.s includes direct_sound_data.inc: Japanese patch 0046 drops the
+# sound_data.s includes direct_sound_data.inc: Japanese patch 0062 drops the
 # English bard phonemes only when PORT_BRIDGE is set. With no sample overlay,
 # sound_data.o uses the generic data/%.o rule below.
 build/root/data/maps.o: build/maps.s build/map_layouts.inc $(ROOT)/data/layouts/layouts_table.inc \
