@@ -34,31 +34,31 @@ static u8 sArm;
 static u32 sArmPersonality, sArmOtId;
 static bool sArmShedinja;
 
-const char *const gCtrNuzlockeOpenText[1] = {CTR_TEXT("TAP TO OPEN", "TOCA PARA ABRIR", "OUVRIR", "APRI", "TOQUE P/ ABRIR", "ÖFFNEN")};
-const char *const gCtrNuzlockeBackText[1] = {CTR_TEXT("BACK", "VOLVER", "RETOUR", "INDIETRO", "VOLTAR", "ZURÜCK")};
-const char *const gCtrNuzlockeRecordText[1] = {CTR_TEXT("TAP TO RECORD", "TOCA PARA ANOTAR", "NOTER", "REGISTRA", "TOQUE P/ ANOTAR", "ZUM EINTRAGEN")};
+const char *const gCtrNuzlockeOpenText[1] = {CTR_TEXT("TAP TO OPEN", "TOCA PARA ABRIR", "OUVRIR", "APRI", "TOQUE P/ ABRIR", "ÖFFNEN", "タッチで ひらく")};
+const char *const gCtrNuzlockeBackText[1] = {CTR_TEXT("BACK", "VOLVER", "RETOUR", "INDIETRO", "VOLTAR", "ZURÜCK", "もどる")};
+const char *const gCtrNuzlockeRecordText[1] = {CTR_TEXT("TAP TO RECORD", "TOCA PARA ANOTAR", "NOTER", "REGISTRA", "TOQUE P/ ANOTAR", "ZUM EINTRAGEN", "タッチで きろく")};
 const char *const gCtrNuzlockeInfoText[1] = {"--"};
 
 static const char *const sStatusText[CTR_NUZ_STATUS_COUNT] = {
-    CTR_TEXT("UNUSED", "LIBRE", "LIBRE", "LIBERO", "LIVRE", "FREI"),
-    CTR_TEXT("CAUGHT", "CAPTURADO", "CAPTURÉ", "CATTURATO", "CAPTURADO", "GEFANGEN"),
-    CTR_TEXT("MISSED", "PERDIDO", "RATÉ", "PERSO", "PERDIDO", "VERPASST"),
+    CTR_TEXT("UNUSED", "LIBRE", "LIBRE", "LIBERO", "LIVRE", "FREI", "まだ"),
+    CTR_TEXT("CAUGHT", "CAPTURADO", "CAPTURÉ", "CATTURATO", "CAPTURADO", "GEFANGEN", "つかまえた"),
+    CTR_TEXT("MISSED", "PERDIDO", "RATÉ", "PERSO", "PERDIDO", "VERPASST", "にがした"),
 };
-static const char *const sAliveText[] = {CTR_TEXT("ALIVE", "VIVO", "VIVANT", "VIVO", "VIVO", "LEBT")};
-static const char *const sFallenText[] = {CTR_TEXT("FALLEN", "CAÍDO", "TOMBÉ", "CADUTO", "CAÍDO", "GEFALLEN")};
-static const char *const sEggText[] = {CTR_TEXT("EGG", "HUEVO", "OEUF", "UOVO", "OVO", "EI")};
-static const char *const sConfirmText[] = {CTR_TEXT("TAP TO CONFIRM", "TOCA OTRA VEZ", "CONFIRMER", "CONFERMA", "TOQUE DE NOVO", "BESTÄTIGEN")};
-static const char *const sNoneText[] = {CTR_TEXT("NONE", "NINGUNO", "AUCUN", "NESSUNO", "NENHUM", "KEINE")};
-static const char *const sToMarkFormat[] = {CTR_TEXT("%u TO MARK", "%u POR MARCAR", "%u À MARQUER", "%u DA SEGNARE", "%u A MARCAR", "%u ZU MARKIEREN")};
-static const char *const sGymFormat[] = {CTR_TEXT("GYM %u: LV %u", "GIM. %u: NV %u", "ARÈNE %u: N %u", "PAL. %u: LV %u", "GIN. %u: NV %u", "ARENA %u: LV %u")};
-static const char *const sChampionFormat[] = {CTR_TEXT("CHAMPION: LV %u", "CAMPEÓN: NV %u", "MAÎTRE: N %u", "CAMPIONE: LV %u", "CAMPEÃO: NV %u", "CHAMP: LV %u")};
+static const char *const sAliveText[] = {CTR_TEXT("ALIVE", "VIVO", "VIVANT", "VIVO", "VIVO", "LEBT", "げんき")};
+static const char *const sFallenText[] = {CTR_TEXT("FALLEN", "CAÍDO", "TOMBÉ", "CADUTO", "CAÍDO", "GEFALLEN", "ひんし")};
+static const char *const sEggText[] = {CTR_TEXT("EGG", "HUEVO", "OEUF", "UOVO", "OVO", "EI", "タマゴ")};
+static const char *const sConfirmText[] = {CTR_TEXT("TAP TO CONFIRM", "TOCA OTRA VEZ", "CONFIRMER", "CONFERMA", "TOQUE DE NOVO", "BESTÄTIGEN", "もういちど タッチ")};
+static const char *const sNoneText[] = {CTR_TEXT("NONE", "NINGUNO", "AUCUN", "NESSUNO", "NENHUM", "KEINE", "なし")};
+static const char *const sToMarkFormat[] = {CTR_TEXT("%u TO MARK", "%u POR MARCAR", "%u À MARQUER", "%u DA SEGNARE", "%u A MARCAR", "%u ZU MARKIEREN", "のこり %u")};
+static const char *const sGymFormat[] = {CTR_TEXT("GYM %u: LV %u", "GIM. %u: NV %u", "ARÈNE %u: N %u", "PAL. %u: LV %u", "GIN. %u: NV %u", "ARENA %u: LV %u", "ジム %u: Lv %u")};
+static const char *const sChampionFormat[] = {CTR_TEXT("CHAMPION: LV %u", "CAMPEÓN: NV %u", "MAÎTRE: N %u", "CAMPIONE: LV %u", "CAMPEÃO: NV %u", "CHAMP: LV %u", "チャンピオン: Lv %u")};
 static const char *const sLabelText[CTR_NUZ_LABEL_COUNT] = {
-    CTR_TEXT("THIS SAVE", "ESTA PARTIDA", "CETTE PARTIE", "QUESTA PARTITA", "ESTE JOGO", "DIESER STAND"),
-    CTR_TEXT("NEW", "NUEVO", "NOUVEAU", "NUOVO", "NOVO", "NEU"),
-    CTR_TEXT("OTHER SAVE", "OTRA PARTIDA", "AUTRE PARTIE", "ALTRA PARTITA", "OUTRO JOGO", "ANDERER STAND"),
-    CTR_TEXT("DAMAGED", "DAÑADO", "ENDOMMAGÉ", "DANNEGGIATO", "DANIFICADO", "BESCHÄDIGT"),
-    CTR_TEXT("SAVE TO KEEP", "GUARDA PARA FIJAR", "SAUVER POUR GARDER", "SALVA PER TENERE", "SALVE P/ MANTER", "SPEICHERN NÖTIG"),
-    CTR_TEXT("WRITE FAILED", "ERROR AL ESCRIBIR", "ÉCHEC ÉCRITURE", "ERRORE SCRITTURA", "ERRO AO GRAVAR", "SCHREIBFEHLER"),
+    CTR_TEXT("THIS SAVE", "ESTA PARTIDA", "CETTE PARTIE", "QUESTA PARTITA", "ESTE JOGO", "DIESER STAND", "この セーブ"),
+    CTR_TEXT("NEW", "NUEVO", "NOUVEAU", "NUOVO", "NOVO", "NEU", "あたらしく"),
+    CTR_TEXT("OTHER SAVE", "OTRA PARTIDA", "AUTRE PARTIE", "ALTRA PARTITA", "OUTRO JOGO", "ANDERER STAND", "べつの セーブ"),
+    CTR_TEXT("DAMAGED", "DAÑADO", "ENDOMMAGÉ", "DANNEGGIATO", "DANIFICADO", "BESCHÄDIGT", "こわれている"),
+    CTR_TEXT("SAVE TO KEEP", "GUARDA PARA FIJAR", "SAUVER POUR GARDER", "SALVA PER TENERE", "SALVE P/ MANTER", "SPEICHERN NÖTIG", "セーブで ほぞん"),
+    CTR_TEXT("WRITE FAILED", "ERROR AL ESCRIBIR", "ÉCHEC ÉCRITURE", "ERRORE SCRITTURA", "ERRO AO GRAVAR", "SCHREIBFEHLER", "かきこみ しっぱい"),
 };
 
 #define TEXT_SIZE 40
