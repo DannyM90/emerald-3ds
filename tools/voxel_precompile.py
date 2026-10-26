@@ -610,6 +610,17 @@ PLAIN = {"voxel/regions.bin", "voxel/signposts.bin", "voxel/relief.bin"}
 
 # ── the run ─────────────────────────────────────────────────────────────────
 
+def check_python() -> None:
+    """The release's Python (upstream.lock [python]): another one may make
+    other voxel data than the one the release is meant to carry."""
+    import tomllib
+    want = tomllib.loads((ROOT / "upstream.lock").read_text(encoding="utf-8")).get("python", {}).get("version")
+    have = "%d.%d" % sys.version_info[:2]
+    if want and have != want:
+        raise SystemExit("voxel_precompile: this is Python %s; a release's voxel data is made with Python "
+                         "%s (upstream.lock [python])" % (have, want))
+
+
 def generate(recipe: Recipe, rom: bytes, voxelgen: Path, work: Path) -> dict[str, bytes]:
     """The generators' outputs, made as the player's builder makes them."""
     from emerald3ds_builder.voxel import run_generators
@@ -735,6 +746,7 @@ def main() -> None:
     ap.add_argument("--keep", action="store_true", help="keep the work directory")
     args = ap.parse_args()
 
+    check_python()
     from emerald3ds_builder.rom import load_rom
     recipe = Recipe.load(args.recipe)
     rom = load_rom(args.rom)

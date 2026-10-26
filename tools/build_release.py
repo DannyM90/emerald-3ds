@@ -112,7 +112,7 @@ def build_localized_variant(args, tag: str, out: Path, locale: dict) -> None:
         run(make + ["tools"], cwd=tree)
         run(make + ["generated"], cwd=tree)
         run([sys.executable, ROOT / "tools" / locale["script"], "--tree", tree, "--rom", locale["rom"]])
-        run(make + ["release"], cwd=tree / "3ds_port")
+        run(make + ["release", "PYTHON=" + sys.executable], cwd=tree / "3ds_port")
     port = tree / "3ds_port"
     # The localized game's symbol names and addresses (no ROM contents), for the recipe's hints.
     reference = tree / "build" / (locale["stem"] + "-reference.o")
@@ -182,6 +182,11 @@ def main() -> None:
                          "the builders generate it as before (repeatable)")
     args = ap.parse_args()
     VOXEL_GENERATE[:] = args.voxel_generate
+    # The voxel data depends on the interpreter: one fixed Python makes it
+    # (upstream.lock [python]), for make's generators as for the precompile.
+    sys.path.insert(0, str(ROOT / "tools"))
+    import voxel_precompile
+    voxel_precompile.check_python()
 
     # The English variant is built in this tree, so 3ds_port/local.mk (ignored
     # by Git, e.g. a measurement aid such as -DCTR_MEASURE_AID) would reach the
@@ -200,11 +205,12 @@ def main() -> None:
     payload = release / "payload"
 
     if not args.skip_make:
-        run((args.make.split() if args.make else ["make"]) + ["release"], cwd=PORT)
+        run((args.make.split() if args.make else ["make"]) + ["release", "PYTHON=" + sys.executable], cwd=PORT)
         # the buildings' proofs even when buildings.bin is up to date (the
         # builder only exports and trusts this build's CRC); a localized tree
         # is a fresh copy, so its make makes and verifies the file anew
-        run((args.make.split() if args.make else ["make"]) + ["verify-voxel-buildings"], cwd=PORT)
+        run((args.make.split() if args.make else ["make"]) + ["verify-voxel-buildings", "PYTHON=" + sys.executable],
+            cwd=PORT)
     DIST.mkdir(parents=True, exist_ok=True)
     recipe = DIST / "emerald3ds.recipe"
     if not args.skip_recipe:

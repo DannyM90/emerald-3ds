@@ -151,6 +151,11 @@ as before.
 
 ## Prerequisites (maintainer machine)
 
+- Python of the version `upstream.lock` names under `[python]` (3.13), with
+  Pillow, to run `build_release.py`: the voxel data depends on the
+  interpreter, so the release refuses any other and makes `make` run the
+  generators with the same one (`PYTHON=` is set for it).
+
 - A tree from `tools/bootstrap.py --make` (or the maintainer's workspace).
 - The supported ROM, and, for each localized variant, that language's clean
   ROM (BPES, BPEF). The recipe generator also needs the ELF of the original
