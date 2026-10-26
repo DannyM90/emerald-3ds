@@ -10,6 +10,11 @@
   palette of the ROM it comes from. The data pack is byte for byte the same.
   A file without a program is still generated as before.
 
+- Releases are made with one fixed Python (upstream.lock: 3.13, Pillow
+  12.3.0) - the voxel data depends on it - and `tools/docker_release.py`
+  makes one in a pinned environment (devkitARM by digest, the original
+  game's ELF built with the pinned agbcc), from scratch.
+
 - Web builder: the buildings came out different under Pyodide than on the
   desktop, so the web build failed its check: a wall of Sootopolis's gym
   took its colour from a tie broken by the order of a set, which follows a
@@ -120,6 +125,17 @@
   game's logo draws it, on its arc, and VERSÃO in the place and style of its
   EDICIÓN (`tools/logo_ptbr.py` previews it, `make verify-logo-ptbr` checks
   that the port draws it).
+
+- German (experimental), by @DannyM90 (pull request #175, issue #135), with
+  work by @andyst-dev (pull request #96): the game in German from your own
+  Pokémon Smaragd-Edition (Germany) ROM, built with `tools/bootstrap.py
+  --make --german-rom` (`Emerald3DS-de.3dsx`, docs/GERMAN.md). The texts,
+  graphics, credits and Trainer Hill come from your ROM; the German layout
+  (wider windows, nine-column naming keyboard with Ä Ö Ü, the "KP" bar,
+  metres and kilograms) and the port's menus and messages are in German.
+  The healthbox's "KP" bar, the length check on raw texts, the German data
+  pack errors, the client/builder ROM check test and the cleanup when
+  switching back to English come from andyst-dev's German pull request.
 
 - Japanese (experimental): the game in Japanese from your own Pocket Monsters
   Emerald (Japan) ROM. The web and Windows builders accept it and pick the

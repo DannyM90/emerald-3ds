@@ -157,9 +157,10 @@ English-only, as before.
 ## Prerequisites (maintainer machine)
 
 - Python of the version `upstream.lock` names under `[python]` (3.13), with
-  Pillow, to run `build_release.py`: the voxel data depends on the
-  interpreter, so the release refuses any other and makes `make` run the
-  generators with the same one (`PYTHON=` is set for it).
+  Pillow (`pillow` there: 12.3.0), to run `build_release.py`: the voxel data
+  depends on the interpreter, so the release refuses any other and makes
+  `make` run the generators with the same one (`PYTHON=` is set for it).
+  `tools/docker_release.py` brings all of it (see *Release environment*).
 
 - A tree from `tools/bootstrap.py --make` (or the maintainer's workspace).
 - The supported ROM, and, for each localized variant, that language's clean
@@ -175,6 +176,37 @@ English-only, as before.
   and [bannertool](https://github.com/diasurgical/bannertool/releases), on
   `PATH` or in `3ds_port/tools-bin/` (ignored by Git). Without them, pass
   `--skip-cia` (the release then has no forwarder).
+
+## Release environment (Docker)
+
+The voxel data a release ships as precompiled programs depends on the
+interpreter that made it (docs/VOXEL_PRECOMPILE.md), and the recipe on the
+toolchain. `tools/docker_release.py` makes the release in one pinned
+environment, from scratch, on Linux, macOS or WSL with Docker:
+
+```
+python tools/docker_release.py --rom baserom.gba \
+    --spanish-rom esmeralda.gba --french-rom emeraude.gba --italian-rom smeraldo.gba \
+    --german-rom smaragd.gba --japanese-rom emerald-ja.gba --skip-cia
+```
+
+- a fresh tree (`build/release-tree`, `tools/bootstrap.py`);
+- the image `tools/release_env/Dockerfile`, from `upstream.lock`: devkitARM by
+  digest (`[devkitarm]`), Python and Pillow by version (`[python]`);
+- the original game's ELF built in it (`build/gba-elf`: the pinned
+  pokeemerald, unpatched, with the pinned agbcc, `[agbcc]`), checked to
+  rebuild the supported ROM byte for byte;
+- in the container, offline: `make tools generated`, then
+  `tools/build_release.py` (every step below, the voxel precompile included)
+  with `--skip-exe`; options it does not know go to `build_release.py`.
+  The assets are copied to `dist/`.
+
+PyInstaller makes an executable for the system it runs on, so the Windows
+builder's `.exe` is not made there: make the release on Windows as below
+(native devkitPro, Python 3.13 - `build_release.py` refuses another) when the
+Windows ZIP is wanted, or attach the Docker release's other assets and the
+Windows ZIP of a native run of the same commit (its data is the same: same
+pins, and `voxel_precompile.py` proves it against the recipe).
 
 ## Steps
 
