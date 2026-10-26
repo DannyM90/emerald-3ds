@@ -54,6 +54,9 @@ float CtrVoxel_Bloom(void);
 /* Whether the world draws the game's fog itself (in the scene, see
  * ctr_voxel.c): the compositor then leaves the fog's flat sprites out. */
 bool CtrVoxel_DrawsFog(void);
+/* Whether the world drew the rain, the sand or the ash itself this frame (in
+ * the scene, see DrawWeather): the compositor then leaves their sprites out. */
+bool CtrVoxel_DrawsWeather(void);
 /* The dark of a cave over the frame just drawn: an alpha texture to lay in
  * black, centred on (x, y) of the logical surface, size pixels across, at
  * amount. NULL when there is none. */

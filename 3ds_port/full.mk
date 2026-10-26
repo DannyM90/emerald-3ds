@@ -187,7 +187,7 @@ $(CTR_GBA_STAGE_OBJS): compat/ctr_gba_stage.h $(ROOT)/include/gba/defines.h
 # (compat/ctr_gba_centred.h).
 CTR_GBA_CENTRED_SRCS := region_map field_region_map main_menu option_menu naming_screen wallclock \
 	pokemon_summary_screen starter_choose shop link berry_blender pokemon_jump dodrio_berry_picking \
-	contest contest_util slot_machine
+	contest contest_util slot_machine roulette
 CTR_GBA_CENTRED_OBJS := $(patsubst %,build/root/src/%.o,$(CTR_GBA_CENTRED_SRCS))
 $(CTR_GBA_CENTRED_OBJS): FULLCFLAGS += -DCTR_GBA_STAGE -include $(abspath compat/ctr_gba_centred.h)
 $(CTR_GBA_CENTRED_OBJS): compat/ctr_gba_centred.h $(ROOT)/include/gba/defines.h
@@ -208,6 +208,9 @@ $(CTR_GBA_CENTRED_OBJS): compat/ctr_gba_centred.h $(ROOT)/include/gba/defines.h
 # started at x=368 (off the GBA screen, on the wide one) and slid to
 # DISPLAY_WIDTH - 32; the digital display's window closed from DISPLAY_WIDTH
 # and stopped at 348 instead of 208.
+# roulette.c: the Game Corner's roulette, the same: its wheel, grid and
+# sprites placed for 240x160 were drawn in the top left corner, over the
+# table's colour (the backdrop) on the whole screen.
 # Which centred screen each of those is, for how its margins are filled.
 build/root/src/main_menu.o: FULLCFLAGS += -DCTR_CENTRED_MAIN_MENU
 build/root/src/naming_screen.o: FULLCFLAGS += -DCTR_CENTRED_NAMING
@@ -386,9 +389,10 @@ build/ctr_voxel.o: src/voxel/ctr_voxel.c Makefile full.mk
 	@mkdir -p $(dir $@)
 	"$(CC)" $(CPPFLAGS) $(CFLAGS) -Isrc/voxel -MMD -MP -c $< -o $@
 
-romfs/shaders/voxel.shbin: src/voxel/voxel.v.pica
+# The world's program first, the weather particles' second (DVLE 0 and 1).
+romfs/shaders/voxel.shbin: src/voxel/voxel.v.pica src/voxel/voxel_weather.v.pica
 	@mkdir -p $(dir $@)
-	$(DEVKITPRO)/tools/bin/picasso -o $@ $<
+	$(DEVKITPRO)/tools/bin/picasso -o $@ $^
 
 build/maps.s build/map_layouts.inc $(ROMFS_MAP_OUT) &: $(SCRIPTS)/gen_map_data.py \
 		$(ROOT)/data/maps.s $(ROOT)/data/layouts/layouts.inc

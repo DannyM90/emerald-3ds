@@ -894,15 +894,60 @@ VoxelWeatherClass VoxelWorld_Weather(void)
     case WEATHER_UNDERWATER_BUBBLES:
         return VOXEL_WEATHER_FOG;
     case WEATHER_SNOW:
-    case WEATHER_VOLCANIC_ASH:
-    case WEATHER_SANDSTORM:
         return VOXEL_WEATHER_PARTICLES;
+    case WEATHER_VOLCANIC_ASH:
+        return VOXEL_WEATHER_ASH;
+    case WEATHER_SANDSTORM:
+        return VOXEL_WEATHER_SAND;
     case WEATHER_SHADE:
     case WEATHER_SUNNY_CLOUDS:
         return VOXEL_WEATHER_SHADE;
     }
 #endif
     return VOXEL_WEATHER_CLEAR;
+}
+
+float VoxelWorld_WeatherAmount(void)
+{
+#ifdef PLATFORM_3DS
+    float amount;
+
+    switch (GetCurrentWeather())
+    {
+    case WEATHER_RAIN:
+    case WEATHER_RAIN_THUNDERSTORM:
+    case WEATHER_DOWNPOUR:
+        /* The drops turned on, one by one, up to 10, 16 or 24. */
+        return (float)gWeatherPtr->curRainSpriteIndex / MAX_RAIN_SPRITES;
+    case WEATHER_VOLCANIC_ASH:
+        if (!gWeatherPtr->ashSpritesCreated)
+            return 0.0f;
+        break;
+    case WEATHER_SANDSTORM:
+        if (!gWeatherPtr->sandstormSpritesCreated)
+            return 0.0f;
+        break;
+    default:
+        return 0.0f;
+    }
+    /* Both come in to EVA 16 and leave to 0. */
+    amount = (float)gWeatherPtr->currBlendEVA / 16.0f;
+    return amount > 1.0f ? 1.0f : amount;
+#else
+    return 0.0f;
+#endif
+}
+
+/* The bolt's colour map is 19, the storm's own 3 (Thunderstorm_Main). */
+float VoxelWorld_Lightning(void)
+{
+#ifdef PLATFORM_3DS
+    if (GetCurrentWeather() != WEATHER_RAIN_THUNDERSTORM || gWeatherPtr->colorMapIndex <= 3)
+        return 0.0f;
+    return gWeatherPtr->colorMapIndex >= 19 ? 1.0f : (float)(gWeatherPtr->colorMapIndex - 3) / 16.0f;
+#else
+    return 0.0f;
+#endif
 }
 
 /*

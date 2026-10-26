@@ -152,9 +152,17 @@ typedef enum {
     VOXEL_WEATHER_RAIN,
     VOXEL_WEATHER_FOG,
     VOXEL_WEATHER_PARTICLES,
-    VOXEL_WEATHER_SHADE
+    VOXEL_WEATHER_SHADE,
+    VOXEL_WEATHER_SAND,
+    VOXEL_WEATHER_ASH
 } VoxelWeatherClass;
 VoxelWeatherClass VoxelWorld_Weather(void);
+/* How much of the rain, the sand or the ash is in the air, 0-1, following the
+ * game's own as it comes and goes: the rain's drops shown of all it can show
+ * (a downpour is 1), the sand's and the ash's sprite blend (voxel_world.c). */
+float VoxelWorld_WeatherAmount(void);
+/* A thunderstorm's bolt, 0-1: the game's flash of the palettes. */
+float VoxelWorld_Lightning(void);
 /* How thick the game's fog is right now, 0-1: its sprites' blend as it fades
  * in and out, 0 when there are none (voxel_world.c). */
 float VoxelWorld_FogDensity(void);
