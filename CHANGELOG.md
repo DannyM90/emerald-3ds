@@ -121,6 +121,17 @@
   EDICIÓN (`tools/logo_ptbr.py` previews it, `make verify-logo-ptbr` checks
   that the port draws it).
 
+- German (experimental), by @DannyM90 (pull request #175, issue #135), with
+  work by @andyst-dev (pull request #96): the game in German from your own
+  Pokémon Smaragd-Edition (Germany) ROM, built with `tools/bootstrap.py
+  --make --german-rom` (`Emerald3DS-de.3dsx`, docs/GERMAN.md). The texts,
+  graphics, credits and Trainer Hill come from your ROM; the German layout
+  (wider windows, nine-column naming keyboard with Ä Ö Ü, the "KP" bar,
+  metres and kilograms) and the port's menus and messages are in German.
+  The healthbox's "KP" bar, the length check on raw texts, the German data
+  pack errors, the client/builder ROM check test and the cleanup when
+  switching back to English come from andyst-dev's German pull request.
+
 - Japanese (experimental): the game in Japanese from your own Pocket Monsters
   Emerald (Japan) ROM. The web and Windows builders accept it and pick the
   language from the ROM; every release carries the Japanese variant too
