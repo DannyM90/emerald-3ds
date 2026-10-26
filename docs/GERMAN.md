@@ -63,7 +63,7 @@ stehen im Manifest unter `unmapped_source_texts`. Keine davon ist im Spiel als e
 Text zu sehen: Es sind Zeichen, die im Deutschen gleich sind (♂, ♀, !, ?, :, …, Pfeile),
 leere Platzhalter und ungenutzte Texte.
 
-Deutsche Besonderheiten (Patch `0080-german-layout.patch`):
+Deutsche Besonderheiten (Patch `0081-german-layout.patch`):
 
 - breitere Fenster für die längeren deutschen Bezeichnungen: Kampf, Beutel,
   Beerenetikett, PokéNav-Listen, Kampfzone, Beerenmixer und mehr, nach den Werten des

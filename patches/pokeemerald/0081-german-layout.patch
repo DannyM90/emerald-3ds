@@ -1,5 +1,5 @@
 Emerald 3DS changes to pret/pokeemerald 76463dac15cad36aca5e2b3f6366abf9e53f814f: German layout, units, keyboard and grammar
-Applies after 0079-rng-seeding.patch; apply with tools/bootstrap.py.
+Applies after 0080-visible-wild-diving.patch; apply with tools/bootstrap.py.
 
 The German variant (BPED) as the retail German ROM lays it out: wider windows
 for the longer labels (battle, bag, berry tag, PokéNav lists, Battle Frontier),

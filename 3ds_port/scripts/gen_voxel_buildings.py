@@ -18,6 +18,7 @@ stronger check there, and the proofs would double its time.
 """
 
 import argparse
+import bisect
 import collections
 import copy
 from PIL import Image, ImageChops, ImageFilter
@@ -1404,7 +1405,16 @@ def lathe_fit(obj, height, base, squash=0.7, bands=4, seg=16):
         i = min(int(t), bands - 1)
         return radii[i] + (radii[i + 1] - radii[i]) * (t - i)
 
+    # (sorted, to count a row's pixels either side of a width by bisection)
+    need_sorted = {v: sorted(ds) for v, ds in need.items()}
+    spare_sorted = {v: sorted(ds) for v, ds in spare.items()}
+    costs = {}
+
     def cost(cz, radii):
+        # the search comes back to the same radii often: each is costed once
+        key = (cz, tuple(radii))
+        if key in costs:
+            return costs[key]
         rs = [(y, radius(radii, y)) for y in ys]
         c = 0
         for v in rows:
@@ -1415,7 +1425,9 @@ def lathe_fit(obj, height, base, squash=0.7, bands=4, seg=16):
                     t = (dv + y) / (squash * r)
                     if -1.0 <= t <= 1.0:
                         w = max(w, r * math.sqrt(1.0 - t * t))
-            c += 1000 * sum(1 for d in need[v] if d > w) + sum(1 for d in spare[v] if d <= w)
+            nd, sp = need_sorted[v], spare_sorted[v]
+            c += 1000 * (len(nd) - bisect.bisect_right(nd, w)) + bisect.bisect_right(sp, w)
+        costs[key] = c
         return c
 
     def drawn(cz):
@@ -2008,6 +2020,30 @@ def interior_specs(spec):
                                                         or pc.get("walls"))]
     shapes_at = [[sum(g[y][x] for g in things) for x in range(W)] for y in range(H)]
     leaves = auto_leave(pieces, grids, ground, hexes, supports, W, H)
+    parts_of = {}
+
+    def leave_parts(colours):
+        """The room's runs of pixels in these colours (4-connected): the
+        same for every piece that leaves the same colours."""
+        if colours not in parts_of:
+            seen, parts = set(), []
+            for y in range(H):
+                for x in range(W):
+                    if (x, y) in seen or hexes[y][x] not in colours:
+                        continue
+                    seen.add((x, y))
+                    part, todo = [], [(x, y)]
+                    while todo:
+                        px, py = todo.pop()
+                        part.append((px, py))
+                        for nx, ny in ((px + 1, py), (px - 1, py), (px, py + 1), (px, py - 1)):
+                            if (0 <= nx < W and 0 <= ny < H and (nx, ny) not in seen
+                                    and hexes[ny][nx] in colours):
+                                seen.add((nx, ny))
+                                todo.append((nx, ny))
+                    parts.append(part)
+            parts_of[colours] = parts
+        return parts_of[colours]
     for k, pc in enumerate(pieces):
         # (a piece of some tiles alone: its shape cut to them, as above)
         inside = grids[k] if pc.get("tiles") else _inside_grid(pc["shape"], W, H)
@@ -2039,18 +2075,10 @@ def interior_specs(spec):
             left |= {(x, y) for y in range(H) for x in range(W)
                      if inside[y][x] and hexes[y][x] in pc.get("leave", ())}
         if leave:
-            todo = [(x, y) for y in range(H) for x in range(W)
-                    if not inside[y][x] and hexes[y][x] in leave]
-            seen = set(todo)
-            while todo:
-                x, y = todo.pop()
-                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-                    if (0 <= nx < W and 0 <= ny < H and (nx, ny) not in seen
-                            and hexes[ny][nx] in leave):
-                        seen.add((nx, ny))
-                        todo.append((nx, ny))
-                        if inside[ny][nx]:
-                            left.add((nx, ny))
+            # each run of those colours that reaches out of the shape
+            for part in leave_parts(frozenset(leave)):
+                if any(not inside[y][x] for (x, y) in part):
+                    left.update((x, y) for (x, y) in part if inside[y][x])
         cand = set()
         for y in range(H):
             if not any(inside[y]):
@@ -2214,11 +2242,18 @@ def interior_specs(spec):
         xs = [x for x, _ in pts]
         ys = [y for _, y in pts]
         rects.append((min(xs) // 16, min(ys) // 16, max(xs) // 16 + 1, max(ys) // 16 + 1))
+    under_marks = {}
+
     def mark_under(x, y):
         """The floor mark a piece hides at (x, y): the same mark where the
         row runs out of the piece both ways - a rug under a chair, a stripe
         running on under it. Anything else (the shade down a room's edge on
         one side) is left to the floor."""
+        if (x, y) not in under_marks:
+            under_marks[x, y] = _mark_under(x, y)
+        return under_marks[x, y]
+
+    def _mark_under(x, y):
         found = []
         for step in (-1, 1):
             xx = x
@@ -3692,13 +3727,43 @@ def sampled_texels(uv, W, H):
     sign = 1.0 if area > 0 else -1.0
     edges = [((ax, ay), (bx - ax, by - ay)) for (ax, ay), (bx, by) in
              (((u0, v0), (u1, v1)), ((u1, v1), (u2, v2)), ((u2, v2), (u0, v0)))]
+    # overlapping unless some edge has the whole square outside it. The
+    # square's corner furthest out along an edge's normal is the same for
+    # every square (by the signs of the normal), so only that one is tested;
+    # along a row that test only ever turns one way, so each edge passes a
+    # run of the row's squares, found by bisection
+    tests = [(ax, ay, ex, ey,
+              1 if sign * ex > 0 else 0, 1 if sign * ey < 0 else 0,
+              eps * math.hypot(ex, ey)) for (ax, ay), (ex, ey) in edges]
     for v in range(lo_v, hi_v + 1):
-        for u in range(lo_u, hi_u + 1):
-            # overlapping unless some edge has the whole square outside it
-            if all(max(sign * (ex * (cv - ay) - ey * (cu - ax))
-                       for cu in (u, u + 1) for cv in (v, v + 1)) > eps * math.hypot(ex, ey)
-                   for (ax, ay), (ex, ey) in edges):
-                out.add((u, v))
+        first, last = lo_u, hi_u
+        for ax, ay, ex, ey, dv, du, limit in tests:
+            if first > last:
+                break
+            def passes(u):
+                return sign * (ex * (v + dv - ay) - ey * (u + du - ax)) > limit
+            if -sign * ey > 0:          # passing from some square on
+                a, b = first, last + 1
+                while a < b:
+                    m = (a + b) // 2
+                    if passes(m):
+                        b = m
+                    else:
+                        a = m + 1
+                first = a
+            elif -sign * ey < 0:        # passing up to some square
+                a, b = first - 1, last
+                while a < b:
+                    m = (a + b + 1) // 2
+                    if passes(m):
+                        a = m
+                    else:
+                        b = m - 1
+                last = a
+            elif not passes(first):
+                first = last + 1
+        for u in range(first, last + 1):
+            out.add((u, v))
     return out
 
 
