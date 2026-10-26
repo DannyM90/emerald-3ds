@@ -14,22 +14,24 @@
  * Portuguese over the English game when built with PORT_LANG=pt_br
  * (CTR_LANG_PT_BR); the game's own texts stay those of its ROM. */
 #if CTR_LANG_PT_BR
-#define CTR_TEXT(english, spanish, french, italian, portuguese, german) (portuguese)
+#define CTR_TEXT(english, spanish, french, italian, portuguese, german, japanese) (portuguese)
 #elif GAME_LANGUAGE == LANGUAGE_SPANISH
-#define CTR_TEXT(english, spanish, french, italian, portuguese, german) (spanish)
+#define CTR_TEXT(english, spanish, french, italian, portuguese, german, japanese) (spanish)
 #elif GAME_LANGUAGE == LANGUAGE_FRENCH
-#define CTR_TEXT(english, spanish, french, italian, portuguese, german) (french)
+#define CTR_TEXT(english, spanish, french, italian, portuguese, german, japanese) (french)
 #elif GAME_LANGUAGE == LANGUAGE_ITALIAN
-#define CTR_TEXT(english, spanish, french, italian, portuguese, german) (italian)
+#define CTR_TEXT(english, spanish, french, italian, portuguese, german, japanese) (italian)
 #elif GAME_LANGUAGE == LANGUAGE_GERMAN
-#define CTR_TEXT(english, spanish, french, italian, portuguese, german) (german)
+#define CTR_TEXT(english, spanish, french, italian, portuguese, german, japanese) (german)
+#elif GAME_LANGUAGE == LANGUAGE_JAPANESE
+#define CTR_TEXT(english, spanish, french, italian, portuguese, german, japanese) (japanese)
 #else
-#define CTR_TEXT(english, spanish, french, italian, portuguese, german) (english)
+#define CTR_TEXT(english, spanish, french, italian, portuguese, german, japanese) (english)
 #endif
 
 /* A text only English and Portuguese have. */
-#define CTR_TEXT_PT(english, portuguese) CTR_TEXT(english, english, english, english, portuguese, english)
+#define CTR_TEXT_PT(english, portuguese) CTR_TEXT(english, english, english, english, portuguese, english, english)
 /* The same with a German text. */
-#define CTR_TEXT_PT_DE(english, portuguese, german) CTR_TEXT(english, english, english, english, portuguese, german)
+#define CTR_TEXT_PT_DE(english, portuguese, german) CTR_TEXT(english, english, english, english, portuguese, german, english)
 
 #endif

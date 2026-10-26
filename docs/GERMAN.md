@@ -101,3 +101,11 @@ Bitte den unteren Bildschirm vollständig fotografieren:
 ```sh
 python -m unittest discover -s builder/tests -v
 ```
+
+## Autoren
+
+Deutsche Unterstützung von DannyM90 (Pull-Request #175). Ideen und Vorarbeit aus
+andyst-devs deutscher Variante (Pull-Request #96): die „KP“-Leiste der
+Statusanzeige, die Längenprüfung roher Texte, die deutschen Fehlermeldungen des
+Datenpakets, der Test der ROM-Prüfung von Client und Builder und das Aufräumen
+beim Wechsel zurück zu Englisch.

@@ -64,6 +64,7 @@ sys.path.insert(0, HERE)
 import gen_voxel_relief as gr  # noqa: E402
 import voxel_building as vb  # noqa: E402
 import voxel_props  # noqa: E402
+import voxel_relief_fixes as vrf  # noqa: E402
 
 LEVEL = 16
 N = 4                       # lattice steps per cell side (5 x 5 points)
@@ -2526,11 +2527,9 @@ def behind_trees(c, flat, grids, pieces=None, marked=()):
 # seam in a cliff six levels tall over Route 114's flat drawing).
 JOIN = (("LAYOUT_ROUTE115", "LAYOUT_ROUTE114"),)
 
-# Layouts that are one map drawn twice (the game swaps them as the story
-# goes): the second takes the hand marks of the first, where it has none of
-# its own - Route 111 without its Mirage Tower is Route 111, and its marks
-# were lost the day the tower fell.
-TWINS = {"LAYOUT_ROUTE111_NO_MIRAGE_TOWER": "LAYOUT_ROUTE111"}
+# Layouts that are one map drawn twice: the second takes the hand marks of
+# the first, where it has none of its own (voxel_relief_fixes.TWINS).
+TWINS = vrf.TWINS
 
 
 def group_of(layout_id):
@@ -3897,9 +3896,10 @@ def solve_auto(layout_id, reference=None):
             "landings": landings, "ledges": ledges}
 
 
-def finish(auto, marks=None):
+def finish(auto, marks=None, behind=None):
     """A solve_auto with the hand marks laid over it, and its grids (`auto`
-    is left as it was)."""
+    is left as it was). `behind`: the grounds chosen by hand behind cells
+    (load_behind), the fixes file's if None."""
     c, kept = auto["cells"], auto["kept"]
     pieces, flat = dict(auto["pieces"]), dict(auto["flat"])
     if marks is None:
@@ -3929,8 +3929,10 @@ def finish(auto, marks=None):
     grids.update(kept)
     faces_at_landings(c, pieces, grids, ledges["steps"])
     behind_trees(c, flat, grids, pieces, marked)
+    if behind is None:
+        behind = load_behind(c)
     return dict(auto, cells=c, pieces=pieces, flat=flat, grids=grids, marked=marked, kept=kept,
-                kept_cuts=cuts, ledges=ledges, under=under)
+                kept_cuts=cuts, ledges=ledges, under=under, behind=behind)
 
 
 # -- 7. hand marks ------------------------------------------------------------
@@ -3988,6 +3990,25 @@ def load_marks(c, fixes=None, zero=0):
                 out[(x + ox, y + oy)]["foot"] = zero + LEVEL * m["foot"]     # a ledge's
             if m.get("under") in ("rock", "open"):
                 out[(x + ox, y + oy)]["under"] = m["under"]                  # a bridge's
+    return out
+
+
+def load_behind(c, fixes=None):
+    """{canvas cell: metatile} of a group's maps: the ground the hand chose
+    to run on behind a cell (each map's "behind" in the fixes file: {"x,y":
+    metatile}, the map's own ids), in place of the one records() reads off
+    the drawing. It goes on down the rows the cell's fill covers."""
+    import voxel_relief_fixes as vrf
+    if os.environ.get("VOXEL_TERRACE_MARKS", "1") == "0":
+        return {}
+    fixes = vrf.load_fixes() if fixes is None else fixes
+    out = {}
+    layouts = fixes.get("layouts", {})
+    for lid, ox, oy in c.members:
+        own = layouts.get(lid, {}).get("behind") or layouts.get(TWINS.get(lid), {}).get("behind", {})
+        for key, m in own.items():
+            x, y = (int(v) for v in key.split(","))
+            out[(x + ox, y + oy)] = int(m)
     return out
 
 
@@ -4243,18 +4264,26 @@ def side_face(c, cell, side):
     the nearest band tile of that side that is all band (0x070, 0x075...)."""
     lid, x, y = c.src[cell]
     art = c.arts[lid]
-    tiles = BAND_WEST if side == "W" else BAND_EAST
+    # (the map's all-band tiles of that side, cached on the cells: a wall of
+    # every band asks)
+    known = c.__dict__.setdefault("_side_faces", {})
+    if (lid, side) not in known:
+        tiles = BAND_WEST if side == "W" else BAND_EAST
+        found = []
+        for n, s in c.band.items():
+            if s != side or c.src[n][0] != lid:
+                continue
+            m = c.metatile(n)
+            if twin(art, m) not in tiles or twin(art, m) in HEADS:
+                continue
+            cls = pixel_classes(art, m)
+            if sum(r.count("F") for r in cls) < 0.5 * 256:
+                continue
+            found.append((c.src[n][1], c.src[n][2], m))
+        known[(lid, side)] = found
     best = None
-    for n, s in c.band.items():
-        if s != side or c.src[n][0] != lid:
-            continue
-        m = c.metatile(n)
-        if twin(art, m) not in tiles or twin(art, m) in HEADS:
-            continue
-        cls = pixel_classes(art, m)
-        if sum(r.count("F") for r in cls) < 0.5 * 256:
-            continue
-        d = abs(c.src[n][1] - x) + abs(c.src[n][2] - y)
+    for nx, ny, m in known[(lid, side)]:
+        d = abs(nx - x) + abs(ny - y)
         if best is None or d < best[0]:
             best = (d, m)
     return best[1] if best else SIDE_FACE[side]
@@ -4346,6 +4375,28 @@ def _sample(g, px, py):
             + (g[b + 1][a] * (1 - tx) + g[b + 1][a + 1] * tx) * ty)
 
 
+def plain_top(c, lid):
+    """The plainest top a map draws: of its top cells (no rim, no boulder),
+    the tile with the most pixels of the top's own colours. None if it has
+    none. Cached on the cells."""
+    known = c.__dict__.setdefault("_plain_top", {})
+    if lid not in known:
+        art = c.arts[lid]
+        best = None
+        for cell, k in c.kind.items():
+            if k != TOP or c.src[cell][0] != lid or cell in c.rim:
+                continue
+            m = c.metatile(cell)
+            if m in ON_TOP:
+                continue
+            px = list(art.cell_image(m).convert("RGB").getdata())
+            score = sum(1 for p in px if p in gr.ROCK_TOP)
+            if best is None or (score, -m) > best[0]:
+                best = ((score, -m), m)
+        known[lid] = best[1] if best and best[0][0] >= 192 else None
+    return known[lid]
+
+
 def behind(c, out, cell, lid, grids=None, level=None):
     """The ground that runs on under a cell, seen past its back: what the
     cell north of it is (flat) or stands on (its own cut's ground), else the
@@ -4409,6 +4460,11 @@ def behind(c, out, cell, lid, grids=None, level=None):
                 m = gr.plain_ground(seen, c.roles_of[lid], past, nx, ny, "S", half=seen is not art)
                 plain_of[key] = art.alias.get(m, m) if seen is not art else m
             m = plain_of[key]
+            if c.kind[n] == TOP and m in ON_TOP and c.metatile(n) not in ON_TOP:
+                # a top's plainest drawing off the mountain is a boulder's
+                # upper half: its plain top instead (the boulder's stripes
+                # lay behind Route 111's rims)
+                m = plain_top(c, lid) or m
             return c.metatile(n) if m is None else m
         if n in out and out[n][2] is not None:
             return out[n][2]
@@ -4471,6 +4527,22 @@ def edge_strip(mask):
                     or all(i == 0 for i, _ in cleared) or all(i == 15 for i, _ in cleared)):
         return [0] * 16
     return list(mask)
+
+
+def lip_mask(art, m):
+    """Rows of bits, 1 north of a rim's lip: in each column, the pixels over
+    its first highlight (gr.ROCK_RIM) in the tile's top rows. None where
+    fewer than four pixels are."""
+    img = art.cell_image(m).convert("RGB").load()
+    rows = [0] * 16
+    for i in range(16):
+        j = next((j for j in range(LIP_ROWS) if img[i, j] in gr.ROCK_RIM), None)
+        for k in range(j or 0):
+            rows[k] |= 1 << i
+    return rows if sum(bin(r).count("1") for r in rows) >= 4 else None
+
+
+LIP_ROWS = 6    # a rim's lip is drawn in its tile's first rows (rim_pixels)
 
 
 def drawn_rock_pixels(art, m):
@@ -4554,7 +4626,14 @@ def records(sol):
                 # own tile, a wall of crowns stood under the wood - Route
                 # 120's bank, "always mountain")
                 own = (x, y) in c.bridges
-                rec[3] = c.metatile((x, y)) if own else face_of[lid]
+                # (a band's are its side face, the band drawn all band: the
+                # map's face stood as a slab of another rock under each step
+                # of a staircase of bands - Route 126's white mountain, its
+                # brown face under every white band)
+                piece = (sol["pieces"].get((x, y)) or ("",))[0].split(":")[0]
+                band = piece[0] if piece in ("W", "E", "W2", "E2") else None
+                rec[3] = (c.metatile((x, y)) if own else side_face(c, (x, y), band) if band
+                          else face_of[lid])
                 rec[4] = 0xFF
                 rec[5] |= BLOCK_WALLS
         # its background, lifted off the ground it is: cut away
@@ -4570,13 +4649,19 @@ def records(sol):
         # it: a band's head cut along its diagonal there laid its other
         # half at the foot of the field's slopes, a wedge of the void where
         # four of them met, Route 112's valley under the pale rock at 36,34)
+        # (but a band down the rough rock's flank draws real ground round
+        # it, the sand or grass past the mountain's corner: cut by its
+        # colours - left, it stood as a triangle of ground over the band's
+        # top, Route 112's east flank)
+        rough_band = (x, y) in c.rough and (sol["pieces"].get((x, y)) or ("",))[0] in ("W", "E", "W2", "E2")
         mask = (gr._cut_mask(art, roles, lx, ly, local_rock[lid])
                 if (c.kind[(x, y)] in (ROCK, TOP) or (x, y) in drawn_rock)
                 and not c.is_stair((x, y)) and not c.muddy((x, y))
-                and (x, y) not in c.cheeks and (x, y) not in c.rough
-                and not any(n in c.rough for n in c._four((x, y)))
+                and (x, y) not in c.cheeks
+                and (rough_band or ((x, y) not in c.rough
+                                    and not any(n in c.rough for n in c._four((x, y)))))
                 else None)
-        if mask and hasattr(art, "own_metatile"):
+        if mask and hasattr(art, "own_metatile") and not rough_band:
             # a band's head drawn over the map's own ground (twin: Route
             # 114's 220/222 on Fallarbor's dirt, flecked in the rock's
             # colours once read in the General's): cut as the head it is,
@@ -4612,8 +4697,19 @@ def records(sol):
                     mask = None
         low = low_side(c, (x, y))
         head = head_of(art, c.metatile((x, y))) if c.kind[(x, y)] in (ROCK, TOP) else None
-        if head is not None and (any(mask or []) or any(low or [])):
+        # (a rough band cut by its colours keeps that cut: the diagonal
+        # took its rock's rounded corner for ground)
+        if head is not None and not (rough_band and any(mask or [])) and (any(mask or []) or any(low or [])):
             # a head over any background is cut as the head it is drawn from
+            mask, low = head_mask(head), None
+        boulder_band = (sol["pieces"].get((x, y)) or ("",))[0]
+        if head is None and twin(art, c.metatile((x, y))) in BOULDER_HEAD and boulder_band in ("W", "E"):
+            # a boulder's upper half laid as the band of a terrace's rounded
+            # head (pieces): cut as that head, the lower terrace beyond its
+            # diagonal - left whole, the band's ramp stood square over the
+            # terrace behind it, a corner the drawing rounds (Route 111's
+            # staircase of crests)
+            head = HEAD_DRAWN[boulder_band]
             mask, low = head_mask(head), None
         side = c.band.get((x, y))
         foot = None
@@ -4637,6 +4733,26 @@ def records(sol):
             # level down, behind it
             mask = [(a | b) for a, b in zip(mask or [0] * 16, low)]
             foot = min(min(r) for r in g)
+        # the back of a rim over a lower terrace: what it draws north of its
+        # lip is the terrace behind (the plain top of 06c/0bf, as the sand of
+        # 081), cut away down to it - the silhouette the drawing gives every
+        # rim. Only the sand was cut, so a rim over sand followed its lip and
+        # one over another terrace stood square, its corner a box
+        lip_only = False
+        if head is None and not any(mask or []) and (x, y) in c.rim and c.kind[(x, y)] in (ROCK, TOP) \
+                and (x, y - 1) in grids and (x, y) not in c.cheeks and (x, y) not in c.rough \
+                and not c.is_stair((x, y)) and not c.muddy((x, y)):
+            n = (x, y - 1)
+            npiece = (sol["pieces"].get(n) or ("",))[0]
+            back = min(edge(grids[n], "S"))
+            if not c.band.get(n) and npiece not in ("W", "E", "W2", "E2") \
+                    and min(edge(g, "N")) - back >= LEVEL / 2:
+                lm = lip_mask(art, c.metatile((x, y)))
+                # (a strip one pixel thin is drawing, not shape: edge_strip)
+                if lm is not None and any(edge_strip(lm)):
+                    lip_only = not any(mask or [])
+                    mask = [(a | b) for a, b in zip(mask or [0] * 16, lm)]
+                    foot = back if foot is None else min(foot, back)
         if mask and any(mask):
             grounds = [sol["flat"][n] for n in ((x, y - 1), (x - 1, y), (x + 1, y), (x, y + 1))
                        if n in sol["flat"] and c.kind.get(n) in (GROUND, UNKNOWN)]
@@ -4648,6 +4764,22 @@ def records(sol):
                 foot = min(grounds) if grounds else min(min(r) for r in g)
             elif grounds:
                 foot = min([foot] + grounds)
+            if head is not None and (x, y) not in drawn_rock and (x, y) not in c.rough:
+                # a band's head: the ground it clears beyond its diagonal
+                # reaches the cell beside it where it touches the tile's
+                # edge, and lies at that cell's own edge, a top's as much as
+                # a ground's. At the slope's low end instead, a band two
+                # levels over the terrace beside it laid its sand a level up,
+                # a floor of its own under the rock (Route 114's bands at
+                # 7,55). (Never the rough rock's crags: their ground beside
+                # is the valley floor, levels down)
+                beside = [min(edge(grids[n], theirs))
+                          for n, theirs, touches in (((x, y - 1), "S", mask[0]), ((x, y + 1), "N", mask[15]),
+                                                     ((x - 1, y), "E", any(r & 1 for r in mask)),
+                                                     ((x + 1, y), "W", any(r >> 15 & 1 for r in mask)))
+                          if touches and n in grids]
+                if beside and min(beside) < foot:
+                    foot = min(beside)
             lifted = sum(1 for j in range(16) for i in range(16)
                          if (mask[j] >> i) & 1 and _sample(g, i + 0.5, j + 0.5) - foot > CUT_LIFT)
             if lifted >= 4:
@@ -4669,12 +4801,19 @@ def records(sol):
                 # never off the grey outline round its rock; and a rim - a
                 # top's lip and the grass behind it - is no plain ground: a
                 # head's ground was 0x21c, a line of grass at its corner)
-                ground = gr._behind(seen, roles, lx, ly, past, drawn, half=seen is not art,
-                                    content=past if seen is not art else local_falls[lid] | past_rims[lid],
-                                    ignore=OUTLINE_GREY)
-                if ground is not None and gr._plain_background(seen, seen.metatile(lx, ly), drawn, ground):
-                    rec[5] |= PLAIN
-                rec[2] = art.alias.get(ground, ground) if seen is not art else ground
+                if lip_only:
+                    # (a rim's back over a terrace: the ground behind is
+                    # that terrace's, as under any back)
+                    rec[2] = behind(c, out, (x, y), lid, grids, foot)
+                    if gr._plain_background(art, art.metatile(lx, ly), drawn, rec[2]):
+                        rec[5] |= PLAIN
+                else:
+                    ground = gr._behind(seen, roles, lx, ly, past, drawn, half=seen is not art,
+                                        content=past if seen is not art else local_falls[lid] | past_rims[lid],
+                                        ignore=OUTLINE_GREY)
+                    if ground is not None and gr._plain_background(seen, seen.metatile(lx, ly), drawn, ground):
+                        rec[5] |= PLAIN
+                    rec[2] = art.alias.get(ground, ground) if seen is not art else ground
                 if rec[3] is not None:
                     # a cut tile's sides go down only from its rock's own
                     # pixels (the cleared ground is no wall: seen through
@@ -4839,10 +4978,19 @@ def records(sol):
     # a back k levels over the ground behind it stands k rows south of that
     # ground (a pixel at height h is drawn h rows north of where it is): the
     # ground runs on under every one of those rows, not only the first
+    chosen = sol.get("behind", {})
+    carried = sol.setdefault("behind_carried", {})
+    carried.clear()
+    # (a cut over the terrace behind it too, its flat layer at that ground
+    # the first of those rows: a rim's back cut along its lip, two levels
+    # over the terrace behind, left the second row open onto the void)
     for (x, y), rec in sorted(out.items(), key=lambda kv: (kv[0][1], kv[0][0])):
-        if rec[0] != "fill":
+        if rec[0] != "fill" and not (isinstance(rec[0], list) and (x, y - 1) in grids
+                                     and abs(min(edge(grids[(x, y - 1)], "S")) - rec[1]) < 0.5):
             continue
         rise = max(edge(grids[(x, y)], "N")) - rec[1]
+        if rec[0] != "fill" and rec[2] is None:
+            continue
         # (the fill lies two pixels under the ground it runs on, so a rise of
         # one level leaves a sliver at the back unless the next row has it too)
         for k in range(1, int((rise + 2.5) // LEVEL) + 1):
@@ -4854,6 +5002,9 @@ def records(sol):
             m = out.setdefault(n, [None, 0, None, None, 0, 0])
             if m[0] is None:
                 m[0], m[1], m[2] = "fill", rec[1], rec[2]
+                # (the ground the hand chose behind the back, all its rows)
+                if (x, y) in chosen and n not in chosen:
+                    carried[n] = chosen[(x, y)]
     # a canopy the tile draws over the ground north of its small tree (a
     # secondary tileset's own: the General's, voxel_tree.c draws as their
     # ground): its crown cut away, the ground it is drawn over laid under
@@ -4963,6 +5114,9 @@ def merge(sol, relief):
                 # the map's own)
                 if wall is not None and (recoloured(*xy) or flags & CANOPY):
                     wall = own(wall)
+            hand = sol.get("behind", {}).get(cell, sol.get("behind_carried", {}).get(cell))
+            if hand is not None and mask is not None:
+                ground = hand       # (the map's own id, as the hand chose it)
             if mask is None or mask == "fill":
                 k = vrf.NO_VARIANT
             else:

@@ -405,12 +405,12 @@ _ART = {}
 
 # Secondary tilesets whose mountains are the General tileset's rock drawn
 # again in their own colours (Jagged Pass, Mt Chimney: Lavaridge's red rock;
-# Route 115: Fallarbor's beige rock).
+# Route 115: Fallarbor's beige rock; Route 126: Mossdeep's white rock).
 # The analysis reads them as the General rock - each of their tiles that is
 # a General rock tile recoloured stands for it, every other tile is seen in
 # the General colours - and the export writes their own ids back, so the
 # console draws their own drawing on the relief read off its twin.
-ALIAS_TILESETS = {"gTileset_Lavaridge", "gTileset_Fallarbor"}
+ALIAS_TILESETS = {"gTileset_Lavaridge", "gTileset_Fallarbor", "gTileset_Mossdeep"}
 # the maps read so, each checked by the line check (voxel_relief_lines.py);
 # Route 112's red mountain, trees on every terrace, is not yet
 ALIAS_LAYOUTS = {"LAYOUT_JAGGED_PASS", "LAYOUT_MT_CHIMNEY", "LAYOUT_LAVARIDGE_TOWN"}
@@ -419,7 +419,11 @@ ALIAS_LAYOUTS = {"LAYOUT_JAGGED_PASS", "LAYOUT_MT_CHIMNEY", "LAYOUT_LAVARIDGE_TO
 # solve, Route 115's mountain moved Route 114 48 px, Fortree 64 px and left a
 # step at the seam with Rustboro), and the terraces stand on it. Route 114's
 # south is the same beige mountain as Route 115's (voxel_terraces.JOIN).
-ALIAS_TERRACES = {"LAYOUT_ROUTE115", "LAYOUT_ROUTE114", "LAYOUT_ROUTE112"}
+# Route 126's white mountain round Sootopolis, read as ground, stood on hand
+# marks alone with none of the rock's cuts, fills or walls (its levels are
+# the same either way); the rest of Mossdeep's maps keep their own reading
+# (their sea rocks would turn into bands).
+ALIAS_TERRACES = {"LAYOUT_ROUTE115", "LAYOUT_ROUTE114", "LAYOUT_ROUTE112", "LAYOUT_ROUTE126"}
 ALIAS_REFERENCE = "LAYOUT_ROUTE116"     # a layout over the General tileset
 _ALIAS = {}
 _TERRACE_ART = {}
@@ -1308,8 +1312,12 @@ def cut_feet(relief, quiet=False):
             if not (0 <= n[0] < t["w"] and 0 <= n[1] < t["h"]):
                 continue
             other = cuts.get((lay,) + n)
-            if other is not None and other[0] != 0xFFFF:
+            if other is not None and other[0] != 0xFFFF and dy >= 0:
                 continue    # (a cut beside it: its own lattice dips the same way)
+            # (but the one north is the terrace behind whatever it is: a
+            # rim's back cut along its lip stands on it - raised to the
+            # rim's own level, its ground stood a level over the terrace and
+            # the void showed under it from above)
             g = t["cells"].get(n)
             lows.append(min(g[k] for k in points) if g else 0)
         if lows and rec[1] < min(lows) - CUT_SINK:

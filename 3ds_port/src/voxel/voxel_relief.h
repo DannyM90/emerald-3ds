@@ -61,6 +61,34 @@ bool VoxelRelief_IsDrawn(const VoxelMapInstance *inst);
  */
 unsigned VoxelRelief_Belt(const VoxelMapInstance *inst);
 
+/* The cliff wall a map's cut cells hang most often (its mountains' face
+ * tile), -1 if none: what a back's north face is drawn with when its own
+ * record names no wall. */
+int VoxelRelief_FaceTile(const VoxelMapInstance *inst);
+
+/*
+ * What a map's fixes fill past one of its edges with (relief_fixes.json
+ * "edges", the editor's edge fills), in place of the border block: the
+ * metatile (the map's own id), whether it is water, and where its top stands
+ * (pixels over the map's base) when the fixes give it - else the belt follows
+ * the map's edge as ever. `edge` is 1 west, 2 east, 4 north, 8 south; `along`
+ * the row (west, east) or column (north, south) of the map's edge cell
+ * nearest; `index` which of the stretch's 2x2 block (0-3, row major), the
+ * game's border block's phase. False where nothing is set.
+ */
+typedef struct
+{
+    int metatile;
+    bool water, hasTop;
+    int top;
+} VoxelEdgeFill;
+bool VoxelRelief_EdgeFill(unsigned layoutId, unsigned edge, int along, unsigned index, VoxelEdgeFill *fill);
+/* The fill past instance `ring`'s edges at a world cell outside it, if any. */
+bool VoxelRelief_EdgeFillAt(const VoxelMapInstance *ring, int worldX, int worldY, VoxelEdgeFill *fill);
+/* The i-th metatile of a map's edge fills, four a stretch (for its atlas),
+ * false past the last. */
+bool VoxelRelief_EdgeFills(unsigned layoutId, unsigned i, int *metatile);
+
 /* True when the cell's lattice is not level: rock or stairs, drawn by the
  * relief itself and not by any structure. */
 bool VoxelRelief_IsSlope(const int16_t *grid);

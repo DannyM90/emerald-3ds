@@ -290,7 +290,7 @@ static bool PaceBehind(uint64_t now)
  * best left as the GBA's. */
 static void PaceUpdate(void)
 {
-    bool setting = CtrSettings_GetInt(PACE_KEY, 0) != 0;
+    bool setting = CtrSettings_GetInt(PACE_KEY, 1) != 0;
     bool on = setting && !CtrVideo_InBattle();
     /* Nothing of the battle's own runs under its menus, only theirs: there
      * the game keeps the display's time too, a slow redraw of the bottom

@@ -28,6 +28,13 @@
  *                  longer read; 2: VOXEL_RELIEF_GOES_ON; 4:
  *                  VOXEL_RELIEF_BLOCK_WALLS; 8: VOXEL_RELIEF_THIN_DECK;
  *                  16: VOXEL_RELIEF_FACE_TOP; 32: VOXEL_RELIEF_GOES_ON_FACE; 64: VOXEL_RELIEF_GOES_ON_SOUTH)
+ *   then, if the map's fixes fill its edges (VoxelRelief_EdgeFill), "EDGE",
+ *   u16 stretches, u16 0; stretches x 18: u16 layout, u8 edge (1 west, 2
+ *   east, 4 north, 8 south), u8 flags (2: `top` given; bits 4-7: metatile
+ *   0-3 is water), s16 first, s16 last (the cells along the edge, -1 -1:
+ *   all of it), s16 top (pixels over the map's base: where the fill's top
+ *   stands), u16 metatiles[4] (the map's own ids: a 2x2 block tiled out as
+ *   the game's border block is, VoxelRelief_EdgeFillAt)
  *   and last u32 the table's offset, "CUTS".
  *
  * A point's depth is its height in the world, its map's base and its own
@@ -69,6 +76,7 @@ typedef struct
     uint8_t belt;          /* courses the border stands, as drawn (0: as ever) */
     uint8_t ease;          /* the south seam's ease, 8 px a unit (EaseAt) */
     uint8_t easeRows;      /* the last rows it is spread over */
+    int faceTile;          /* the cliff wall its cut cells hang most often, -1 */
     const uint8_t *cells;  /* into sBlob: x, y and the stored heights */
     uint8_t stride;        /* bytes a cell: CELL_BYTES, or WIDE_CELL_BYTES */
     int16_t *heights;      /* GRID per cell, pixels */
@@ -127,6 +135,9 @@ static uint16_t *sLayoutIndex;
 static unsigned sLayoutIndexSize;
 static const uint8_t *sCutVariants, *sCutCells;
 static unsigned sCutVariantCount, sCutCellCount;
+static const uint8_t *sEdges;
+static unsigned sEdgeCount;
+#define EDGE_BYTES 18
 #define CUT_VARIANT_BYTES 36
 #define CUT_CELL_BYTES 14
 
@@ -190,6 +201,17 @@ bool VoxelRelief_Init(void)
         sCutCells = sCutVariants + CUT_VARIANT_BYTES * sCutVariantCount;
         if ((long)(sCutCells - sBlob) + (long)(CUT_CELL_BYTES * sCutCellCount) > size - 8)
             goto fail;
+        {
+            const uint8_t *e = sCutCells + CUT_CELL_BYTES * sCutCellCount;
+
+            if ((long)(e - sBlob) + 8 <= size - 8 && memcmp(e, "EDGE", 4) == 0)
+            {
+                sEdgeCount = U16(e + 4);
+                sEdges = e + 8;
+                if ((long)(sEdges - sBlob) + (long)(EDGE_BYTES * sEdgeCount) > size - 8)
+                    goto fail;
+            }
+        }
     }
     sLayoutCount = U16(sBlob + 4);
     if (8 + (unsigned long)ROW_BYTES * sLayoutCount > (unsigned long)size)
@@ -236,6 +258,37 @@ bool VoxelRelief_Init(void)
                     : (int16_t)((int8_t)l->cells[k * CELL_BYTES + 2 + g] * (int)unit);
     }
     fclose(file);
+    /* each map's commonest cliff wall (VoxelRelief_FaceTile): its cut cells
+     * are sorted by layout, so a run of them is one map's */
+    for (unsigned i = 0; i < sLayoutCount; ++i)
+        sLayouts[i].faceTile = -1;
+    for (unsigned k = 0; k < sCutCellCount;)
+    {
+        unsigned layout = U16(sCutCells + CUT_CELL_BYTES * k), end = k;
+        unsigned walls[8] = {0}, counts[8] = {0}, kinds = 0, best = 0;
+
+        while (end < sCutCellCount && U16(sCutCells + CUT_CELL_BYTES * end) == layout)
+        {
+            unsigned wall = U16(sCutCells + CUT_CELL_BYTES * end + 10), j = 0;
+
+            ++end;
+            if (wall >= 0xFFFEu)
+                continue;
+            while (j < kinds && walls[j] != wall)
+                ++j;
+            if (j == kinds && kinds < 8)
+                walls[kinds++] = wall;
+            if (j < kinds)
+                ++counts[j];
+        }
+        for (unsigned j = 1; j < kinds; ++j)
+            if (counts[j] > counts[best])
+                best = j;
+        for (unsigned i = 0; kinds > 0 && i < sLayoutCount; ++i)
+            if (sLayouts[i].layoutId == layout)
+                sLayouts[i].faceTile = (int)walls[best];
+        k = end;
+    }
     for (unsigned i = 0; i < sLayoutCount; ++i)
         if (sLayouts[i].drawn && !BuildSurface(&sLayouts[i]))
         {
@@ -287,6 +340,74 @@ void VoxelRelief_Shutdown(void)
     sLayoutCount = 0;
     sCutVariants = sCutCells = NULL;
     sCutVariantCount = sCutCellCount = 0;
+    sEdges = NULL;
+    sEdgeCount = 0;
+}
+
+bool VoxelRelief_EdgeFill(unsigned layoutId, unsigned edge, int along, unsigned index, VoxelEdgeFill *fill)
+{
+    for (unsigned i = 0; i < sEdgeCount; ++i)
+    {
+        const uint8_t *e = sEdges + EDGE_BYTES * i;
+        int first = (int16_t)U16(e + 4), last = (int16_t)U16(e + 6);
+
+        if (U16(e) != layoutId || e[2] != edge)
+            continue;
+        if (first >= 0 && (along < first || along > last))
+            continue;
+        index &= 3u;
+        fill->metatile = (int)U16(e + 10 + 2 * index);
+        fill->water = (e[3] >> (4u + index) & 1u) != 0;
+        fill->hasTop = (e[3] & 2) != 0;
+        fill->top = (int16_t)U16(e + 8);
+        return true;
+    }
+    return false;
+}
+
+bool VoxelRelief_EdgeFillAt(const VoxelMapInstance *ring, int worldX, int worldY, VoxelEdgeFill *fill)
+{
+    int lx, ly, cx, cy;
+    unsigned index;
+
+    if (sEdgeCount == 0 || ring == NULL || ring->indoor || ring->width <= 0 || ring->height <= 0)
+        return false;
+    lx = worldX - ring->originX;
+    ly = worldY - ring->originY;
+    cx = lx < 0 ? 0 : lx >= ring->width ? ring->width - 1 : lx;
+    cy = ly < 0 ? 0 : ly >= ring->height ? ring->height - 1 : ly;
+    /* which of the block's four: phased from the map's corner as the game's
+     * border block is (fieldmap.c, MAP_OFFSET 7 past it: odd) */
+    index = (unsigned)(lx & 1) | ((unsigned)(ly & 1) << 1);
+    /* a corner past two edges: the west or east edge's first, then the
+     * north or south one's */
+    if (lx < 0 && VoxelRelief_EdgeFill((unsigned)ring->layoutId, 1, cy, index, fill))
+        return true;
+    if (lx >= ring->width && VoxelRelief_EdgeFill((unsigned)ring->layoutId, 2, cy, index, fill))
+        return true;
+    if (ly < 0 && VoxelRelief_EdgeFill((unsigned)ring->layoutId, 4, cx, index, fill))
+        return true;
+    if (ly >= ring->height && VoxelRelief_EdgeFill((unsigned)ring->layoutId, 8, cx, index, fill))
+        return true;
+    return false;
+}
+
+bool VoxelRelief_EdgeFills(unsigned layoutId, unsigned i, int *metatile)
+{
+    for (unsigned k = 0; k < sEdgeCount; ++k)
+    {
+        const uint8_t *e = sEdges + EDGE_BYTES * k;
+
+        if (U16(e) != layoutId)
+            continue;
+        if (i < 4u)
+        {
+            *metatile = (int)U16(e + 10 + 2 * i);
+            return true;
+        }
+        i -= 4u;
+    }
+    return false;
 }
 
 unsigned VoxelRelief_CutCount(void)
@@ -749,6 +870,12 @@ bool VoxelRelief_IsDrawn(const VoxelMapInstance *inst)
 {
     const ReliefLayout *l = LayoutOf(inst);
     return l != NULL && l->drawn;
+}
+
+int VoxelRelief_FaceTile(const VoxelMapInstance *inst)
+{
+    const ReliefLayout *l = LayoutOf(inst);
+    return l != NULL ? l->faceTile : -1;
 }
 
 unsigned VoxelRelief_Belt(const VoxelMapInstance *inst)

@@ -7,6 +7,7 @@
     python tools/bootstrap.py --make --spanish-rom esmeralda.gba   # Spanish (BPES) build
     python tools/bootstrap.py --make --french-rom emeraude.gba     # French (BPEF) build
     python tools/bootstrap.py --make --italian-rom smeraldo.gba    # Italian (BPEI) build
+    python tools/bootstrap.py --make --japanese-rom emerald-ja.gba # Japanese (BPEJ) build
     python tools/bootstrap.py --make --port-lang pt_br   # Brazilian Portuguese over the English game
     python tools/bootstrap.py --make --german-rom smaragd.gba      # German (BPED) build
 
@@ -20,10 +21,11 @@
    includes (`make generated`) and the 3DSX (`make -C 3ds_port`). Run it from
    a shell where devkitPro, a host compiler and Python are available (on
    Windows, devkitPro's MSYS2 shell with MinGW64 on PATH).
-5. With --spanish-rom / --french-rom / --italian-rom / --german-rom: after the generated
-   includes, tools/localize_spanish.py (docs/SPANISH.md), tools/localize_french.py
-   tools/localize_italian.py or tools/localize_german.py stages the texts and graphics of that language
-   from the player's clean ROM.
+5. With --spanish-rom / --french-rom / --italian-rom / --german-rom / --japanese-rom: after
+   the generated includes, tools/localize_spanish.py (docs/SPANISH.md),
+   tools/localize_french.py, tools/localize_italian.py, tools/localize_german.py or
+   tools/localize_japanese.py (docs/JAPANESE.md) stages the texts and graphics
+   of that language from the player's clean ROM.
    Switching language back and forth resets the tree.
 6. With --port-lang pt_br: the port's own interface (bottom screen labels,
    extras, data pack errors) in Brazilian Portuguese, and the game's texts
@@ -87,6 +89,7 @@ def main() -> int:
     ap.add_argument("--spanish-rom", type=Path, help="stage the Spanish data from a clean BPES ROM")
     ap.add_argument("--french-rom", type=Path, help="stage the French data from a clean BPEF ROM")
     ap.add_argument("--italian-rom", type=Path, help="stage the Italian data from a clean BPEI ROM")
+    ap.add_argument("--japanese-rom", type=Path, help="stage the Japanese data from a clean BPEJ ROM")
     ap.add_argument("--port-lang", choices=["en", "pt_br"], default="en",
                     help="language of the port's own interface (PORT_LANG=)")
     ap.add_argument("--german-rom", type=Path, help="stage the German data from a clean BPED ROM")
@@ -94,8 +97,10 @@ def main() -> int:
     ap.add_argument("-j", "--jobs", type=int, default=4)
     ap.add_argument("--python", default=sys.executable, help="Python the build calls (PYTHON=)")
     args = ap.parse_args()
-    if args.port_lang == "pt_br" and (args.spanish_rom or args.french_rom or args.italian_rom or args.german_rom):
-        ap.error("--port-lang pt_br goes over the English game, not the Spanish, French, Italian or German one")
+    if args.port_lang == "pt_br" and (args.spanish_rom or args.french_rom or args.italian_rom
+                                      or args.german_rom or args.japanese_rom):
+        ap.error("--port-lang pt_br goes over the English game, not the Spanish, French, Italian, "
+                 "German or Japanese one")
 
     lock = tomllib.loads((ROOT / "upstream.lock").read_text(encoding="utf-8"))
     repo, commit = lock["pokeemerald"]["repository"], lock["pokeemerald"]["commit"]
@@ -111,6 +116,8 @@ def main() -> int:
         locale = ("italian", args.italian_rom, "localize_italian.py", "italian.json.gz")
     elif args.german_rom:
         locale = ("german", args.german_rom, "localize_german.py", "german.json.gz")
+    elif args.japanese_rom:
+        locale = ("japanese", args.japanese_rom, "localize_japanese.py", "japanese.json.gz")
     portuguese = args.port_lang == "pt_br"
     patches = sorted((ROOT / "patches" / "pokeemerald").glob("*.patch"))
     marker = tree / ".emerald3ds-patches"
@@ -133,7 +140,7 @@ def main() -> int:
             shutil.rmtree(tree / "3ds_port/romfs", ignore_errors=True)
             (tree / "src/data/region_map/region_map_entries.h").unlink(missing_ok=True)
         manifest_name = {"BPEF": "french.json.gz", "BPES": "spanish.json.gz", "BPEI": "italian.json.gz",
-                         "BPED": "german.json.gz"}.get(previous_name.split()[0] if previous_name else "")
+                         "BPED": "german.json.gz", "BPEJ": "japanese.json.gz"}.get(previous_name.split()[0] if previous_name else "")
         if manifest_name:
             import gzip
             import json
