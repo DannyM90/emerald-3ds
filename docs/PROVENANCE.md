@@ -30,6 +30,12 @@ Where every part of Emerald 3DS comes from, and what ships where.
   recipe it scans.
 - `tools/gen_recipe.py` fails when more than a small, classified amount of
   the original game's own objects would have to travel as literal bytes.
+  The Portuguese variant's recipe also carries the translated texts as
+  literals (they are in no ROM): only the bytes inside the texts of
+  `tools/locales/pt_br/`, encoded as the game holds them, are exempt
+  (`--translation`, counted apart as *translation*); that text is this
+  project's own and already published in the repository. Every other byte
+  stays under the same limits.
 - Samples: the release uses the cartridge's original samples, built by
   pret's `wav2agb` pipeline. Replacement samples are only possible through
   `SAMPLE_OVERLAY_DIR` in a local build.

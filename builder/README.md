@@ -1,23 +1,32 @@
 # Emerald 3DS Builder
 
 Turns the player's own Pokémon Emerald (USA, Europe), Pokémon Esmeralda
-(Spain), Pokémon Émeraude (France), Pokémon Smeraldo (Italy) or Pocket
-Monsters Emerald (Japan) ROM into `emerald3ds.pak` and installs the game on an
-SD card, in that ROM's language.
+(Spain), Pokémon Émeraude (France), Pokémon Smeraldo (Italy), Pokémon Smaragd
+(Germany) or Pocket Monsters Emerald (Japan) ROM into `emerald3ds.pak` and
+installs the game on an SD card, in that ROM's language - or, from the English
+ROM, in the Brazilian Portuguese fan translation when the release has it
+(`payload/pt/`, docs/PORTUGUESE.md).
 
 Release users get a standalone Windows executable (no Python needed). From
 source (any OS, Python 3.11+ and Pillow):
 
 ```
 python -m emerald3ds_builder                          # window
-python -m emerald3ds_builder --payload DIR build --rom ROM --output OUT
-python -m emerald3ds_builder --payload DIR install --rom ROM --sd /media/me/3DS
+python -m emerald3ds_builder --payload DIR build --rom ROM --output OUT [--language pt]
+python -m emerald3ds_builder --payload DIR install --rom ROM --sd /media/me/3DS [--language pt]
 python -m emerald3ds_builder --payload DIR verify --pak FILE
 python -m emerald3ds_builder detect
 ```
 
 `DIR` is a release's `payload/` folder (executable, `emerald3ds.recipe`,
 `voxelgen/`); by default the builder looks next to itself.
+
+Each language is a variant: `payload/` itself (English) or a subfolder
+(`es/`, `fr/`, `it/`, `de/`, `ja/`, `pt/`) with its own executable and recipe.
+The builder picks the variant made from the player's ROM. The English ROM
+makes two, English and Portuguese: the window then shows a *Game language*
+choice, and the command line takes `--language pt` (English without it).
+`verify` tells the two apart by the pack's data ABI.
 
 | Module | Role |
 |---|---|
@@ -56,7 +65,10 @@ sound) but the install still succeeds.
 
 The website runs this same package in the browser (Pyodide, in a Web Worker)
 from the release's `Emerald3DS-WebPayload.zip`, through
-`web.run_web_build(rom, payload, out_pak, progress, manifest)`. A release
+`web.run_web_build(rom, payload, out_pak, progress, manifest, language)`
+(API 2: `language` picks the variant when the ROM makes more than one, as
+`"pt"` for the English ROM; a release whose manifest shares a ROM between
+languages says `entrypoint.apiVersion` 2). A release
 precompiles the voxel data (`tools/voxel_precompile.py`, see
 [docs/VOXEL_PRECOMPILE.md](../docs/VOXEL_PRECOMPILE.md)): the recipe carries a
 program per file, run in seconds on both builders, and the generators run

@@ -149,10 +149,20 @@ confira lá antes de usar um termo novo.
 ## O pacote de dados
 
 O texto do jogo faz parte dos dados que o builder monta a partir da ROM. Um
-executável em português precisa de um pacote gerado para ele: a receita da
-compilação em português leva os textos traduzidos como bytes literais (não
-estão na ROM), e `tools/gen_recipe.py` recusa mais de 64 KiB de literais
-(`--max-literal`), o que a tradução completa vai passar. Releases em
-português e o builder para elas ainda estão por fazer; por enquanto, use os
-dados soltos ou embutidos da compilação de desenvolvimento
-([guia de desenvolvimento](DEVELOPMENT.md)).
+executável em português precisa de um pacote gerado para ele, a partir da ROM
+americana/europeia: a release o faz com `tools/build_release.py --portuguese`
+(`payload/pt/`, `Emerald3DS-pt.3dsx`; ver [RELEASING](RELEASING.md)).
+
+A receita da variante em português leva os textos traduzidos como bytes
+literais, porque não estão em nenhuma ROM. `tools/gen_recipe.py --translation
+tools/locales/pt_br` codifica os textos dos catálogos como o jogo os guarda e
+conta os bytes literais dentro deles como *tradução* (texto deste projeto, já
+publicado em `tools/locales/`), não como inexplicados; todo o resto continua
+sob os limites `--max-literal` e `--max-game-literal`, então nada do jogo
+original passa escondido atrás da tradução.
+
+A mesma ROM faz o jogo em inglês e em português, então quem escolhe é o
+jogador: no builder do Windows, em *Game language* (aparece com a ROM
+inglesa); na linha de comando, `--language pt`; no site, o idioma é escolhido
+antes da ROM (o `web-manifest.json` lista a ROM inglesa duas vezes, a segunda
+com `"language": "pt"`, e `entrypoint.apiVersion` é 2).

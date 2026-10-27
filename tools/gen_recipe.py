@@ -15,6 +15,13 @@ the literal pool. The run fails when unexplained literals exceed --max-literal.
 
 Files produced by the builder's own generators (voxel data) are recorded with
 their expected size and CRC only.
+
+A fan translation (--translation tools/locales/pt_br: the Portuguese game,
+made from the English ROM) changes the game's texts, which are then in no ROM.
+Literal bytes inside the texts of that catalog, encoded as the game encodes
+them, are counted as "translation" (this project's own writing, already
+published in tools/locales/) instead of unexplained; everything else is held
+to --max-literal and --max-game-literal as before.
 """
 
 from __future__ import annotations
@@ -272,9 +279,10 @@ def gamedata_remaps(nm_tool: str, elf3: Path, elfgba: Path, rom: bytes, data: by
 
 
 def classify_literals(entry: dict, mask: bytearray, image_map: Path, image_elf: Path,
-                      gba_elf: Path, nm_tool: str) -> tuple[dict, list]:
+                      gba_elf: Path, nm_tool: str, own: bytearray | None = None) -> tuple[dict, list]:
     """Say where every unexplained literal byte of the game data comes from.
 
+    translation  a text of the fan translation (`own`, translation_mask)
     code     .rodata.<function>: tables the compiler built from a function
              (switch lookups); derived from code that the 3DSX already carries
     string   C string pools (format strings, assertion text)
@@ -316,7 +324,7 @@ def classify_literals(entry: dict, mask: bytearray, image_map: Path, image_elf: 
     funcs, _ = symbols(image_elf)
     _, gba_names = symbols(gba_elf)
     base = nm(nm_tool, image_elf)["__ctr_gamedata"][0]
-    totals = {"padding": 0, "zero": 0, "code": 0, "string": 0, "port": 0, "game": 0}
+    totals = {"padding": 0, "zero": 0, "code": 0, "string": 0, "port": 0, "game": 0, "translation": 0}
     data = None
     game = {}
     pos = 0
@@ -332,7 +340,9 @@ def classify_literals(entry: dict, mask: bytearray, image_map: Path, image_elf: 
                 sym = name[len(".rodata."):] if name.startswith(".rodata.") else ""
                 if data is None:
                     data = entry.get("_data", b"")
-                if not inside:
+                if own is not None and own[k]:
+                    kind = "translation"
+                elif not inside:
                     kind = "padding"
                 elif data and data[k] == 0:
                     kind = "zero"
@@ -349,6 +359,94 @@ def classify_literals(entry: dict, mask: bytearray, image_map: Path, image_elf: 
                 totals[kind] += 1
         pos += length
     return totals, sorted(((n, s) for s, n in game.items()), reverse=True)
+
+
+# The control codes a catalog writes as \\n, \\l and \\p (charmap.txt).
+CONTROL_CODES = {"n": 0xFE, "l": 0xFA, "p": 0xFB}
+EOS = 0xFF
+SHORTEST_TEXT = 6   # shorter runs of a translation are not credited: they could be anything
+
+
+def translation_texts(catalog: Path, decomp: Path) -> set[bytes]:
+    """The texts of a translation catalog (tools/locales/pt_br) as the game
+    holds them: each run of plain characters and line codes, cut at the
+    placeholders ({PLAYER}...), the terminator included where the text ends.
+    Runs shorter than SHORTEST_TEXT bytes are left out."""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import localize_portuguese
+    codes = localize_portuguese.Charset(decomp).codes
+    runs: set[bytes] = set()
+    for path in sorted(catalog.rglob("*.txt")):
+        relative = path.relative_to(catalog)
+        if relative.parts[0] == "referencia":
+            continue
+        script = localize_portuguese.is_script(relative.with_suffix("").as_posix())
+        for entry in localize_portuguese.read_catalog(path):
+            run, text, i = bytearray(), entry.text, 0
+
+            def close():
+                if len(run) >= SHORTEST_TEXT:
+                    runs.add(bytes(run))
+                run.clear()
+
+            while i < len(text):
+                c = text[i]
+                if c == "\\" and i + 1 < len(text) and text[i + 1] in CONTROL_CODES:
+                    run.append(CONTROL_CODES[text[i + 1]])
+                    i += 2
+                elif c == "{":
+                    close()
+                    end = text.find("}", i)
+                    i = len(text) if end < 0 else end + 1
+                elif c == "$":
+                    run.append(EOS)
+                    close()
+                    i += 1
+                elif c in codes:
+                    run.append(codes[c])
+                    i += 1
+                else:
+                    close()
+                    i += 1
+            if run and not script:
+                run.append(EOS)   # _("...") ends the string
+            close()
+    return runs
+
+
+def translation_mask(data: bytes, runs: set[bytes]) -> bytearray:
+    """1 where `data` holds one of the translation's texts."""
+    mask = bytearray(len(data))
+    if not runs:
+        return mask
+    by_head: dict[bytes, list[bytes]] = {}
+    for run in runs:
+        by_head.setdefault(run[:SHORTEST_TEXT], []).append(run)
+    heads = by_head.keys()
+    for pos in range(len(data) - SHORTEST_TEXT + 1):
+        head = data[pos:pos + SHORTEST_TEXT]
+        if head in heads:
+            for run in by_head[head]:
+                if data.startswith(run, pos):
+                    mask[pos:pos + len(run)] = b"\x01" * len(run)
+    return mask
+
+
+def literal_positions(ops: list, rom: bytes):
+    """The offsets of a file that its "L" operations write."""
+    pos = 0
+    for op in ops:
+        if op[0] in "CFL":
+            length = op[2]
+        elif op[0] == "R":
+            length = op[3] * op[4]
+        elif op[0] == "Z":
+            length = len(rcp.lz77_decompress(rom, op[1]))
+        else:
+            raise ValueError("unknown operation %r" % op[0])
+        if op[0] == "L":
+            yield from range(pos, pos + length)
+        pos += length
 
 
 def domain_of(rel: str) -> str:
@@ -577,7 +675,12 @@ def main() -> None:
     ap.add_argument("--decomp", type=Path, default=ROOT, help="decomp tree for the voxel inputs")
     ap.add_argument("--max-game-literal", type=int, default=4096,
                     help="fail above this many literal bytes of the original game's own objects")
+    ap.add_argument("--translation", type=Path, default=None,
+                    help="a fan translation's catalog (tools/locales/pt_br): its texts are not unexplained")
     args = ap.parse_args()
+    runs = translation_texts(args.translation, args.decomp) if args.translation else set()
+    if args.translation:
+        print("gen_recipe: %d texts of the translation in %s" % (len(runs), args.translation))
 
     source_rom = load_rom(args.rom)
     rom, sha1 = source_rom.data, source_rom.sha1
@@ -595,8 +698,9 @@ def main() -> None:
                                  pointer_mask(args.romfs, "gamedata/gamedata.bin", len(gd)))
         print("gen_recipe: %d symbol hints, %d record remaps for the game data" % (len(hints), len(remaps)))
     out = rcp.Recipe(engine_abi=abi, rom_sha1=sha1, release=args.release)
-    totals = {"copy": 0, "fill": 0, "pointer": 0, "literal": 0, "remap": 0}
+    totals = {"copy": 0, "fill": 0, "pointer": 0, "literal": 0, "remap": 0, "translation": 0}
     domains: dict[str, dict] = {}
+    own_masks: dict[str, bytearray] = {}
     per_file = []
     start = time.time()
     for rel, path in staging.data_files(args.romfs):
@@ -614,8 +718,14 @@ def main() -> None:
         if patches:
             entry["patches"] = patches
         out.entries.append(entry)
+        if runs and stats["literal"]:
+            # The translation's texts among the unexplained literals (pointer sites aside).
+            own = translation_mask(data, runs)
+            stats["translation"] = sum(1 for k in literal_positions(ops, rom) if own[k] and not (mask and mask[k]))
+            stats["literal"] -= stats["translation"]
+            own_masks[rel] = own
         for k in totals:
-            totals[k] += stats[k]
+            totals[k] += stats.get(k, 0)
         dom = domains.setdefault(domain_of(rel), {"files": 0, "bytes": 0, "rom": 0, "literal": 0})
         dom["files"] += 1
         dom["bytes"] += len(data)
@@ -670,6 +780,8 @@ def main() -> None:
         print("   %-10s %s: regenerated by the builder, checked by CRC" % ("voxel", g["path"]))
     print("gen_recipe: copy %d  fill %d  remap %d  pointer %d  unexplained literal %d bytes"
           % (totals["copy"], totals["fill"], totals["remap"], totals["pointer"], totals["literal"]))
+    if args.translation:
+        print("gen_recipe: translation %d literal bytes (the texts of %s)" % (totals["translation"], args.translation))
     for n, rel in per_file[:15]:
         print("   %8d  %s" % (n, rel))
     if args.report:
@@ -679,9 +791,10 @@ def main() -> None:
         gd_entry["_data"] = (args.romfs / "gamedata" / "gamedata.bin").read_bytes()
         gd_mask = pointer_mask(args.romfs, "gamedata/gamedata.bin", gd_entry["size"])
         kinds, game = classify_literals(gd_entry, gd_mask, args.image_map, args.image_elf,
-                                        args.gba_elf, args.nm)
+                                        args.gba_elf, args.nm, own_masks.get("gamedata/gamedata.bin"))
         print("gen_recipe: game-data literal by origin: padding %(padding)d  zero %(zero)d  "
-              "code %(code)d  string %(string)d  port %(port)d  game %(game)d" % kinds)
+              "code %(code)d  string %(string)d  port %(port)d  game %(game)d  translation %(translation)d"
+              % kinds)
         for n, name in game[:25]:
             print("   %6d  %s" % (n, name))
         if kinds["game"] > args.max_game_literal:

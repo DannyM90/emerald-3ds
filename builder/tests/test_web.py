@@ -314,7 +314,11 @@ class ManifestTests(SyntheticPayloadMixin, unittest.TestCase):
         cases = {
             "not a list": lambda m: m.update(variants={}),
             "abi": lambda m: m["variants"][0].update(dataAbi="XYZ"),
-            "same rom twice": lambda m: m["variants"][0]["rom"].update(sha1=m["supportedRoms"][0]["sha1"]),
+            # One ROM may make two languages (English and Portuguese), never one twice.
+            "same rom, same language": lambda m: m["variants"][0]["rom"].update(
+                sha1=m["supportedRoms"][0]["sha1"], language=m["supportedRoms"][0]["language"]),
+            "same rom, api 1": lambda m: (m["variants"][0]["rom"].update(sha1=m["supportedRoms"][0]["sha1"]),
+                                          m["entrypoint"].update(apiVersion=1)),
             "file not listed": lambda m: m["variants"][0]["assets"]["recipe"].update(path="payload/es/other"),
         }
         for name, change in cases.items():

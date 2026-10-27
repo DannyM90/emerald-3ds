@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Releases can carry the Brazilian Portuguese translation (`build_release.py
+  --portuguese`: `payload/pt/`, `Emerald3DS-pt.3dsx`), made from the English
+  ROM. Its recipe carries the translated texts, which are in no ROM, and
+  `gen_recipe.py --translation` credits only the bytes inside the catalogs'
+  texts as the translation's own; everything else keeps the usual limits.
+
+- Builder: one ROM can make more than one language. With the English ROM the
+  window asks for the game language (English or Português (Brasil)) when the
+  release has both, and the command line takes `--language pt`; `verify`
+  tells the two packs apart by their data ABI. The web builder's entry point
+  is API 2 (`run_web_build(..., language)`), and `web-manifest.json` may list
+  the English ROM twice, once per language.
+
 - OPTIONS > ENHANCEMENTS > REAL-TIME PACING is on by default: a new
   settings.txt starts with it on (and so does one that never had it). A
   settings.txt that already chose off keeps off.

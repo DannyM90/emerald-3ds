@@ -17,12 +17,16 @@ Steps (each can be skipped when its output is already there):
    payload/es/ (resp. payload/fr/, payload/it/, payload/de/, payload/ja/), that
    language's executable and its recipe,
    built from a copy of this tree localized from that ROM (build/release-es);
+   with --portuguese also payload/pt/, the Brazilian Portuguese translation
+   (docs/PORTUGUESE.md), made from the English ROM: its recipe credits the
+   texts of tools/locales/pt_br as the translation's own (gen_recipe.py
+   --translation);
 5. the standalone builder (PyInstaller, one folder, no UPX);
 6. dist/Emerald3DS-v<version>-Windows.zip with the builder, the payload,
    README.txt and LICENSES/;
 7. the standalone dist/Emerald3DS.3dsx and dist/Emerald3DS.smdh (quick update
    of the executable when the data ABI did not change; dist/Emerald3DS-es.3dsx,
-   -fr, -it and -ja for the other languages), and the HOME Menu
+   -fr, -it, -de, -ja and -pt for the other languages), and the HOME Menu
    forwarder dist/Emerald3DS-Forwarder.cia (3ds_port/forwarder, needs makerom
    and bannertool; --skip-cia leaves it out);
 8. dist/Emerald3DS-WebPayload.zip and dist/web-manifest.json for the web
@@ -96,7 +100,9 @@ def build_localized_variant(args, tag: str, out: Path, locale: dict) -> None:
     """payload/<code>/: a localized executable and its recipe. The same code as
     the English variant (a copy of this tree's sources: every file Git does not
     ignore, so no build output), localized from the clean ROM of that language
-    by tools/localize_<language>.py, then built and covered like the English one."""
+    by tools/localize_<language>.py, then built and covered like the English one.
+    The Portuguese translation is staged from its catalogs over the English
+    game (no ROM of its own) and built with PORT_LANG=pt_br."""
     tree = ROOT / "build" / ("release-" + locale["code"])
     make = args.make.split() if args.make else ["make"]
     if not args.skip_make:
@@ -112,21 +118,28 @@ def build_localized_variant(args, tag: str, out: Path, locale: dict) -> None:
                 shutil.copy2(src, dst)
         run(make + ["tools"], cwd=tree)
         run(make + ["generated"], cwd=tree)
-        run([sys.executable, ROOT / "tools" / locale["script"], "--tree", tree, "--rom", locale["rom"]])
-        run(make + ["release", "PYTHON=" + sys.executable], cwd=tree / "3ds_port")
+        run([sys.executable, ROOT / "tools" / locale["script"], "--tree", tree]
+            + ([] if locale.get("translation") else ["--rom", locale["rom"]]))
+        run(make + ["release", "PYTHON=" + sys.executable, "PORT_LANG=" + locale.get("port_lang", "en")],
+            cwd=tree / "3ds_port")
     port = tree / "3ds_port"
-    # The localized game's symbol names and addresses (no ROM contents), for the recipe's hints.
-    reference = tree / "build" / (locale["stem"] + "-reference.o")
-    assembler = Path(args.nm).with_name(Path(args.nm).name[:-2] + "as")  # arm-none-eabi-nm -> -as
-    run([assembler, "-o", reference,
-         tree / "build" / (locale["stem"] + "-reference.s")])
+    if locale.get("translation"):
+        # A translation over the English game: the English game's own ELF.
+        reference = Path(args.gba_elf)
+    else:
+        # The localized game's symbol names and addresses (no ROM contents), for the recipe's hints.
+        reference = tree / "build" / (locale["stem"] + "-reference.o")
+        assembler = Path(args.nm).with_name(Path(args.nm).name[:-2] + "as")  # arm-none-eabi-nm -> -as
+        run([assembler, "-o", reference,
+             tree / "build" / (locale["stem"] + "-reference.s")])
     recipe = DIST / ("emerald3ds-%s.recipe" % locale["code"])
     if not args.skip_recipe:
         run([sys.executable, ROOT / "tools/gen_recipe.py", "--romfs", port / "romfs", "--rom", locale["rom"],
              "--out", recipe, "--release", tag, "--elf", port / "emerald3ds.elf",
              "--gba-elf", reference, "--image-elf", port / "build/gamedata_image.elf",
              "--image-map", port / "build/gamedata_image.map", "--nm", args.nm, "--decomp", tree,
-             "--report", DIST / ("recipe-literal-report-%s.txt" % locale["code"])])
+             "--report", DIST / ("recipe-literal-report-%s.txt" % locale["code"])]
+            + (["--translation", ROOT / locale["translation"]] if locale.get("translation") else []))
     precompile(recipe, locale["rom"], port)
     out.mkdir(parents=True, exist_ok=True)
     for name in ("Emerald3DS.3dsx", "Emerald3DS.smdh"):
@@ -172,6 +185,8 @@ def main() -> None:
                     help="clean German (BPED) ROM: also build the German variant (payload/de/)")
     ap.add_argument("--japanese-rom", type=Path, default=None,
                     help="clean Japanese (BPEJ) ROM: also build the Japanese variant (payload/ja/)")
+    ap.add_argument("--portuguese", action="store_true",
+                    help="also build the Brazilian Portuguese translation from the English ROM (payload/pt/)")
     ap.add_argument("--nm", default=os.environ.get("NM", "arm-none-eabi-nm"))
     ap.add_argument("--make", default=None, help="command that runs make in 3ds_port (default: make)")
     ap.add_argument("--skip-make", action="store_true")
@@ -254,6 +269,9 @@ def main() -> None:
     if args.japanese_rom:
         locales.append({"code": "ja", "stem": "japanese", "rom": args.japanese_rom,
                         "script": "localize_japanese.py"})
+    if args.portuguese:
+        locales.append({"code": "pt", "stem": "portuguese", "rom": args.rom, "script": "localize_portuguese.py",
+                        "port_lang": "pt_br", "translation": "tools/locales/pt_br"})
     for locale in locales:
         build_localized_variant(args, tag, payload / locale["code"], locale)
 
@@ -302,7 +320,8 @@ def main() -> None:
     web_zip, web_manifest = build_web_payload.build(payload, args.version, DIST,
                                                     cia_forwarder=CIA_NAME if cia else None)
 
-    for rom in [args.rom] + [locale["rom"] for locale in locales]:
+    roms = {Path(rom).resolve(): rom for rom in [args.rom] + [locale["rom"] for locale in locales]}
+    for rom in roms.values():   # the Portuguese translation reads the English ROM
         run([sys.executable, ROOT / "tools/release_audit.py", "--zip", archive, "--strict", "--rom", rom])
         run([sys.executable, ROOT / "tools/release_audit.py", "--zip", web_zip, "--strict", "--rom", rom,
              "--web-payload"])
