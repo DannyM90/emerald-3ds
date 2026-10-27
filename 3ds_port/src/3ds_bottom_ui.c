@@ -4080,7 +4080,8 @@ static int DrawBattlePlate(u8 id, int x, int y, int w, int h, Rgb colour, u8 sta
 }
 
 /* The index-th of the four words of the game's action menu text, split where
- * the game moves on to the next ({CLEAR_TO} or a new line). */
+ * the game moves on to the next ({CLEAR_TO}, a new line, or the two spaces
+ * the Japanese game puts between them; one space stays, as in GO NEAR). */
 static const u8 *ActionLabel(bool8 safari, int index)
 {
     static u8 out[4][24];
@@ -4089,9 +4090,12 @@ static const u8 *ActionLabel(bool8 safari, int index)
 
     while (*src != EOS && part <= index)
     {
-        if (*src == EXT_CTRL_CODE_BEGIN || *src == CHAR_NEWLINE)
+        if (*src == EXT_CTRL_CODE_BEGIN || *src == CHAR_NEWLINE || (*src == CHAR_SPACE && src[1] == CHAR_SPACE))
         {
-            if (*src++ == EXT_CTRL_CODE_BEGIN && *src != EOS)
+            if (*src == CHAR_SPACE)
+                while (*src == CHAR_SPACE)
+                    ++src;
+            else if (*src++ == EXT_CTRL_CODE_BEGIN && *src != EOS)
                 src += GetExtCtrlCodeLength(*src);
             if (n || part < index)
                 ++part;

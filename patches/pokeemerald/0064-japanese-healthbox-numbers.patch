@@ -4,7 +4,7 @@ Applies after 0005-port-hooks.patch; apply with tools/bootstrap.py.
 diff --git a/src/battle_interface.c b/src/battle_interface.c
 --- a/src/battle_interface.c
 +++ b/src/battle_interface.c
-@@ -1131,6 +1131,44 @@ void InitBattlerHealthboxCoords(u8 battler)
+@@ -1131,6 +1131,47 @@ void InitBattlerHealthboxCoords(u8 battler)
      UpdateSpritePos(gHealthboxSpriteIds[battler], x, y);
  }
  
@@ -21,6 +21,9 @@ diff --git a/src/battle_interface.c b/src/battle_interface.c
 +    u8 battler = gSprites[healthboxSpriteId].hMain_Battler;
 +
 +    memcpy(text, sEmptyWhiteText_GrayHighlight, sizeof(text));
++#ifdef PLATFORM_3DS
++    CtrBattleHud_SetLevel(healthboxSpriteId, lvl);
++#endif
 +    if (!IsDoubleBattle())
 +        tile = GetBattlerSide(battler) == B_SIDE_PLAYER ? 0x49 : 0x28;
 +    else
@@ -49,7 +52,7 @@ diff --git a/src/battle_interface.c b/src/battle_interface.c
  static void UpdateLvlInHealthbox(u8 healthboxSpriteId, u8 lvl)
  {
      u32 windowId, spriteTileNum;
-@@ -1167,6 +1205,7 @@ static void UpdateLvlInHealthbox(u8 healthboxSpriteId, u8 lvl)
+@@ -1167,6 +1208,7 @@ static void UpdateLvlInHealthbox(u8 healthboxSpriteId, u8 lvl)
      TextIntoHealthboxObject(objVram, windowTileData, 3);
      RemoveWindowOnHealthbox(windowId);
  }
@@ -57,7 +60,7 @@ diff --git a/src/battle_interface.c b/src/battle_interface.c
  
  void UpdateHpTextInHealthbox(u8 healthboxSpriteId, s16 value, u8 maxOrCurrent)
  {
-@@ -1179,7 +1218,11 @@ void UpdateHpTextInHealthbox(u8 healthboxSpriteId, s16 value, u8 maxOrCurrent)
+@@ -1179,7 +1221,11 @@ void UpdateHpTextInHealthbox(u8 healthboxSpriteId, s16 value, u8 maxOrCurrent)
      CtrBattleHud_SetHp(healthboxSpriteId, value, maxOrCurrent != HP_CURRENT);
  #endif
  
@@ -69,7 +72,7 @@ diff --git a/src/battle_interface.c b/src/battle_interface.c
      {
          spriteTileNum = gSprites[healthboxSpriteId].oam.tileNum * TILE_SIZE_4BPP;
          if (maxOrCurrent != HP_CURRENT) // singles, max
-@@ -1956,6 +1999,64 @@ static void SpriteCB_StatusSummaryBalls_OnSwitchout(struct Sprite *sprite)
+@@ -1956,6 +2002,67 @@ static void SpriteCB_StatusSummaryBalls_OnSwitchout(struct Sprite *sprite)
      sprite->y2 = gSprites[barSpriteId].y2;
  }
  
@@ -95,6 +98,9 @@ diff --git a/src/battle_interface.c b/src/battle_interface.c
 +    species = GetMonData(mon, MON_DATA_SPECIES);
 +    if ((species == SPECIES_NIDORAN_F || species == SPECIES_NIDORAN_M) && StringCompare(nickname, gSpeciesNames[species]) == 0)
 +        gender = 100;
++#ifdef PLATFORM_3DS
++    CtrBattleHud_SetName(healthboxSpriteId, nickname, gender);
++#endif
 +    if (gender == MON_MALE)
 +        StringCopy(ptr, gText_HealthboxGender_Male);
 +    else if (gender == MON_FEMALE)
@@ -134,7 +140,7 @@ diff --git a/src/battle_interface.c b/src/battle_interface.c
  static void UpdateNickInHealthbox(u8 healthboxSpriteId, struct Pokemon *mon)
  {
      u8 nickname[POKEMON_NAME_LENGTH + 1];
-@@ -2016,6 +2117,7 @@ static void UpdateNickInHealthbox(u8 healthboxSpriteId, struct Pokemon *mon)
+@@ -2016,6 +2123,7 @@ static void UpdateNickInHealthbox(u8 healthboxSpriteId, struct Pokemon *mon)
  
      RemoveWindowOnHealthbox(windowId);
  }
