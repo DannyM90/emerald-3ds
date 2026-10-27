@@ -599,10 +599,18 @@ static void MakeLabels(const uint16_t *boxTileVram)
          * lines 2-4 - the label's olive top and yellow letters. German's
          * "EP" has letters a line taller, down to line 5. */
 #if GAME_LANGUAGE == LANGUAGE_GERMAN
-        enum { EXP_LINES = 4 };
+        /* Danny edition: "EXP" on the German box too, as Danny wants it,
+         * drawn here in three lines (the German box's own label is taller). */
+        static const char *const sExpRows[3] = {".###.#.#.###", ".##...#..###", ".###.#.#.#.."};
+
+        memset(bits, 0, sizeof(bits));
+        for (int y = 0; y < 3; ++y)
+            for (int x = 0; x < 12; ++x)
+                bits[y * 16 + x] = sExpRows[y][x] == '#';
+        Trace(&sExpLabel, bits, 16, 3);
 #else
         enum { EXP_LINES = 3 };
-#endif
+
         memset(bits, 0, sizeof(bits));
         for (int y = 0; y < EXP_LINES; ++y)
             for (int x = 0; x < 16; ++x)
@@ -613,6 +621,7 @@ static void MakeLabels(const uint16_t *boxTileVram)
                 bits[y * 16 + x] = (v == 4 || v == 9) && x >= 1 && x <= 12;
             }
         Trace(&sExpLabel, bits, 16, EXP_LINES);
+#endif
     }
 }
 
