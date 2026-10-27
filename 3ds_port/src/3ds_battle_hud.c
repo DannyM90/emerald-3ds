@@ -614,18 +614,41 @@ static void MakeLabels(const uint16_t *boxTileVram)
 /* Text: the game's normal font, 1:1                                        */
 /* ------------------------------------------------------------------------ */
 
+/* The Japanese game's strings are in its Japanese glyph set: glyphs all 8
+ * pixels wide, a sheet of 16 a row (text.c's DecompressGlyph_Normal). */
+#if GAME_LANGUAGE == LANGUAGE_JAPANESE
+#define HUD_GLYPHS gFontNormalJapaneseGlyphs
+#else
+#define HUD_GLYPHS gFontNormalLatinGlyphs
+#endif
+
 static const u16 *FontGlyphs(void)
 {
-    const void *resolved = Port_ResolveFontPointer(gFontNormalLatinGlyphs);
+    const void *resolved = Port_ResolveFontPointer(HUD_GLYPHS);
 
-    if (resolved == (const void *)gFontNormalLatinGlyphs)
-        resolved = Port_ResolveAssetPointer(gFontNormalLatinGlyphs);
+    if (resolved == (const void *)HUD_GLYPHS)
+        resolved = Port_ResolveAssetPointer(HUD_GLYPHS);
     return resolved;
 }
 
 static int GlyphWidth(unsigned glyph)
 {
+#if GAME_LANGUAGE == LANGUAGE_JAPANESE
+    (void)glyph;
+    return 8;
+#else
     return gFontNormalLatinGlyphWidths[glyph];
+#endif
+}
+
+/* The 2bpp bits of one 8-pixel half of a glyph's row. */
+static u16 GlyphRow(const u16 *glyphs, unsigned glyph, int row, int half)
+{
+#if GAME_LANGUAGE == LANGUAGE_JAPANESE
+    return half ? 0 : glyphs[0x100 * (glyph >> 4) + 8 * (glyph & 0xF) + (row >= 8 ? 0x80 : 0) + (row & 7)];
+#else
+    return glyphs[glyph * 0x20 + (row >= 8 ? 0x10 : 0) + half * 8 + (row & 7)];
+#endif
 }
 
 /* A game string's next glyph, past its control codes; -1 at its end. */
@@ -677,13 +700,12 @@ static int TextWidth(const uint8_t *str)
 
 static int DrawGlyph(uint32_t *pic, const u16 *glyphs, unsigned glyph, int x, int y, uint32_t fg, uint32_t shadow)
 {
-    const u16 *base = glyphs + glyph * 0x20;
     int width = GlyphWidth(glyph);
 
     for (int row = 0; row < 16; ++row)
         for (int half = 0; half < 2 && half * 8 < width; ++half)
         {
-            u16 bits = base[(row >= 8 ? 0x10 : 0) + half * 8 + (row & 7)];
+            u16 bits = GlyphRow(glyphs, glyph, row, half);
 
             if (!bits)
                 continue;
