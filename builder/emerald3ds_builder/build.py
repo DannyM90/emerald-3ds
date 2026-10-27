@@ -19,6 +19,17 @@ from .vtree import build_tree
 
 RECIPE_NAME = "emerald3ds.recipe"
 EXECUTABLE_NAMES = ("Emerald3DS.3dsx", "Emerald3DS.smdh")
+DEFAULT_LANGUAGE = "en"       # the default variant's (payload/ itself)
+# Each game language in itself (the window's choice) and in English (messages).
+LANGUAGE_NAMES = {"en": "English", "es": "Español", "fr": "Français", "it": "Italiano", "de": "Deutsch",
+                  "ja": "日本語", "pt": "Português (Brasil)"}
+LANGUAGE_NAMES_EN = {"en": "English", "es": "Spanish", "fr": "French", "it": "Italian", "de": "German",
+                     "ja": "Japanese", "pt": "Brazilian Portuguese"}
+
+
+def language_code(language: str) -> str:
+    """"pt_BR", "pt-br" -> "pt": the language, without its region."""
+    return language.strip().lower().replace("-", "_").split("_")[0]
 
 
 def default_payload() -> Path:
@@ -56,15 +67,52 @@ class Payload:
         subs = sorted(p for p in base.iterdir() if p.is_dir() and (p / RECIPE_NAME).is_file())
         return [Payload(base)] + [Payload(p, base) for p in subs]
 
-    def for_rom(self, sha1: str) -> "Payload":
-        """The variant whose recipe was made from this ROM (self when none is)."""
+    def for_rom(self, sha1: str, language: str | None = None) -> "Payload":
+        """The variant whose recipe was made from this ROM (self when none is).
+
+        One ROM can make more than one language: the English ROM makes the
+        English game and the Portuguese fan translation (payload/pt/). With
+        `language` ("pt", "pt_BR") only that language's variant matches;
+        without, the first does, so the default variant (the English game)
+        before the subfolders."""
+        matches = self.matching(sha1)
+        if language:
+            want = language_code(language)
+            matches = [v for v in matches if v.game_language == want]
+        return matches[0] if matches else self
+
+    def matching(self, sha1: str) -> list["Payload"]:
+        """Every variant whose recipe was made from this ROM, default first."""
+        out = []
         for variant in self.variants():
             try:
                 if variant.recipe.is_file() and recipe_rom_sha1(variant.recipe) == sha1:
-                    return variant
+                    out.append(variant)
             except (OSError, ValueError, KeyError, RecipeError):
                 continue
-        return self
+        return out
+
+    def languages(self, sha1: str) -> list[str]:
+        """The game languages this ROM makes ("en", "pt"), default first."""
+        return [v.game_language for v in self.matching(sha1)]
+
+    def for_pak(self, sha1: str, abi: int) -> "Payload":
+        """The variant a pack was built as: its ROM, and its data ABI when two
+        languages share that ROM (self when none matches)."""
+        matches = self.matching(sha1)
+        for variant in matches:
+            try:
+                if Recipe.load(variant.recipe).engine_abi == abi:
+                    return variant
+            except (OSError, RecipeError):
+                continue
+        return matches[0] if matches else self
+
+    @property
+    def game_language(self) -> str:
+        """The game language this variant builds: its subfolder's name, or
+        English for the default variant."""
+        return language_code(self.language or DEFAULT_LANGUAGE)
 
     @property
     def language(self) -> str | None:
@@ -94,8 +142,13 @@ class Payload:
                            code="payload_incomplete")
 
 
-def select_payload(payload: Payload, rom_sha1: str, need_executables: bool = False) -> Payload:
+def select_payload(payload: Payload, rom_sha1: str, need_executables: bool = False,
+                   language: str | None = None) -> Payload:
     """The variant made from this ROM, checked to hold what the caller will use.
+
+    `language` picks among the variants of one ROM (Payload.for_rom); when
+    the release has none in that language for this ROM, nothing is built
+    ("rom_mismatch"): another language never stands in for it.
 
     With `need_executables` (the desktop build and install, which copy the
     executables next to the pack) a variant without its own executables fails
@@ -103,7 +156,13 @@ def select_payload(payload: Payload, rom_sha1: str, need_executables: bool = Fal
     is written: the default variant's executables never stand in for it. When
     no variant matches the ROM nothing is checked, so the build still reports
     "rom_mismatch"."""
-    variant = payload.for_rom(rom_sha1)
+    if language and payload.matching(rom_sha1) and language_code(language) not in payload.languages(rom_sha1):
+        name = LANGUAGE_NAMES_EN.get(language_code(language), repr(language))
+        raise BuilderError("This release has no %s version made from this ROM." % name,
+                           "It builds %s from it." % " and ".join(LANGUAGE_NAMES_EN.get(code, code)
+                                                                  for code in payload.languages(rom_sha1)),
+                           code="rom_mismatch")
+    variant = payload.for_rom(rom_sha1, language)
     if need_executables:
         try:
             matches = variant.recipe.is_file() and recipe_rom_sha1(variant.recipe) == rom_sha1
@@ -176,12 +235,17 @@ def build_generated(recipe: Recipe, rom: bytes, progress=None, timings: list | N
 def build_pack(rom_path: Path, payload: Payload, out_pak: Path, progress=None,
                keep_workdir: bool = False, runner: str = "subprocess", rom: Rom | None = None,
                follower_fetcher: "followers.Fetcher | None | bool" = True,
-               need_executables: bool = False, precompiled_ok: bool = True) -> dict:
+               need_executables: bool = False, precompiled_ok: bool = True,
+               language: str | None = None) -> dict:
     """Generate emerald3ds.pak from the ROM. Returns a summary.
 
     `runner` picks how the voxel generators run (see voxel.py); `rom` lets a
     caller that already holds the checked ROM in memory skip reading it again.
     The summary's `timings` holds (step, seconds) for the slow parts.
+
+    `language` picks the game language when the ROM makes more than one
+    (the English ROM: English, or Portuguese from payload/pt/); without it the
+    ROM's own language is built.
 
     `precompiled_ok=False` runs the generators even for the files the
     release precompiled (a check of the programs against the generators).
@@ -201,7 +265,7 @@ def build_pack(rom_path: Path, payload: Payload, out_pak: Path, progress=None,
     report(0.0, "Checking the ROM")
     if rom is None:
         rom = load_rom(rom_path)
-    payload = select_payload(payload, rom.sha1, need_executables)
+    payload = select_payload(payload, rom.sha1, need_executables, language)
     try:
         recipe = Recipe.load(payload.recipe)
     except (OSError, RecipeError) as exc:

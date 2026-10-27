@@ -111,7 +111,7 @@ MALFORMED = {
                                 lambda m: m["variants"][0]["assets"]["recipe"].update(size=True)),
     "negative size": (legacy_manifest, lambda m: m["files"][0].update(size=-1)),
     # entrypoint.apiVersion
-    "apiVersion newer": (legacy_manifest, lambda m: m["entrypoint"].update(apiVersion=2)),
+    "apiVersion newer": (legacy_manifest, lambda m: m["entrypoint"].update(apiVersion=3)),
     "apiVersion zero": (legacy_manifest, lambda m: m["entrypoint"].update(apiVersion=0)),
     "apiVersion true": (legacy_manifest, lambda m: m["entrypoint"].update(apiVersion=True)),
     "apiVersion string": (legacy_manifest, lambda m: m["entrypoint"].update(apiVersion="1")),

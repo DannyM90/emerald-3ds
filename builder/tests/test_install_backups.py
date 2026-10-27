@@ -461,7 +461,7 @@ class FrontEndWarningTests(_Base):
     def _fake_build(self):
         exe = self.exe_src
 
-        def build(rom, payload, pak_path, progress, *rest, need_executables=True):
+        def build(rom, payload, pak_path, progress, *rest, need_executables=True, language=None):
             Path(pak_path).write_bytes(b"SYNTHETIC-PAK")
             return {"payload": SimpleNamespace(executables=lambda: [exe])}
         return build
