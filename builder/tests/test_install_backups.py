@@ -487,7 +487,7 @@ class FrontEndWarningTests(_Base):
             self.skipTest("gui unavailable: %s" % exc)
         fake = SimpleNamespace(events=queue.Queue(), payload=Mock())
         with patch.object(gui, "build_pack", self._fake_build()):
-            gui.App.work(fake, Path("synthetic.gba"), self.sd)
+            gui.App.work(fake, Path("synthetic.gba"), self.sd, None)
         kinds = []
         while not fake.events.empty():
             kinds.append(fake.events.get_nowait())
