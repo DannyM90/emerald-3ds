@@ -33,11 +33,44 @@ static unsigned sUploadCommands, sRenderReserve;
  * voxel world per eye take the most. */
 #define RENDER_RESERVE 24u
 #define RENDER_RESERVE_MOST 28u
+/*
+ * Citro3D makes its queue 32 entries long (C3D_Init) and binds it once, empty
+ * (C3Di_RenderQueueInit), here: it is lengthened then, and C3D_Fini frees the
+ * longer one. Everything the frame queued before keeps the 32 it had
+ * (GX_QUEUE_SHARED); the rest is the animated tiles' alone
+ * (CtrVideo_TryVoxelAnimUpload), whose copies of a pass go out in one frame.
+ */
+#define GX_QUEUE_SHARED 32u
+#define GX_QUEUE_ENTRIES 128u
+static unsigned sAnimCommands;
 void __real_GX_BindQueue(gxCmdQueue_s *queue);
 void __wrap_GX_BindQueue(gxCmdQueue_s *queue)
 {
+    if (queue != NULL && queue->maxEntries < GX_QUEUE_ENTRIES && queue->numEntries == 0)
+    {
+        gxCmdEntry_s *entries = realloc(queue->entries, GX_QUEUE_ENTRIES * sizeof(*entries));
+
+        if (entries != NULL)
+        {
+            queue->entries = entries;
+            queue->maxEntries = GX_QUEUE_ENTRIES;
+        }
+    }
     sFrameQueue = queue;
     __real_GX_BindQueue(queue);
+}
+
+/* The queue as the shared uploads and the frame's drawing count it. */
+static unsigned SharedCapacity(void)
+{
+    return sFrameQueue->maxEntries < GX_QUEUE_SHARED ? sFrameQueue->maxEntries : GX_QUEUE_SHARED;
+}
+
+static unsigned SharedUsed(void)
+{
+    unsigned used = sFrameQueue->numEntries;
+
+    return used > sAnimCommands ? used - sAnimCommands : 0;
 }
 
 /*
@@ -209,7 +242,7 @@ static bool ClearsRun(void)
 
     if (sFrameQueue)
     {
-        unsigned capacity = sFrameQueue->maxEntries, used = sFrameQueue->numEntries;
+        unsigned capacity = SharedCapacity(), used = SharedUsed();
 
         room = capacity > used + RENDER_RESERVE_MOST ? capacity - used - RENDER_RESERVE_MOST : 0;
     }
@@ -245,11 +278,33 @@ Result __wrap_GX_ProcessCommandList(u32 *buf0a, u32 buf0s, u8 flags)
     return __real_GX_ProcessCommandList(buf0a, buf0s, flags);
 }
 
+/*
+ * GPU copies queued back to back behind one split of the frame's command list
+ * (CtrVideo_CopiesBegin/End). C3D_SyncTextureCopy splits it for every copy,
+ * and with the GPU started early each split and each copy flushed the whole
+ * linear heap: a pass of the animated sea, some 40 copies, flushed it 80
+ * times in one frame - the frame drops while walking on an Old 3DS (port.log
+ * 2026-10-28). The split flushes once; the copies' sources are the caller's
+ * to flush.
+ */
+static bool sCopyBatch;
+
 Result __real_GX_TextureCopy(u32 *inadr, u32 indim, u32 *outadr, u32 outdim, u32 size, u32 flags);
 Result __wrap_GX_TextureCopy(u32 *inadr, u32 indim, u32 *outadr, u32 outdim, u32 size, u32 flags)
 {
-    if (sGpuEarly) FlushLinear();
+    if (sGpuEarly && !sCopyBatch) FlushLinear();
     return __real_GX_TextureCopy(inadr, indim, outadr, outdim, size, flags);
+}
+
+void CtrVideo_CopiesBegin(void)
+{
+    C3D_FrameSplit(0);
+    sCopyBatch = true;
+}
+
+void CtrVideo_CopiesEnd(void)
+{
+    sCopyBatch = false;
 }
 
 Result __real_GX_DisplayTransfer(u32 *inadr, u32 indim, u32 *outadr, u32 outdim, u32 flags);
@@ -312,13 +367,29 @@ bool CtrVideo_TryVoxelUpload(void)
 {
     if (sFrameQueue == NULL)
         return false;
-    unsigned capacity = sFrameQueue->maxEntries;
-    unsigned used = sFrameQueue->numEntries;
+    unsigned capacity = SharedCapacity();
+    unsigned used = SharedUsed();
 
     if (used + 2u + sRenderReserve > capacity
      || sUploadCommands + 2u + sRenderReserve > capacity)
         return false;
     sUploadCommands += 2u;
+    return true;
+}
+
+bool CtrVideo_TryVoxelAnimUpload(void)
+{
+    unsigned capacity;
+
+    if (sFrameQueue == NULL)
+        return false;
+    capacity = sFrameQueue->maxEntries;
+    if (capacity <= GX_QUEUE_SHARED)
+        return CtrVideo_TryVoxelUpload(); /* not lengthened: the shared room */
+    if (sAnimCommands + 2u > capacity - GX_QUEUE_SHARED
+     || sFrameQueue->numEntries + 2u + sRenderReserve > capacity)
+        return false;
+    sAnimCommands += 2u;
     return true;
 }
 
@@ -328,8 +399,8 @@ unsigned CtrVideo_VoxelUploadsLeft(void)
 
     if (sFrameQueue == NULL)
         return 0;
-    capacity = sFrameQueue->maxEntries;
-    used = sFrameQueue->numEntries;
+    capacity = SharedCapacity();
+    used = SharedUsed();
     if (used < sUploadCommands)
         used = sUploadCommands;
     room = capacity > used + sRenderReserve ? capacity - used - sRenderReserve : 0;
@@ -12384,7 +12455,7 @@ void CtrVideo_Present(void)
     if (ClearsRun()) sSceneCached = sSceneEmpty = false;
     /* Before anything samples what the CPU wrote since the last frame. */
     TexCacheClear();
-    sUploadCommands = 0;
+    sUploadCommands = sAnimCommands = 0;
     sRenderReserve = sBattle ? RENDER_RESERVE_MOST : RENDER_RESERVE;
     Flat2D();
     uint64_t start = svcGetSystemTick();
@@ -12491,7 +12562,7 @@ void CtrVideo_Present(void)
 
                 CtrLog_LastDrain(&logMs, &logAgo);
 
-                char voxelPart[160];
+                char voxelPart[224];
 
                 ++sDropsLogged;
                 sLastDropLogged = sStats.frames;
@@ -12502,11 +12573,11 @@ void CtrVideo_Present(void)
                 if (sStats.voxelFrame)
                     snprintf(voxelPart, sizeof(voxelPart),
                              "voxel=%.1f: world=%.1f atlas=%.1f chunks=%.1f sprites=%.1f "
-                             "stream=%.1f anim=%.1f draft=%.1f) after=%.1f/%.1f",
+                             "stream=%.1f anim=%.1f draft=%.1f) after=%.1f/%.1f tail=%.1f/%.1f",
                              voxel->updateMs, voxel->worldMs, voxel->atlasMs,
                              voxel->meshMs - voxel->atlasMs - voxel->draftMs, voxel->spritesMs,
                              voxel->streamMs, voxel->animMs, voxel->draftMs,
-                             voxel->afterMs, voxel->afterBudgetMs);
+                             voxel->afterMs, voxel->afterBudgetMs, voxel->tailMs, voxel->tailExpectedMs);
                 else
                     snprintf(voxelPart, sizeof(voxelPart), "voxel=-)");
                 CtrLog_Write(CTR_LOG_VIDEO, "DROP frame=%lu gap=%.1fms (+%u quiet): present=%.1f "
@@ -12987,12 +13058,14 @@ void CtrVideo_Present(void)
             CtrLog_Write(CTR_LOG_VIDEO,
                          "VOXEL chunks=%u/%u missing=%u pending=%u builds=%u atlas=%u verts=%u "
                          "mesh=%.2fms peak=%.2fms update=%.2fms peak=%.2fms dropped=%u "
-                         "anim=%u/%u refl=%u drafts=%u/%u",
+                         "anim=%u/%u passes=%u/%uk/%ub/%uf/%uw refl=%u drafts=%u/%u",
                          stats->visibleChunks, stats->chunks, stats->chunksMissing,
                          stats->pendingBuilds, stats->meshRebuilds, stats->atlasRebuilds,
                          stats->vertices, stats->meshMs, stats->meshPeakMs,
                          stats->updateMs, stats->updatePeakMs, stats->dropped,
                          stats->animationUploads, stats->animatedMetatiles,
+                         stats->animationPasses, stats->animationKept, stats->animationBegins,
+                         stats->animationPeakFrames, stats->animationWaits,
                          stats->reflections, stats->draftsVisible, stats->draftsMade);
         }
     }

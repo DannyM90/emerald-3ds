@@ -8,6 +8,12 @@
 bool CtrVideo_TryVoxelUpload(void);
 /* How many more uploads TryVoxelUpload would grant this frame. */
 unsigned CtrVideo_VoxelUploadsLeft(void);
+/* The same for the animated tiles' copies, from room of their own. */
+bool CtrVideo_TryVoxelAnimUpload(void);
+/* In a frame: GX_TextureCopy calls between these go behind one split of its
+ * command list, with no heap flush each (their sources flushed already). */
+void CtrVideo_CopiesBegin(void);
+void CtrVideo_CopiesEnd(void);
 
 #define CTR_GAME_WIDTH 400
 #define CTR_GAME_HEIGHT 240
