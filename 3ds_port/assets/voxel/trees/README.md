@@ -25,6 +25,11 @@ Original art for the voxel mode's trees, drawn for Emerald 3DS:
   Fallarbor Town and Route 114; `tree_north_base_rock.png`,
   `tree_north_base_ash.png`: 32×16, its trunk row on the brown soil and on
   the ash.
+- `tree_small_trunk_access.png`: 16×16, the small tree's trunk on the darker
+  grass at a wood's way in (Route 104, Southern Island, Faraway Island,
+  Route 112). Its crown is `tree_small_crown.png`.
+- `tall_grass.png`: 16×32 RGBA, a tuft of long grass on a transparent
+  background; `tall_grass_floor.png`: 16×16, opaque, the floor it grows on.
 
 `scripts/gen_voxel_trees.py` packs them, unscaled, into
 `voxel/trees.rgba5551`: a 128×128 RGBA5551 texture in PICA200 order (large
@@ -33,7 +38,9 @@ crown at 0,0; large trunk at 32,0; small crown at 32,32; small trunk at
 pale-grass and volcanic trunks at 48,48, 80,16 and 64,32; the secret base
 tree's floor at 96,0, its crown at 0,64 and the opened one at 32,64;
 Mossdeep's crown at 64,64 and the leaning tree's at 96,64, their trunk rows
-at 64,96 (grass), 96,96 (water), 0,96 (soil) and 32,96 (ash)). It is an engine file and ships inside the 3DSX. The build regenerates
+at 64,96 (grass), 96,96 (water), 0,96 (soil) and 32,96 (ash); the long
+grass's tuft at 80,32, its floor at 96,32 and the trunk at a wood's way in
+at 112,32). It is an engine file and ships inside the 3DSX. The build regenerates
 it whenever a source changes; it needs Pillow like the port's other graphics
 tools.
 
@@ -110,6 +117,21 @@ between the floor and the planks (the crowns stand 23 px, the planks 25).
 The canopy over the next row's trunks (`244`, like the General's `00E-00F`)
 and the cells of a palm (a model of its own) get the grass `001` back, the
 crown's top over the path (`24B-24C`) the path `261`.
+
+The same goes for the small tree at a wood's way in, drawn by a secondary
+tileset on its path's darker grass: Rustboro's `307` (Route 104, Southern
+Island, Faraway Island's entrance) and Lavaridge's `201` (Route 112) become
+the trunk on `tree_small_trunk_access.png` with the General's crown.
+
+Long grass (Route 119, Route 120, Faraway Island) is drawn the same way as a
+small tree: every cell of it, the General's `015` and Fortree's south edge
+`208` and `281–283`, lays `tall_grass_floor.png` and carries its tuft
+`tall_grass.png`, a 1×2-cell card at the small crown's 50°, base and foot.
+The tuft of the cell south of a walker stands in front of it up to its
+shoulders, so only its head shows, as the GBA's grass covers the rest of it;
+the game's flat picture of the grass under the walker
+(`FLDEFFOBJ_LONG_GRASS`) is not laid on that floor. Long grass casts no
+crown's shadow and a 3D battle stands on it as on any ground.
 
 Two secondary tilesets draw 2×2 trees of their own, replaced with that art:
 Mossdeep's round tree (Mossdeep City and Routes 124–129) and the leaning tree
