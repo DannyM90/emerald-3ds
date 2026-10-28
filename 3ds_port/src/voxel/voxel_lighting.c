@@ -393,6 +393,10 @@ static const LightCell *Cell(int x, int z)
         int part = VoxelTree_Part(inst->secondaryTileset, metatile);
         float over;
 
+        /* Long grass is low: no crown to cast, the ground it is */
+        if (part == VOXEL_TREE_GRASS)
+            part = -1;
+
         /* A wood under a deck (Fortree's tree houses): the deck casts,
          * standing over the crowns. */
         if (part >= 0 && VoxelBuildings_CellAt(inst, x, z, NULL, &over) && over > CROWN_TOP)

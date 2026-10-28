@@ -32,6 +32,7 @@
 #include "voxel_atlas.h"
 #include "voxel_relief.h"
 #ifdef PLATFORM_3DS
+#include "3ds_video.h"
 #include "voxel_building.h"
 #include "field_weather.h"
 #include "palette.h"
@@ -719,6 +720,79 @@ bool VoxelWorld_IsVisibleReflectiveSurface(int worldX, int worldY)
      && metatileId >= 0x288 && metatileId <= 0x29A)
         return false;
     return true;
+}
+
+/*
+ * A sprite of priority 3 lies over BG3 alone. A metatile's lower layer is on
+ * BG3 unless it is a NORMAL one (BG2, over the sprite), and its upper layer
+ * on BG2 or BG1, both over it: the sprite shows where the cell is COVERED or
+ * SPLIT and its upper layer draws nothing (index 0). Read from the tiles the
+ * field has loaded (the current map's tilesets), a metatile at a time,
+ * cached: the cards are laid in the VBlank handler.
+ */
+#define UNDER_GROUND_CACHE 64u
+
+bool VoxelWorld_UnderGroundMask(int worldX, int worldY, uint16_t rows[16])
+{
+#ifdef PLATFORM_3DS
+    static struct
+    {
+        const void *primary, *secondary;
+        uint16_t metatileId;
+        uint16_t rows[16];
+    } sCache[UNDER_GROUND_CACHE];
+    const VoxelMapInstance *inst = NULL;
+    u16 block = GetRawBlock(worldX, worldY, &inst);
+    const uint8_t *tiles = CtrVideo_GetBgVram();
+    const uint16_t *entries;
+    unsigned metatileId, slot;
+
+    if (inst == NULL || tiles == NULL || sInstanceCount == 0
+     || inst->primaryTileset != sInstances[0].primaryTileset
+     || inst->secondaryTileset != sInstances[0].secondaryTileset)
+        return false;
+    metatileId = block & MAPGRID_METATILE_ID_MASK;
+    slot = metatileId % UNDER_GROUND_CACHE;
+    if (sCache[slot].primary == inst->primaryTileset && sCache[slot].secondary == inst->secondaryTileset
+     && sCache[slot].metatileId == metatileId)
+    {
+        memcpy(rows, sCache[slot].rows, sizeof(sCache[slot].rows));
+        return true;
+    }
+    entries = metatileId < NUM_METATILES_IN_PRIMARY
+            ? Voxel_ResolveMetatiles(inst->primaryTileset)
+            : Voxel_ResolveMetatiles(inst->secondaryTileset);
+    if (entries == NULL)
+        return false;
+    entries += (metatileId % NUM_METATILES_IN_PRIMARY) * NUM_TILES_PER_METATILE;
+    memset(rows, 0, 16 * sizeof(rows[0]));
+    if (UNPACK_LAYER_TYPE(GetMetatileAttribute(inst, metatileId)) != METATILE_LAYER_TYPE_NORMAL)
+        for (unsigned q = 0; q < 4; ++q)
+        {
+            uint16_t entry = entries[4 + q];
+            const uint8_t *tile = tiles + (entry & 0x3FF) * 32u;
+
+            for (unsigned y = 0; y < 8; ++y)
+                for (unsigned x = 0; x < 8; ++x)
+                {
+                    unsigned sx = (entry & 0x400) ? 7 - x : x, sy = (entry & 0x800) ? 7 - y : y;
+                    uint8_t packed = tile[sy * 4 + sx / 2];
+
+                    if (((sx & 1) ? packed >> 4 : packed & 0xF) == 0)
+                        rows[(q >> 1) * 8 + y] |= (uint16_t)(1u << ((q & 1) * 8 + x));
+                }
+        }
+    sCache[slot].primary = inst->primaryTileset;
+    sCache[slot].secondary = inst->secondaryTileset;
+    sCache[slot].metatileId = (uint16_t)metatileId;
+    memcpy(sCache[slot].rows, rows, sizeof(sCache[slot].rows));
+    return true;
+#else
+    (void)worldX;
+    (void)worldY;
+    (void)rows;
+    return false;
+#endif
 }
 
 bool VoxelWorld_UsesTreeSprites(const VoxelMapInstance *inst)

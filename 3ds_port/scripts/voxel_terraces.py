@@ -2461,7 +2461,8 @@ TREE_CARDS = SMALL_TRUNKS | {0x1D4, 0x1D5, 0x1D6, 0x1D7, 0x1DC, 0x1DD, 0x1DE, 0x
 # the small trunks a secondary tileset draws, the General's tree over its own
 # ground (its ids are its own): voxel_tree.c draws them the same way
 OWN_TRUNKS = {"gTileset_Dewford": {0x23A, 0x243}, "gTileset_Fortree": {0x253, 0x22A},
-              "gTileset_Mauville": {0x226}, "gTileset_Lavaridge": {0x218, 0x21A, 0x3B8, 0x203}}
+              "gTileset_Mauville": {0x226}, "gTileset_Lavaridge": {0x218, 0x21A, 0x3B8, 0x203, 0x201},
+              "gTileset_Rustboro": {0x307}}
 
 
 def small_trunk(c, cell):

@@ -106,6 +106,11 @@ unsigned VoxelWorld_GetCollision(int worldX, int worldY);
 unsigned VoxelWorld_GetMetatileBehavior(int worldX, int worldY);
 /* Reflective behavior whose metatile art actually depicts water or ice. */
 bool VoxelWorld_IsVisibleReflectiveSurface(int worldX, int worldY);
+/* Where in the cell the GBA shows a priority-3 sprite (the clouds of
+ * WEATHER_SUNNY_CLOUDS): a bit per pixel, row 0 the north one, bit 0 the west
+ * column. False when the cell's art is not at hand (a neighbour drawn with
+ * other tilesets than the ones loaded). */
+bool VoxelWorld_UnderGroundMask(int worldX, int worldY, uint16_t rows[16]);
 /* Explicit tileset identity: these tree IDs mean other art in other tilesets. */
 bool VoxelWorld_UsesTreeSprites(const VoxelMapInstance *inst);
 
