@@ -35,8 +35,13 @@ side eave, so no gable wall of plaster ever shows.
 """
 
 import math
+import os
+import sys
 
 from PIL import Image
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import voxel_fortree  # noqa: E402
 
 from voxel_building import (Band, ProjCanopy, ProjDome, ProjHull, ProjLathe, ProjSection, BakedLathe, VoxelLathe, Card, Grown, PlanHip, PlanPrism, PlanPyramid, PlatePrism, SectionPrism, Cylinder, Frustum, HeightSolid, HipRoof, Mound, PlainWall, Prism, Proj,
                             Strip, Tile, Vault, Volume, Walls, clip, own_bands, _unit, strip_face,
@@ -1580,8 +1585,13 @@ def pokemon_league(art):
     return parts, tex
 
 
-DOME_BOXES = ((24, 184, 24, 170, 216), (40, 168, 48, 160, 200), (80, 128, 30, 196, 224),
-              (0, 16, 14, 76, 224), (192, 208, 14, 76, 224))      # x0, x1, height, z0, z1
+DOME_BOXES = ((24, 184, 24, 170, 216), (40, 168, 48, 160, 200),
+              (80, 128, 30, 196, 224))      # x0, x1, height, z0, z1
+# The fence down each side of the dome and the pyramid is the General's
+# (the `fence` spec, post by post): what the building keeps of the cells it
+# shares with it is its own wall, from the cells' middle in (`keep`).
+DOME_KEEP = [(0, 0, 208, 64), (16, 64, 192, 80), (8, 80, 200, 208), (16, 208, 192, 224)]
+PYRAMID_KEEP = [(0, 0, 240, 32), (16, 32, 224, 48), (8, 48, 232, 160), (16, 160, 224, 176)]
 
 
 def battle_dome(art):
@@ -1590,7 +1600,8 @@ def battle_dome(art):
     45-degree ray grazes it) with five ribs (r 8.5) lying over it from front
     to back, their tops row 12 - a solid claiming the pixels the boxes do
     not; and of flat faces, the drawing projected: the two-tier glass base
-    (24 then 48 high), the porch, a fence line down each side."""
+    (24 then 48 high), the porch. The fences either side are the `fence`
+    spec's."""
     tex = Mound.with_ring(art, ())
     H = art.size[1]
     apx = art.load()
@@ -1631,6 +1642,79 @@ def flat(make):
     return parts
 
 
+# The Battle Frontier's halls (art 112x80, the walls' foot row 80): a block
+# 38 high on z 54-80, x 0-112, its corners rounded (its flat orange roof rows
+# 17-41, the red band and the walls its front); on it, in the middle, the
+# vault with the Frontier's emblem: x 40-72 over the roof's whole depth, its
+# arched back edge the drawing's rows 9-16 (7 high in the middle), its top
+# and its front the emblem. The gate has the walk through its middle under a
+# lintel (x 40-72, from 24 up: the red band's middle, rows 42-56); the
+# porch's two posts and its roof are drawn on the front.
+HALL_FRONT, HALL_HIGH = 80, 38
+# the vault's front (x, y), from the roof up: the back edge's rows read off
+# the drawing (row = roof's back z - y)
+HALL_VAULT = [[(40, 38), (72, 38), (71, 39), (70, 41), (69, 42), (67, 44), (66, 45), (46, 45), (44, 43),
+               (42, 41)]]
+# the porch's stands on a step 2 high, x 38-74
+HALL_VAULT_PORCH = HALL_VAULT + [[(38, 38), (74, 38), (74, 40), (38, 40)]]
+# what of its cells is the hall: the vault over what lies behind it, the rest
+# from the roof's back edge down
+HALL_KEEP = [(38, 9, 74, 16), (0, 16, 112, 80)]
+
+
+def frontier_hall(art, gate=False, vault=HALL_VAULT):
+    """Its parts, and its texture: the drawing alone - every face it does not
+    show is dressed with a stretch of its own front (the block's wall west
+    of the windows, the vault's west edge down to the band), opaque all the
+    way up, so the page holds no grown band for it."""
+    side = (14, 20, HALL_FRONT)
+    back = HALL_FRONT - 26
+    crown = [PlatePrism("vault", poly, back, HALL_FRONT, (40, 46, HALL_FRONT)) for poly in vault]
+    if not gate:
+        return [PlanPrism("hall", rounded_plan(56, (back + HALL_FRONT) / 2, 56, 13, p=12.0, n=48),
+                          0, HALL_HIGH, side)] + crown, art
+    wing = lambda x0, x1: [(x0, back), (x1, back), (x1, HALL_FRONT), (x0, HALL_FRONT)]
+    # the wings: the whole block's plan, square where the walk cuts it
+    whole = rounded_plan(56, (back + HALL_FRONT) / 2, 56, 13, p=12.0, n=48)
+
+    def cut(clamp):
+        pts = [clamp(x, z) for (x, z) in whole]
+        return [p for k, p in enumerate(pts) if p != pts[k - 1]]
+    return [PlanPrism("hall", cut(lambda x, z: (min(x, 40.0), z)), 0, HALL_HIGH, side),
+            PlanPrism("hall", cut(lambda x, z: (max(x, 72.0), z)), 0, HALL_HIGH, side),
+            PlanPrism("lintel", wing(40, 72), 24, HALL_HIGH, side)] + crown, art
+
+
+# The Battle Frontier's arches over the walk to the gate (art 80x80, their
+# feet on row 80): two pillars (x 0-16, 64-80) 44 high on z 68-80, and the
+# arch between them, 12 deep, its top and front read off the drawing column
+# by column - the drawing's first row the arch's back edge, its band's last
+# the front's foot (ARCH_DEPTH rows of top, the rest its front)
+ARCH_FRONT, ARCH_DEPTH, ARCH_PILLAR = 80, 12, 44
+
+
+def frontier_arch(art):
+    px = art.load()
+    W = art.size[0]
+    side = (2, 6, ARCH_FRONT)
+    back = ARCH_FRONT - ARCH_DEPTH
+    parts = [PlanPrism("pillar", [(x0, back), (x0 + 16, back), (x0 + 16, ARCH_FRONT), (x0, ARCH_FRONT)],
+                       0, ARCH_PILLAR, side) for x0 in (0, W - 16)]
+    # each edge of a segment from the two columns beside it: the higher top,
+    # the lower end - the band's own last row, or under it the few pixels of
+    # its underside's shadow (drawn apart: the front stands over the gap)
+    band = {}
+    for u in range(8, W - 6, 2):
+        rows = [v for x in (u - 1, u) for v in range(ARCH_FRONT) if px[x, v][3] >= 128]
+        end = max(v for v in rows if v < min(rows) + 40)
+        band[u] = (back - min(rows), max(0, ARCH_FRONT - end - 1))
+    for u in range(8, W - 8, 2):
+        (ta, ba), (tb, bb) = band[u], band[u + 2]
+        parts.append(PlatePrism("arch", [(u, ba), (u + 2, bb), (u + 2, tb), (u, ta)], back,
+                                ARCH_FRONT, side))
+    return parts
+
+
 def rounded_plan(cx, cz, rx, rz, p=4.0, n=32):
     """A superellipse plan polygon (x, z), its corners rounded."""
     pts = []
@@ -1658,16 +1742,14 @@ def sand_specks(make):
 def battle_pyramid():
     """The Battle Pyramid (art 240x176, from map 51,5): thirteen tiers 8
     high, each 8 in on the sides and 4 in front and back (the base x 8-232,
-    z 57-160), the portico before the entrance and its tower, the posts of
-    the chain fences either side."""
+    z 57-160), the portico before the entrance and its tower. The fences
+    either side are the `fence` spec's."""
     parts = [PlanPrism("tier", [(8 + 8 * i, 56 + 4 * i), (232 - 8 * i, 56 + 4 * i), (232 - 8 * i, 160 - 4 * i),
                                 (8 + 8 * i, 160 - 4 * i)], 8 * i, 8 * i + 8, (60, 76, 160 - 4 * i))
              for i in range(13)]
     parts.append(PlanPrism("steps", [(100, 160), (140, 160), (140, 176), (100, 176)], 0, 4, (104, 112, 176)))
     parts.append(PlanPrism("portico", [(40, 140), (200, 140), (200, 160), (40, 160)], 0, 20, (60, 76, 160)))
     parts.append(PlanPrism("gate", [(104, 120), (136, 120), (136, 160), (104, 160)], 0, 40, (60, 76, 160)))
-    for (a, b) in ((0, 16), (224, 240)):
-        parts.append(PlanPrism("fence", [(a, 30), (b, 30), (b, 176), (a, 176)], 0, 10, (a + 2, a + 6, 176)))
     return parts
 
 
@@ -1685,49 +1767,266 @@ def battle_factory():
     return parts
 
 
+# The Battle Pike's Seviper (art 80x208): its tail the drawing's rows above
+# 58 and its root's east edge down to row 74 (pike_tail), a blade standing
+# up out of its back at z PIKE_TAIL_Z
+PIKE_TAIL_ROWS = 74
+PIKE_TAIL_Z = 132
+
+
+def pike_tail(u, v):
+    return v < 59 or (u >= 60 and v < PIKE_TAIL_ROWS)
+
+
 def battle_pike_volume():
-    """The Battle Pike's Seviper (art 80x208), lying on the ground: its body
-    a tube (r 27) along the middle, the tail lying on the ground behind it
-    and curling to the west (its tip row 3), the head a broad dome whose open mouth is
-    the door, the yellow fins along its sides, the tongue a carpeted ramp."""
+    """The Seviper's head and body, lying on the ground, round domes fitted
+    to the drawing's outline (where a dome stood higher than the outline,
+    the 45-degree cut left its sides as faces edge-on to the view): the
+    body 80 high on z 94-206, x 14-66, the yellow plates down its back; the
+    head wider and lower before it, 56 high on z 144-208, x 6-74, its front
+    the open mouth (the door) and its top the eyes; the yellow fins along
+    its sides, low humps against it."""
     vol = Volume()
-    vol.tube([(40, 20, 96, 26), (40, 22, 120, 28), (40, 24, 150, 30)])
-    vol.tube([(44, 12, 90, 14), (54, 12, 62, 13.5), (50, 12, 38, 12.5), (44, 12, 20, 9), (30, 10, 10, 5),
-              (24, 8, 6, 3)])
-    vol.dome(40, 174, 38, 30, 44)
-    for (x, z) in ((8, 96), (72, 96), (6, 116), (74, 116), (8, 128), (72, 128), (10, 150), (70, 150)):
-        vol.dome(x, z, 9, 9, 16)
-    vol.box(24, 56, 0, 8, 176, 208)
+    vol.dome(40, 150, 32, 60, 86, p=3.0)
+    vol.dome(40, 176, 34, 32, 56, p=3.0)
+    for (x, z, h) in ((8, 104, 30), (72, 104, 30), (9, 128, 26), (71, 128, 26), (9, 152, 26),
+                      (71, 152, 26)):
+        vol.dome(x, z, 9, 12, h)
     return vol
 
 
+class Blade:
+    """A flat thing standing up across the plan (the Seviper's tail): a card
+    at depth `z` facing the view, over columns u0-u1 from `y0` up to `y1`, its
+    drawing projected and read `voff` rows down, where its own pixels lie
+    alone (the transparency there cuts its outline). Two faces, back to
+    back: from behind it shows the same drawing, not nothing."""
+
+    def __init__(self, name, u0, u1, z, y0, y1, voff):
+        self.name, self.u0, self.u1, self.z, self.voff = name, u0, u1, z, voff
+        self.y0, self.y1 = y0, y1
+
+    def emit(self, mesh):
+        z, o = self.z, self.voff
+        quad = [(self.u0, self.y0), (self.u1, self.y0), (self.u1, self.y1), (self.u0, self.y1)]
+        front = [(x, y, z, x, z - y + o) for (x, y) in quad]
+        mesh.poly(front, SHADE_ART, self.name + ".card")
+        mesh.poly(front[::-1], SHADE_ART, self.name + ".card")
+
+
+def battle_pike(art):
+    """The Battle Pike: the head and body a height field over its plan
+    (battle_pike_volume), the drawing cut out of it; the tail a Blade at
+    PIKE_TAIL_Z, its pixels laid alone below the texture's bands."""
+    H, W = art.size[1], art.size[0]
+    tex = Mound.with_ring(art, ())
+    tex, band = own_bands(tex, H, {"body": lambda u, v: not pike_tail(u, v)})
+    out = Image.new("RGBA", (W, tex.size[1] + PIKE_TAIL_ROWS), (0, 0, 0, 0))
+    out.paste(tex, (0, 0))
+    apx, opx = art.load(), out.load()
+    mine = [(u, v) for v in range(PIKE_TAIL_ROWS) for u in range(W)
+            if apx[u, v][3] >= 128 and pike_tail(u, v)]
+    for (u, v) in mine:
+        opx[u, tex.size[1] + v] = apx[u, v]
+    cols = [u for (u, v) in mine]
+    top = min(v for (u, v) in mine)
+    body = HeightSolid("pike", out, H, battle_pike_volume(), depth=(0.0, 208.0), step=2,
+                       mirror_z=150.0, cell=2, tol=1, mask=pike_tail, band=band["body"],
+                       side=(30, 36, 112))
+    blade = Blade("pike_tail", min(cols), max(cols) + 1, PIKE_TAIL_Z, PIKE_TAIL_Z - PIKE_TAIL_ROWS,
+                  PIKE_TAIL_Z - top, tex.size[1])
+    return [body, blade], out
+
+
+def clear_rock(art):
+    """The white rock drawn round a Sootopolis building is the map's (laid
+    back as patches): clear in its drawing."""
+    px = art.load()
+    for v in range(art.size[1]):
+        for u in range(art.size[0]):
+            if px[u, v][3] >= 128 and px[u, v][:3] in SOOTOPOLIS_ROCK:
+                px[u, v] = (0, 0, 0, 0)
+    return art
+
+
+# The spire's eight-sided pyramid of dark stone: its base the octagon x 4-44,
+# z 39-73 (drawn rows 17-51) on the white base's top (y 22), its apex row 8.
+SPIRE_PLAN = [(13, 39), (35, 39), (44, 50), (44, 65), (37, 73), (11, 73), (4, 65), (4, 50)]
+SPIRE_APEX = (24, 48, 56)
+
+
+def spire_parts(gate_side=None):
+    """A spire house's parts, on its drawing 48x80 (the apex's row on top).
+
+    The white base is an octagon 22 high (front rows 56-78, flat top rows
+    18-56: z 40-79, the corners cut 8). The gated one's front, drawn a row
+    lower (z 80), is two dark pillars (x 8-16, 32-40) either side of the
+    gate, and the gate stands 4 back between them (z 76) under the lintel
+    (y 17-22, the gate's top row 59), on a threshold 1 high. The sides take
+    the plain front either side of the window (columns 9-16 on row 79): the
+    gated one has no such stretch: `gate_side` builds it, its sides reading
+    that tile (a band of the windowed one's front appended to its texture)."""
+    if gate_side is None:
+        base = [PlanPrism("base", octagon(0, 48, 40, 79, 8), 0, 22, (9, 16, 79))]
+    else:
+        side = gate_side
+        whole = [(8, 40), (40, 40), (48, 48), (48, 71), (40, 79), (40, 80), (8, 80), (8, 79),
+                 (0, 71), (0, 48)]
+        notched = whole[:6] + [(32, 80), (32, 76), (16, 76), (16, 80)] + whole[6:]
+        base = [PlanPrism("base", notched, 0, 17, side, open_top=True),
+                PlanPrism("lintel", whole, 17, 22, side),
+                PlanPrism("step", [(16, 76), (32, 76), (32, 80), (16, 80)], 0, 1, side)]
+    return base + [PlanPyramid("spire", SPIRE_PLAN, 22, SPIRE_APEX)]
+
+
 def sootopolis_spire(art):
-    """Sootopolis's spire house (art 48x80): the octagonal white base, 22
-    high (front rows 56-78, flat top rows 18-56: z 40-79, corners cut 8),
-    and on it the eight-sided pyramid of dark stone - its base the octagon
-    x 4-44, z 39-73 (drawn rows 17-51), its apex row 8 over the middle,
-    48 high. Both of flat faces, the drawing projected onto them."""
+    """Sootopolis's spire house (art 48x80): see spire_parts. All of flat
+    faces, the drawing projected onto them."""
+    H = clear_rock(art).size[1]
+    return [Grown(p, 2 * H) for p in spire_parts()], Mound.with_ring(art, ())
+
+
+# the windowed spire house, whose plain front dresses the gated one's sides
+SPIRE_WINDOW = ("LAYOUT_SOOTOPOLIS_CITY", 22, 1)
+SOOTOPOLIS_GROUND = [0x2D9, 0x2E1, 0x2E2, 0x2D3, 0x2DA]
+
+
+def sootopolis_spire_gate(art):
+    """The gated spire house: its texture, the drawing's three bands and,
+    under them, the windowed house's plain front (columns 9-16, rows 57-79),
+    which its sides read."""
+    H = clear_rock(art).size[1]
+    lid, x, y = SPIRE_WINDOW
+    layout = LayoutArt(lid)
+    window = clear_rock(layout.building_art(x, y, 3, 5, layout.ground_tiles(SOOTOPOLIS_GROUND),
+                                            ground_px=layout.ground_pixels(SOOTOPOLIS_GROUND)))
+    tex = Mound.with_ring(art, ())
+    out = Image.new("RGBA", (tex.size[0], tex.size[1] + 24), (0, 0, 0, 0))
+    out.paste(tex, (0, 0))
+    out.paste(window.crop((9, 57, 16, 80)), (0, 3 * H))
+    # a side reads its rows 2H down (Grown): the band's rows H-H+23 here
+    return [Grown(p, 2 * H) for p in spire_parts((0, 7, H + 23))], out
+
+
+# Sootopolis's white walls (sootopolis_wall): along a row (240-242), its
+# corners turning south (246, 247, 25C, 26E, 26F), down a column (254, 255,
+# 25E, 25F, 256) and turning east (25D). Not their ends drawn down the face
+# beside a flight of stairs (262, 263): a face is upright, and a wall exact
+# at 45 degrees on it could not stand on the ground at its foot - they stay
+# painted on the face, and the wall above ends at the terrace's edge.
+SOOTOPOLIS_WALL = {0x240, 0x241, 0x242, 0x246, 0x247, 0x25C, 0x26E, 0x26F, 0x254, 0x255, 0x25E,
+                   0x25F, 0x256, 0x25D}
+
+
+# The Cave of Origin's doorway (art 80x64 from map cell 29,15): a frame of the
+# walls' white stone round the cave's mouth. The cliff it is set in is the
+# relief's, upright at z 32 from the plaza (y 0) to its top (y 32): its two
+# rows of cells stay the relief's (unowned), and the frame stands out of it.
+CAVE_ORIGIN = ("LAYOUT_SOOTOPOLIS_CITY", 29, 15, 5, 4)
+CAVE_ORIGIN_GROUND = [0x071]
+# the crater's red rock, the plaza round the doorway
+CRATER_ROCK = {(189, 148, 139), (222, 180, 164), (156, 115, 115), (238, 213, 205)}
+
+
+def cave_origin_art():
+    """The doorway's whole drawing, its cliff's rows too (an owned spec's art
+    holds only its own cells), less the rock round the frame and the cliff
+    inside it (x 16-64, rows 9-31), the relief's to draw."""
+    lid, x, y, w, h = CAVE_ORIGIN
+    layout = LayoutArt(lid)
+    ground = CAVE_ORIGIN_GROUND + SOOTOPOLIS_GROUND
+    art = clear_rock(layout.building_art(x, y, w, h, layout.ground_tiles(ground),
+                                         ground_px=layout.ground_pixels(ground)))
     px = art.load()
     for v in range(art.size[1]):
         for u in range(art.size[0]):
-            if px[u, v][3] >= 128 and px[u, v][:3] in SOOTOPOLIS_ROCK:
+            # the plaza, and the cliff with the cave's mouth inside the frame
+            if (px[u, v][3] >= 128 and px[u, v][:3] in CRATER_ROCK) or (16 <= u < 64 and 9 <= v < 32):
                 px[u, v] = (0, 0, 0, 0)
-    base = PlanPrism("base", octagon(0, 48, 40, 79, 8), 0, 22, (9, 16, 79))
-    roof = PlanPyramid("spire", [(13, 39), (35, 39), (44, 50), (44, 65), (37, 73), (11, 73), (4, 65),
-                                 (4, 50)], 22, (24, 48, 56))
-    return [Grown(base, 2 * art.size[1]), Grown(roof, 2 * art.size[1])], Mound.with_ring(art, ())
+    return art
 
 
-def sootopolis_flat_house(art):
-    """Sootopolis's flat-roofed white house (art 48x64): a block 30 high on
-    z 30-64, its flat roof (with the skylight) drawn rows 0-34."""
+def cave_origin(art):
+    """The frame, of flat faces with the drawing projected on them: an open
+    frame out of the cliff's top over the plaza, on two legs.
+
+    - the lintel along the cliff's top (x 9-71), 7 high and 2 out of it
+      (its top drawn rows 0-2, its front 2-9);
+    - from its ends two beams run out over the plaza (x 9-16, 64-71), their
+      tops 25 up: drawn down to row 37 in the shade of a top, as the
+      lintel's, not of a front;
+    - the beam across their ends (x 9-71, z 57-62, 18-25 up: its top drawn
+      rows 32-37, its front 37-44) - drawn as a sill before the cave, it is
+      the frame's front: under it the plaza runs on to the cliff;
+    - the two legs under its corners (x 9-16, 64-71, z 57-62), down to the
+      plaza at row 62, drawn in the shade of a front.
+
+    The cave's mouth and the rock round it are the cliff's own drawing."""
+    art = cave_origin_art()
+    H = art.size[1]
+    side = (11, 15, 62)    # a beam's front: its stone between its outlines
+    top, beam = 25, 18
+    parts = [PlanPrism("lintel", [(9, 32), (71, 32), (71, 34), (9, 34)], top, 32, side),
+             PlanPrism("front", [(9, 57), (71, 57), (71, 62), (9, 62)], beam, top, side)]
+    for (x0, x1) in ((9, 16), (64, 71)):
+        parts.append(PlanPrism("beam", [(x0, 34), (x1, 34), (x1, 57), (x0, 57)], beam, top, side))
+        parts.append(PlanPrism("leg", [(x0, 57), (x1, 57), (x1, 62), (x0, 62)], 0, beam, side))
+    return [Grown(p, 2 * H) for p in parts], Mound.with_ring(art, ())
+
+
+def flower_box(art):
+    """Verdanturf's flower box (art 16x32, cells 2B4 over 2BC): a box 8 high
+    on z 8-32, the flowers its top (drawn rows 0-24 inside the outline), its
+    planks the front (rows 24-32)."""
+    H = art.size[1]
+    parts = [PlanPrism("box", [(0, 8), (16, 8), (16, 32), (0, 32)], 0, 8, (2, 12, 32))]
+    return [Grown(p, 2 * H) for p in parts], Mound.with_ring(art, ())
+
+
+def sootopolis_posts(art):
+    """The stone posts before the Cave of Origin (art 16x32, two cells of
+    metatile 280), two to a cell: each 8 wide, a box 8 high on z 8-16 of
+    its cell - its top (the cream cap with its white edge) drawn rows 0-8,
+    its front, from the dark lip, rows 8-16, the last its dark foot."""
     px = art.load()
     for v in range(art.size[1]):
         for u in range(art.size[0]):
-            if px[u, v][3] >= 128 and px[u, v][:3] in SOOTOPOLIS_ROCK:
+            if px[u, v][3] >= 128 and px[u, v][:3] in CRATER_ROCK:
                 px[u, v] = (0, 0, 0, 0)
-    return [Grown(PlanPrism("house", [(0, 30), (48, 30), (48, 64), (0, 64)], 0, 30, (8, 15, 64)),
-                  2 * art.size[1])], Mound.with_ring(art, ())
+    H = art.size[1]
+    parts = [PlanPrism("post", [(x, z + 8), (x + 8, z + 8), (x + 8, z + 16), (x, z + 16)], 0, 8,
+                       (x + 1, x + 7, z + 16))
+             for z in (0, 16) for x in (0, 8)]
+    return [Grown(p, 2 * H) for p in parts], Mound.with_ring(art, ())
+
+
+def sootopolis_flat_house(art, gate=False):
+    """Sootopolis's flat-roofed white house (art 48x64): a block 33 high on
+    z 33-64 (its front rows 31-63; the roof's rim, its lip at rows 29-30),
+    and on the roof a raised slab 4 high (x 5-43, z 42-62: its top with the
+    skylight drawn rows 5-25, its front rows 25-29).
+
+    The gated one's front is set back to z 60 (the block 29 high, z 29-60)
+    and its porch stands out of it in two steps: the outer frame x 9-39 out
+    to z 62, 22 high (its top drawn rows 38-40), and the bay with the gate
+    x 16-32 out to z 64, flush with the roof (its top rows 31-35); a plinth
+    1 high runs along the foot, z 60-64, as drawn."""
+    H = clear_rock(art).size[1]
+    if not gate:
+        parts = [PlanPrism("house", [(0, 33), (48, 33), (48, 64), (0, 64)], 0, 33, (8, 15, 64)),
+                 PlanPrism("roof", [(5, 42), (43, 42), (43, 62), (5, 62)], 33, 37, (8, 15, 64))]
+    else:
+        # its sides: the plain front inside its corner posts, columns 3-5
+        parts = [PlanPrism("house", [(0, 29), (48, 29), (48, 60), (0, 60)], 0, 29, (3, 6, 60)),
+                 PlanPrism("roof", [(5, 38), (43, 38), (43, 58), (5, 58)], 29, 33, (3, 6, 60)),
+                 PlanPrism("frame", [(9, 60), (39, 60), (39, 62), (9, 62)], 0, 22, (12, 15, 62)),
+                 PlanPrism("bay", [(16, 60), (32, 60), (32, 64), (16, 64)], 0, 29, (3, 6, 64)),
+                 PlanPrism("plinth", [(0, 60), (48, 60), (48, 64), (0, 64)], 0, 1, (3, 6, 64))]
+    return [Grown(p, 2 * H) for p in parts], Mound.with_ring(art, ())
+
+
+def sootopolis_gate_house(art):
+    return sootopolis_flat_house(art, gate=True)
 
 
 # Route 109's beach parasol (art 32x48): a round canopy (v 3-31) on a pole
@@ -5469,6 +5768,25 @@ def front_corners(w, h):
             [(w - 16, h - 16), (w, h - 16), (w, h), (w - 16, h)]]
 
 
+# Fortree (voxel_fortree.py). The forest floor the tree houses stand on,
+# and what their cells draw that is the wood's: the canopy (both layers of
+# 0x22A, 0x244, 0x237's bottom), the path (0x261, 0x253)
+FORTREE_GROUND = [GRASS, 0x22A, 0x244, 0x237, 0x261, 0x253]
+# a house's cells: not its top corners (small trees of the wood) nor the
+# row under its deck but the ladder's foot
+FORTREE_OWNED = [(i, j) for j in range(5) for i in range(5) if (i, j) not in ((0, 0), (4, 0))] + [(2, 5)]
+FORTREE_OWNED_DEEP = [(i, j) for j in range(6) for i in range(5) if (i, j) not in ((0, 0), (4, 0))] + [(2, 6)]
+
+
+def flat_art(make):
+    """flat() for parts read off the art (voxel_fortree): their hidden faces
+    read the grown band."""
+    def parts(art):
+        tex = Mound.with_ring(art, ())
+        return [Grown(p, 2 * art.size[1]) for p in make(art)], tex
+    return parts
+
+
 SPECS = [
     {
         "name": "littleroot_house_w",
@@ -5995,11 +6313,24 @@ SPECS = [
         # the coarse grid misses 6 pixels of its outline at 45 degrees
         "tolerance": 6,
         "layout": "LAYOUT_VERDANTURF_TOWN",
+        # its top row is the foot of the cliff behind it, the dome's top
+        # drawn over it: the relief's, drawn less the dome (bare_quarters)
+        "relief_bare": True,
         "rect": (1, 3, 5, 5),
         "ground": [GRASS],
         "ground_px": True,
         "parts_art": battle_tent_elsewhere,
         "exact": [(0, 0, 80, 80)],
+    },
+    {
+        # the flower box by Verdanturf's west edge (flower_box)
+        "name": "verdanturf_flower_box",
+        "layout": "LAYOUT_VERDANTURF_TOWN",
+        "rect": (0, 15, 1, 2),
+        "ground": [GRASS, 0x204, 0x205],
+        "ground_px": True,
+        "parts_art": flower_box,
+        "exact": [(0, 0, 16, 32)],
     },
     {
         "name": "fallarbor_house_4",
@@ -6252,6 +6583,7 @@ SPECS = [
         # 29 from it (its apex row 8)
         "name": "sootopolis_spire_house",
         "layout": "LAYOUT_SOOTOPOLIS_CITY",
+        "relief_bare": True,
         "rect": (22, 1, 3, 5),
         "ground": [0x2D9, 0x2E1, 0x2E2, 0x2D3, 0x2DA],
         "ground_px": True,
@@ -6264,6 +6596,7 @@ SPECS = [
         # under a flat roof with its skylight
         "name": "sootopolis_house",
         "layout": "LAYOUT_SOOTOPOLIS_CITY",
+        "relief_bare": True,
         "rect": (2, 6, 3, 4),
         "ground": [0x2D9, 0x2E1, 0x2E2, 0x2D3, 0x2DA],
         "ground_px": True,
@@ -6271,6 +6604,83 @@ SPECS = [
         "patch_cells": [(i, j) for j in range(4) for i in range(3)],
         "exact": [(0, 0, 48, 64)],
     },
+    {
+        # the same with a window where the other has its door
+        "name": "sootopolis_house_window",
+        "layout": "LAYOUT_SOOTOPOLIS_CITY",
+        "relief_bare": True,
+        "rect": (30, 1, 3, 4),
+        "ground": [0x2D9, 0x2E1, 0x2E2, 0x2D3, 0x2DA],
+        "ground_px": True,
+        "parts_art": sootopolis_flat_house,
+        "patch_cells": [(i, j) for j in range(4) for i in range(3)],
+        "exact": [(0, 0, 48, 64)],
+    },
+    {
+        # Sootopolis's flat-roofed house with a gate (48 x 64): its porch
+        # stands out of the front in two steps (sootopolis_flat_house)
+        "name": "sootopolis_gate_house",
+        "layout": "LAYOUT_SOOTOPOLIS_CITY",
+        "relief_bare": True,
+        "rect": (47, 22, 3, 4),
+        "ground": [0x2D9, 0x2E1, 0x2E2, 0x2D3, 0x2DA],
+        "ground_px": True,
+        "parts_art": sootopolis_gate_house,
+        "patch_cells": [(i, j) for j in range(4) for i in range(3)],
+        "exact": [(0, 0, 48, 64)],
+    },
+    {
+        # the spire house with its door (the diamond) for a window
+        "name": "sootopolis_spire_house_door",
+        "layout": "LAYOUT_SOOTOPOLIS_CITY",
+        "relief_bare": True,
+        "rect": (53, 15, 3, 5),
+        "ground": [0x2D9, 0x2E1, 0x2E2, 0x2D3, 0x2DA],
+        "ground_px": True,
+        "parts_art": sootopolis_spire,
+        "patch_cells": [(i, j) for j in range(5) for i in range(3)],
+        "exact": [(0, 0, 48, 80)],
+    },
+    {
+        # the spire house whose gate stands back between two dark pillars
+        "name": "sootopolis_spire_house_gate",
+        "layout": "LAYOUT_SOOTOPOLIS_CITY",
+        "relief_bare": True,
+        "rect": (43, 13, 3, 5),
+        "ground": [0x2D9, 0x2E1, 0x2E2, 0x2D3, 0x2DA],
+        "ground_px": True,
+        "parts_art": sootopolis_spire_gate,
+        "patch_cells": [(i, j) for j in range(5) for i in range(3)],
+        "exact": [(0, 0, 48, 80)],
+    },
+    {
+        # the stone posts before the Cave of Origin (sootopolis_posts), a
+        # pair of cells drawn alike either side of the path to it
+        "name": "sootopolis_posts",
+        "layout": "LAYOUT_SOOTOPOLIS_CITY",
+        "rect": (30, 19, 1, 2),
+        "ground": CAVE_ORIGIN_GROUND,
+        "ground_px": True,
+        "parts_art": sootopolis_posts,
+        "exact": [(0, 0, 16, 32)],
+    },
+] + [
+    {
+        # the Cave of Origin's doorway (cave_origin), in the city and in the
+        # city of the legends' battle: it owns the plaza's cells only, the
+        # cliff's stay the relief's
+        "name": "cave_origin" + suffix,
+        "layout": layout,
+        "rect": CAVE_ORIGIN[1:],
+        "owned": {(i, j) for j in (2, 3) for i in range(5)},
+        "ground": CAVE_ORIGIN_GROUND,
+        "ground_px": True,
+        "parts_art": cave_origin,
+        "patch_cells": [(i, j) for j in (2, 3) for i in range(5)],
+        "exact": [(0, 0, 80, 64)],
+    } for (layout, suffix) in (("LAYOUT_SOOTOPOLIS_CITY", ""),
+                               ("LAYOUT_SOOTOPOLIS_CITY_LEGENDS_BATTLE", "_legends"))
+] + [
     {
         # Ever Grande's Pokemon League: see pokemon_league()
         "name": "pokemon_league",
@@ -6325,6 +6735,7 @@ SPECS = [
         "rect": (13, 4, 13, 14),
         "ground": [0x001, 0x268, 0x269, 0x26A, 0x26B, 0x270, 0x271, 0x272, 0x273, 0x003],
         "ground_px": True,
+        "keep": DOME_KEEP,
         "parts_art": battle_dome,
         # the shell shows through the gaps of the glass base, as the dome behind it
         "exact": [(0, 0, 208, 160), (0, 160, 208, 224, True)],
@@ -6352,6 +6763,9 @@ SPECS = [
         "rect": (43, 2, 3, 4),
         "ground": [0x001, 0x170, 0x005, 0x0E0, 0x002, 0x007, 0x101],
         "ground_px": True,
+        # drawn alike in the East's own tiles (its houses by the Tower, the
+        # Pyramid and the walk to the Palace)
+        "anywhere": True,
         "parts_art": flat(lambda: [PlanPrism("house", rounded_plan(24, 49.5, 24.6, 14.2, p=10.0), 0, 36, (10, 18, 63))]),
         "exact": [(0, 0, 48, 64)],
     },
@@ -6363,6 +6777,9 @@ SPECS = [
         "rect": (52, 41, 3, 4),
         "ground": [0x001, 0x170, 0x005, 0x0E0, 0x002, 0x007, 0x101],
         "ground_px": True,
+        # drawn alike in the East's own tiles (its houses by the Tower, the
+        # Pyramid and the walk to the Palace)
+        "anywhere": True,
         "match_rows": (1, 4),
         "parts_art": flat(lambda: [PlanPrism("house", rounded_plan(24, 49.5, 24.6, 14.2, p=10.0), 0, 36, (20, 28, 63))]),
         "exact": [(0, 0, 48, 64)],
@@ -6373,12 +6790,88 @@ SPECS = [
         "rect": (44, 41, 6, 4),
         "ground": [0x001, 0x170, 0x005, 0x0E0, 0x002, 0x007, 0x101],
         "ground_px": True,
+        # drawn alike in the East's own tiles (its houses by the Tower, the
+        # Pyramid and the walk to the Palace)
+        "anywhere": True,
         "parts_art": flat(lambda: [PlanPrism("house", rounded_plan(48, 49.5, 48.6, 14.2, p=14.0, n=48), 0, 36,
                                     (10, 18, 63))]),
         "exact": [(0, 0, 96, 64)],
     },
     {
-        # the Battle Frontier's Battle Pike: see battle_pike_volume()
+        # the Battle Frontier's halls (frontier_hall): the one by the Tower's
+        # stairs, its door in the middle
+        "name": "frontier_hall",
+        "layout": "LAYOUT_BATTLE_FRONTIER_OUTSIDE_EAST",
+        "rect": (7, 24, 7, 5),
+        "ground": [0x001, 0x079, 0x0C7, 0x016, 0x3B6],
+        "ground_px": True,
+        # the cliff behind it, either side of its crown, is the relief's
+        "owned": {(i, j) for j in range(1, 5) for i in range(7)} | {(2, 0), (3, 0), (4, 0)},
+        "keep": HALL_KEEP,
+        "parts_art": frontier_hall,
+        "exact": [(0, 0, 112, 80)],
+    },
+    {
+        # the one below the Pyramid's cliff, a porch on two posts before its
+        # door
+        "name": "frontier_hall_porch",
+        "layout": "LAYOUT_BATTLE_FRONTIER_OUTSIDE_EAST",
+        "rect": (32, 8, 7, 5),
+        "ground": [0x0C6, 0x0A9, 0x00F, 0x001],
+        "ground_px": True,
+        "owned": {(i, j) for j in range(1, 5) for i in range(7)} | {(2, 0), (3, 0), (4, 0)},
+        "keep": HALL_KEEP,
+        "parts_art": lambda art: frontier_hall(art, vault=HALL_VAULT_PORCH),
+        "exact": [(0, 0, 112, 80)],
+    },
+    {
+        # the gate the boat brings you to, the walk through its middle
+        "name": "frontier_hall_gate",
+        "layout": "LAYOUT_BATTLE_FRONTIER_OUTSIDE_WEST",
+        "rect": (23, 61, 7, 5),
+        "ground": [0x05E, 0x05D, 0x055, 0x170],
+        "ground_px": True,
+        "owned": {(i, j) for j in range(1, 5) for i in range(7)} | {(2, 0), (3, 0), (4, 0)},
+        "keep": HALL_KEEP[:1] + [(0, 16, 112, 56), (0, 56, 40, 80), (72, 56, 112, 80)],
+        "parts_art": lambda art: frontier_hall(art, gate=True),
+        "exact": [(0, 0, 112, 80)],
+    },
+    {
+        # the Battle Frontier's flowerbeds on the plazas: a bed raised in an
+        # orange stone rim, its front 6 rows (the red course under the rim),
+        # the flowers its top
+        "name": "frontier_planter_west",
+        "components": {
+            "secondary": "gTileset_BattleFrontierOutsideWest",
+            "tiles": {0x208, 0x209, 0x20A, 0x210, 0x211, 0x212, 0x218, 0x219, 0x21A},
+            "height": 6, "block": 4,
+        },
+        "ground": [0x05E, 0x05D, 0x05F],
+    },
+    {
+        "name": "frontier_planter_east",
+        "components": {
+            "secondary": "gTileset_BattleFrontierOutsideEast",
+            "tiles": {0x2C8, 0x2CB, 0x2F7, 0x2D0, 0x2CC, 0x2FF, 0x2C9, 0x2CD, 0x307},
+            "height": 6, "block": 4,
+        },
+        "ground": [0x05E, 0x101, 0x109],
+    },
+    {
+        # the arches over the walk from the gate to the plaza (three, drawn
+        # alike): see frontier_arch
+        "name": "frontier_arch",
+        "layout": "LAYOUT_BATTLE_FRONTIER_OUTSIDE_WEST",
+        "rect": (24, 46, 5, 5),
+        "ground": [0x05E, 0x05D, 0x05F],
+        "ground_px": True,
+        "parts_art": lambda art: flat(lambda: frontier_arch(art))(art),
+        # the arch's own few pixels under its band (its underside's shadow)
+        # are stood behind by its front
+        "exact": [(0, 0, 80, 80, True)],
+    },
+    {
+        # the Battle Frontier's Battle Pike: see battle_pike()
         "name": "battle_pike",
         # a coarser grid for its round parts (2026-10-10: the console's
         # budgets), the drawing still projected wherever the view sees it
@@ -6388,8 +6881,7 @@ SPECS = [
         "ground": [0x001, 0x204, 0x017, 0x004, 0x003],
         "ground_px": True,
         "keep": [(16, 0, 80, 208), (0, 36, 16, 208)],
-        "parts_art": small_round("pike", battle_pike_volume(), depth=208.0, step=2, cell=2,
-                                 side=(30, 36, 112)),
+        "parts_art": battle_pike,
         "exact": [(0, 0, 80, 208)],
     },
     {
@@ -6423,6 +6915,7 @@ SPECS = [
         "rect": (51, 5, 15, 11),
         "ground": [0x121, 0x129, 0x120, 0x128, 0x001, 0x003],
         "ground_px": True,
+        "keep": PYRAMID_KEEP,
         "parts_art": sand_specks(flat(battle_pyramid)),
         "exact": [(0, 0, 240, 176)],
     },
@@ -6496,32 +6989,16 @@ SPECS = [
             PlanHip("porch_roof", 14, 66, 90, 130, 44, 31, 49, 111, 55)]),
         "exact": [(0, 16, 80, 128)],
     },
-    {
-        # the Battle Frontier's flags along its sea walls: a pole and its
-        # cloth, flat - a card standing at its foot on the wall (row 39)
-        "name": "frontier_flag",
-        "layout": "LAYOUT_BATTLE_FRONTIER_OUTSIDE_EAST",
-        "rect": (40, 2, 2, 3),
-        "ground": [0x170, 0x3C1, 0x3F9],
-        "ground_px": True,
-        "keep": [(10, 8, 32, 39)],
-        # the wall it stands on, and the sea, as the map paints them
-        "patch_cells": [(i, j) for j in range(3) for i in range(2)],
-        "parts_art": lambda art: [Card("flag", art, 39)],
-        "exact": [(10, 8, 32, 39)],
-    },
-    {
-        "name": "frontier_flag_west",
-        "layout": "LAYOUT_BATTLE_FRONTIER_OUTSIDE_WEST",
-        "rect": (9, 1, 2, 3),
-        "ground": [0x170, 0x26C, 0x26D, 0x3D6, 0x3D7],
-        "ground_px": True,
-        "keep": [(2, 8, 24, 32), (2, 32, 6, 39)],
-        # the wall it stands on, and the sea, as the map paints them
-        "patch_cells": [(i, j) for j in range(3) for i in range(2)],
-        "parts_art": lambda art: [Card("flag", art, 39)],
-        "exact": [(2, 8, 24, 32), (2, 32, 6, 39)],
-    },
+] + [
+    # The Battle Frontier's flags, on every wall they stand on (voxel_props
+    # finds them by their tiles): a pole and its cloth, flat - a card
+    # standing at the pole's foot, facing the view - the cloth waving as the
+    # game animates its tiles (their texels live). The wall or the cliff
+    # under them is the map's own.
+    {"name": name, "props": name, "ground": [0x170], "shape": "flag", "static": True,
+     "live_tiles": (730, 736)}
+    for name in ("frontier_flag_east", "frontier_flag_west")
+] + [
     {
         # Mossdeep's Space Center (144 x 224): see space_center(); the sea
         # behind the rocket stays the map's paint
@@ -6679,38 +7156,49 @@ SPECS = [
         "ground": [0x2BB, 0x2C3, GRASS],
     },
     {
-        # The General tileset's grey picket fence, read column by column like
-        # Rustboro's railings: along a row it is all front (posts 12 rows
-        # tall), down a column a line of post tops with the row's posts and
-        # rails on its sides. Every town and route that draws it shares it.
+        # The General tileset's grey picket fence, built post by post
+        # (voxel_fence.py): every post found by its light 4x2 cap, standing
+        # where its front ends on the ground (8 rows along a row, 10 down a
+        # column, where the next post hides its foot), the rails 2 rows thick
+        # between the posts of a row and down a column. Every town and route
+        # that draws it shares it, in the General's metatiles and in the
+        # secondary tilesets' own copies over their own ground (`also`): the
+        # Battle Frontier's sand and walls, Verdanturf's tall grass, Route
+        # 112's and Mt Chimney's ash.
         "name": "fence",
         "components": {
             "primary": "gTileset_General",
-            "tiles": {0x139, 0x13A, 0x140, 0x141, 0x142, 0x148, 0x149, 0x14A},
-            "height": 12, "hull": 12, "bridge": 3, "block": 4,
-            "upper": True,
-            "flank": 0x149,
+            "tiles": {0x132, 0x133, 0x134, 0x138, 0x139, 0x13A, 0x140, 0x141, 0x142,
+                      0x148, 0x149, 0x14A},
+            "also": {
+                "gTileset_BattleFrontierOutsideEast": {0x24D, 0x255, 0x25D, 0x26D, 0x27D, 0x320,
+                                                       0x322, 0x324, 0x3D7, 0x3E5, 0x3E7},
+                "gTileset_BattleFrontierOutsideWest": {0x22F, 0x286, 0x28E, 0x296, 0x29E, 0x2A6,
+                                                       0x2E5, 0x2E8, 0x2ED, 0x2F0, 0x2F4, 0x2F5,
+                                                       0x2F8, 0x2FC, 0x2FD, 0x300, 0x304, 0x308,
+                                                       0x30C},
+                "gTileset_Mauville": {0x323, 0x34D, 0x34E, 0x381, 0x3B0},
+                "gTileset_Lavaridge": {0x285, 0x286, 0x287, 0x28D, 0x28E, 0x28F, 0x293, 0x294,
+                                       0x296, 0x297},
+            },
+            "block": 4, "upper": True,
+            "posts": {
+                "kind": "box",
+                # the post along a row: its cap at (2, 3), 4 wide and 2 deep
+                "ref": 0x149, "find": (2, 3, 4, 2), "post": (2, 6), "top": 3, "depth": 2,
+                "scan": 3, "hidden": 10, "rail": (4, 6),
+                # a post's own colours (cap and front), its front's
+                "body": (2, 3, 6, 13), "trunk": (2, 5, 6, 13), "strip": (3, 5, 5, 13),
+            },
         },
-        # under the fence its own bottom layer, the same in every one of its
-        # metatiles and drawn whole by the grass: the patches lay that layer
-        # a hair over the ground, and the commonest cell round a run (a path
-        # beside it, the sea's edge along Slateport's market, the grass with
-        # flowers) showed in a line at their edges in the game's view
+        # under the fence its own bottom layer, the same in every one of the
+        # General's metatiles and drawn whole by the grass: the patches lay
+        # that layer a hair over the ground, and the commonest cell round a
+        # run (a path beside it, the sea's edge along Slateport's market, the
+        # grass with flowers) showed in a line at their edges in the game's
+        # view
         "ground": [GRASS],
         "ground_fixed": True,
-    },
-    {
-        # the same grey fence in the Lavaridge tileset's own metatiles (Route
-        # 112, Mt Chimney, Jagged Pass): drawn with the General's tiles
-        "name": "fence_lavaridge",
-        "components": {
-            "secondary": "gTileset_Lavaridge",
-            "tiles": {0x285, 0x286, 0x287, 0x28D, 0x28E, 0x28F, 0x293, 0x296, 0x297},
-            "height": 12, "hull": 12, "bridge": 3, "block": 4,
-            "upper": True,
-            "flank": 0x296,
-        },
-        "ground": [0x271],
     },
     {
         # Lilycove's blue iron railings, read column by column like the fence
@@ -6750,16 +7238,43 @@ SPECS = [
         "ground": [GRASS, 0x001],
     },
     {
-        # Mauville's fence of short stakes (Mauville, Routes 111 and 117):
-        # each stake a round top over 6 rows of trunk, read column by column
+        # Mauville's fence of short logs (Mauville, Routes 111 and 117), log
+        # by log (voxel_fence.py): each an upright log 5 pixels across, its
+        # cut face the drawn ellipse, standing where its bark ends on the
+        # ground (7 rows; down a column, where the next log hides its foot,
+        # as tall)
         "name": "stakes",
         "components": {
             "secondary": "gTileset_Mauville",
             "tiles": {0x273, 0x27A, 0x27B, 0x27C, 0x27D, 0x280, 0x282, 0x288, 0x28A, 0x290,
                       0x291, 0x292, 0x2B1, 0x2B2, 0x2B9, 0x2BA},
-            "height": 6, "hull": 6, "bridge": 2, "block": 4, "upper": True,
+            "block": 4, "upper": True,
+            "posts": {
+                "kind": "log",
+                # the cut face's two full rows at (1, 5); its middle row 6,
+                # its centre column 3.5, 2.5 across and 2 deep
+                "ref": 0x291, "find": (1, 5, 5, 2), "log": (3.5, 2.5, 2.0), "top": 6,
+                "scan": 3, "trunk_row": 8, "hidden": 7, "sides": 16,
+                "body": (1, 4, 6, 14), "trunk": (1, 8, 6, 14), "strip": (1, 8, 6, 14),
+            },
         },
         "ground": [GRASS],
+    },
+    {
+        # Sootopolis's white walls along the terraces' edges and the stairs,
+        # read column by column like the hedges: along a row a top 4 rows
+        # deep (its outline, two rows of top, a white edge) over 8 rows of
+        # front; down a column a line of top, its front where it ends.
+        "name": "sootopolis_wall",
+        "components": {
+            "secondary": "gTileset_Sootopolis",
+            "tiles": SOOTOPOLIS_WALL,
+            "height": 8, "block": 4,
+        },
+        "ground": SOOTOPOLIS_GROUND,
+        # the rock round a run, and the wall's shadow cast on it, drawn in
+        # the run's own cells: the map's, laid as patches
+        "ground_rgb": SOOTOPOLIS_ROCK,
     },
     {
         # Lavaridge's hot spring: its rim of round stones, 4 rows of front
@@ -6852,6 +7367,108 @@ SPECS = [
             "height": 24, "upper": True,
         },
         "ground": [0x211],
+    },
+    # Fortree's tree houses, decks and rope bridges in the treetops
+    # (voxel_fortree.py): lifted 28 px over the forest floor, the console
+    # lifting whoever walks on them. The house at (10, 11) is the one at
+    # (8, 1) again.
+    {
+        "name": "fortree_treehouse",
+        "layout": "LAYOUT_FORTREE_CITY",
+        "rect": (8, 1, 5, 6),
+        "owned": FORTREE_OWNED,
+        "repeat_at": [(8, 1), (10, 11)],
+        "ground": FORTREE_GROUND,
+        "ground_fixed": True,
+        "parts_art": flat_art(lambda art: voxel_fortree.treehouse(art, 64, 32)),
+        "exact": voxel_fortree.treehouse_exact(64, 32),
+    },
+    {
+        # bridges east and west, a ladder
+        "name": "fortree_treehouse_c",
+        "layout": "LAYOUT_FORTREE_CITY",
+        "rect": (23, 1, 5, 6),
+        "owned": FORTREE_OWNED,
+        "ground": FORTREE_GROUND,
+        "ground_fixed": True,
+        "parts_art": flat_art(lambda art: voxel_fortree.treehouse(art, 64, 32)),
+        "exact": voxel_fortree.treehouse_exact(64, 32),
+    },
+    {
+        # bridges east and west, no ladder
+        "name": "fortree_treehouse_b",
+        "layout": "LAYOUT_FORTREE_CITY",
+        "rect": (15, 1, 5, 5),
+        "owned": FORTREE_OWNED[:-1],
+        "ground": FORTREE_GROUND,
+        "ground_fixed": True,
+        "parts_art": flat_art(lambda art: voxel_fortree.treehouse(art, 64)),
+        "exact": voxel_fortree.treehouse_exact(64),
+    },
+    {
+        # the deeper deck in the north-east, one row more of it
+        "name": "fortree_treehouse_d",
+        "layout": "LAYOUT_FORTREE_CITY",
+        "rect": (30, 0, 5, 7),
+        "owned": FORTREE_OWNED_DEEP,
+        "ground": FORTREE_GROUND,
+        "ground_fixed": True,
+        "parts_art": flat_art(lambda art: voxel_fortree.treehouse(art, 80, 32)),
+        "exact": voxel_fortree.treehouse_exact(80, 32),
+    },
+    {
+        # the east one: a bridge west, a ladder without its hook
+        "name": "fortree_treehouse_f",
+        "layout": "LAYOUT_FORTREE_CITY",
+        "rect": (35, 11, 5, 6),
+        "owned": FORTREE_OWNED,
+        "ground": FORTREE_GROUND,
+        "ground_fixed": True,
+        "parts_art": flat_art(lambda art: voxel_fortree.treehouse(art, 64, 32)),
+        "exact": voxel_fortree.treehouse_exact(64, 32),
+    },
+    {
+        # the tall palms, their trunks two cells (the other at (28, 6))
+        "name": "fortree_palm",
+        "layout": "LAYOUT_FORTREE_CITY",
+        "rect": (12, 6, 3, 4),
+        "repeat_at": [(12, 6), (28, 6)],
+        "owned": [(i, j) for j in range(2) for i in range(3)] + [(1, 2), (1, 3)],
+        "ground": FORTREE_GROUND,
+        "ground_fixed": True,
+        "parts_art": lambda art: voxel_fortree.palm(art, [(1, 2, 0x25C), (1, 3, 0x273)]),
+        "exact": [(0, 0, 48, 64)],
+    },
+    {
+        # the short ones, one cell of trunk (also at (14, 16) and (27, 17))
+        "name": "fortree_palm_short",
+        "layout": "LAYOUT_FORTREE_CITY",
+        "rect": (1, 1, 3, 3),
+        "repeat_at": [(1, 1), (14, 16), (27, 17)],
+        "owned": [(i, j) for j in range(2) for i in range(3)] + [(1, 2)],
+        "ground": FORTREE_GROUND,
+        "ground_fixed": True,
+        "parts_art": lambda art: voxel_fortree.palm(art, [(1, 2, 0x25C)]),
+        "exact": [(0, 0, 48, 48)],
+    },
+    {
+        "name": "fortree_bridge",
+        "layout": "LAYOUT_FORTREE_CITY",
+        "rect": (13, 4, 1, 1),
+        "ground": FORTREE_GROUND,
+        "ground_fixed": True,
+        "parts_art": flat_art(voxel_fortree.bridge_cell),
+        "exact": [(0, 0, 16, 16)],
+    },
+    {
+        # over the path, which runs on under it
+        "name": "fortree_bridge_path",
+        "layout": "LAYOUT_FORTREE_CITY",
+        "rect": (30, 14, 1, 1),
+        "ground": [0x261] + FORTREE_GROUND,
+        "ground_fixed": True,
+        "parts_art": flat_art(voxel_fortree.bridge_cell),
+        "exact": [(0, 0, 16, 16)],
     },
 ] + [
     # Slateport market's goods: round things, each a dome off its own

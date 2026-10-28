@@ -47,6 +47,8 @@ EXESUFFIX := $(if $(filter Windows_NT,$(OS)),.exe,)
 SOURCES := src/main_3ds.c src/3ds_log.c src/3ds_platform.c src/3ds_input.c src/3ds_input_decode.c src/3ds_fs.c src/3ds_audio.c src/3ds_icons_ptbr.c
 SOURCES += src/3ds_data.c src/3ds_pak.c src/3ds_settings.c src/3ds_prof.c src/3ds_gpumem.c src/3ds_scenario.c
 SOURCES += src/3ds_video.c src/3ds_video_decode.c src/3ds_bottom_screen.c
+# The Game Corner's backdrops (include/3ds_corner_art.h).
+SOURCES += src/3ds_corner_art.c
 # The Pokédex on the top screen (include/3ds_dex_top.h).
 SOURCES += src/3ds_dex_top.c
 # Local wireless play (include/3ds_local.h).

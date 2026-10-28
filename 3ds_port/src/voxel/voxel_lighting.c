@@ -391,6 +391,16 @@ static const LightCell *Cell(int x, int z)
     if (VoxelWorld_UsesTreeSprites(inst))
     {
         int part = VoxelTree_Part(inst->secondaryTileset, metatile);
+        float over;
+
+        /* A wood under a deck (Fortree's tree houses): the deck casts,
+         * standing over the crowns. */
+        if (part >= 0 && VoxelBuildings_CellAt(inst, x, z, NULL, &over) && over > CROWN_TOP)
+        {
+            cell->top = over;
+            cell->mask = VoxelBuildings_Footprint(inst, x, z);
+            return cell;
+        }
         if (part >= 0)
         {
             /* A rounded crown proxy, rather than the opaque rectangular card.
@@ -746,6 +756,10 @@ static bool Lit(float x, float y, float z)
         /* (the cells' edges are where they stand, not along the ray) */
         if (stretched)
             continue;
+        /* (ObjectAt's lookup across a shifted cell may have reused its
+         * bucket: found again, or the skip reads the other cell) */
+        if (cell->x != tx || cell->z != tz)
+            cell = Cell(tx, tz);
         if (cell->shift != 0.0f)
         {
             /* What is drawn across a shifted cell comes from the rows its
@@ -782,6 +796,77 @@ static bool Lit(float x, float y, float z)
             }
         }
     }
+    return true;
+}
+
+/*
+ * The blocks' bounds the rays from the ground of cells x0..x1, z0..z1 read
+ * (Lit's ReachCeiling), worked out ahead, `budget` new blocks a call: the
+ * first ray into blocks not yet read classified some four hundred cells, and
+ * the first cell of a chunk took 6-8 ms on an Old 3DS where its neighbours
+ * took under one - a dropped frame from one slice the build had counted as a
+ * millisecond (port.log, 2026-10-26: "slice ground ... 8.37ms remaining=1.43").
+ * Read from each corner of the cells as Lit reads them; a ray from higher up a
+ * drawn mountain may read blocks further south, which it reads itself. The
+ * same bounds as the rays' own: only when they are read changes.
+ */
+bool VoxelLighting_Warm(int x0, int z0, int x1, int z1, unsigned *cursor, unsigned budget)
+{
+    enum { REGION = 64 };
+    const int across = x1 - x0 + 1, points = across * (z1 - z0 + 1);
+    unsigned read = 0;
+
+    if (gVoxelSun.strength == 0.0f)
+        return true;
+    if (sGeneration == 0)
+        VoxelLighting_Reset();
+    if (sAlone || VoxelWorld_InstanceCount() != sMapCeilings)
+        return true;
+    for (unsigned point = *cursor / REGION, first = *cursor % REGION; point < (unsigned)points; ++point, first = 0)
+    {
+        float x = (float)(x0 + (int)point % across), z = (float)(z0 + (int)point / across);
+        const LightCell *ground = Cell(Tile(x), Tile(z));
+        /* where its ground is drawn, which is where its rays start */
+        float y = ground->base + ground->lift, sx, sy, sz, fx, fy, fz;
+        int bx0, bz0, bx1, bz1, w;
+
+        z += ground->shift;
+        RayPoint(x, y, z, 1, &sx, &sy, &sz);
+        /* a ray with little to climb never reads them */
+        if (RayCeiling(x, z) - sy <= BLOCK_CLIMB)
+            continue;
+        RayPoint(x, y, z, VOXEL_LIGHT_REACH * 4, &fx, &fy, &fz);
+        bx0 = BlockOf(Tile(fx));
+        bz0 = BlockOf(Tile(fz));
+        bx1 = BlockOf(Tile(sx));
+        bz1 = BlockOf(Tile(sz));
+        if (bx0 > bx1) { int t = bx0; bx0 = bx1; bx1 = t; }
+        if (bz0 > bz1) { int t = bz0; bz0 = bz1; bz1 = t; }
+        /* as ReachCeiling reads them */
+        if (bx1 - bx0 <= REACH_BLOCKS && bz1 - bz0 <= REACH_BLOCKS)
+        {
+            bx0 = bx1 - REACH_BLOCKS;
+            bz0 = bz1 - REACH_BLOCKS;
+        }
+        w = bx1 - bx0 + 1;
+        for (unsigned k = first; k < (unsigned)(w * (bz1 - bz0 + 1)) && k < REGION; ++k)
+        {
+            int bx = bx0 + (int)k % w, bz = bz0 + (int)k / w;
+            const LightBlock *block = &sBlocks[((uint32_t)bx * 73856093u ^ (uint32_t)bz * 19349663u)
+                                               & (BLOCK_CACHE_SIZE - 1)];
+
+            if (block->generation == sGeneration && block->bx == bx && block->bz == bz)
+                continue;
+            if (read == budget)
+            {
+                *cursor = point * REGION + k;
+                return false;
+            }
+            BlockCeiling(bx, bz);
+            ++read;
+        }
+    }
+    *cursor = (unsigned)points * REGION;
     return true;
 }
 
@@ -1082,6 +1167,116 @@ static void LightVertexFaces(VoxelBuilder *builder, const VoxelVertex *const *v,
         }
     }
     EmitPolygon(builder, out, count);
+}
+
+/*
+ * What a lattice point (a, c) off the half-tile points gets from them: the
+ * answer the two along its row or column (or the four round it, diagonally)
+ * agree on, if it lies on their line (their plane) - else -1. A bend there
+ * (a step's foot, a crease) can hide a shadow of its own.
+ */
+static int LatticeInfer(const float *wy, const float *wz, const int8_t *lit, int a, int c)
+{
+    enum { SIDE = VOXEL_RELIEF_SIDE };
+    int k = c * SIDE + a, from[4], count = 0;
+    float my = 0.0f, mz = 0.0f;
+
+    if ((a & 1) && (c & 1))
+    {
+        from[count++] = k - SIDE - 1;
+        from[count++] = k - SIDE + 1;
+        from[count++] = k + SIDE - 1;
+        from[count++] = k + SIDE + 1;
+    }
+    else if (a & 1)
+    {
+        from[count++] = k - 1;
+        from[count++] = k + 1;
+    }
+    else
+    {
+        from[count++] = k - SIDE;
+        from[count++] = k + SIDE;
+    }
+    for (int i = 0; i < count; ++i)
+    {
+        if (lit[from[i]] < 0 || lit[from[i]] != lit[from[0]])
+            return -1;
+        my += wy[from[i]];
+        mz += wz[from[i]];
+    }
+    if (fabsf(my / count - wy[k]) > 0.02f || fabsf(mz / count - wz[k]) > 0.02f)
+        return -1;
+    return lit[from[0]];
+}
+
+/*
+ * A relief cell's lattice (VOXEL_RELIEF_SIDE points a side, a quarter tile
+ * apart), its shadows read ahead of its quads: rays at the half-tile points,
+ * as level ground is sampled, and each point between them takes their answer
+ * where LatticeInfer gives one - else the ray its quads cast when they are
+ * lit. A drawn mountain's cell cast sixteen rays of its own: on an Old 3DS
+ * its chunks took twice a town's (Route 112, 33 ms, port.log 2026-10-26).
+ * The same shadows: one level coarser (rays at the corners alone) lost a
+ * shadow's tip on one vertex in a thousand.
+ */
+void VoxelLighting_Lattice(VoxelBuilder *builder, const VoxelVertex *lattice)
+{
+    enum { SIDE = VOXEL_RELIEF_SIDE, LAST = VOXEL_RELIEF_SIDE - 1 };
+    float wx[SIDE * SIDE], wy[SIDE * SIDE], wz[SIDE * SIDE];
+    int8_t lit[SIDE * SIDE]; /* -1: unknown, or turned from the sun (no ray) */
+
+    if (gVoxelSun.strength == 0.0f)
+        return;
+    for (int k = 0; k < SIDE * SIDE; ++k)
+    {
+        WorldPoint(builder, &lattice[k], &wx[k], &wy[k], &wz[k]);
+        lit[k] = -1;
+    }
+    for (int c = 0; c <= LAST; c += 2)
+        for (int a = 0; a <= LAST; a += 2)
+        {
+            int k = c * SIDE + a;
+
+            if (lattice[k].shade > sAmbient + 0.001f)
+                lit[k] = CachedSample(wx[k], wy[k], wz[k])->lit;
+        }
+    for (int c = 0; c <= LAST; ++c)
+        for (int a = 0; a <= LAST; ++a)
+        {
+            int k = c * SIDE + a, v;
+            LightSample *sample;
+
+            if (((a | c) & 1) == 0 || lattice[k].shade <= sAmbient + 0.001f
+             || (v = LatticeInfer(wy, wz, lit, a, c)) < 0)
+                continue;
+            sample = FindSample(wx[k], wy[k], wz[k]);
+            if (!sample->rayCast)
+            {
+                sample->lit = v != 0;
+                sample->rayCast = true;
+            }
+        }
+}
+
+/* The light each lattice point gets, as LightVertexFaces gives it to the
+ * corners of the lattice's quads: the same samples, from the same caches. */
+void VoxelLighting_LatticeShades(VoxelBuilder *builder, const VoxelVertex *lattice, float *shade)
+{
+    for (int k = 0; k < VOXEL_RELIEF_SIDE * VOXEL_RELIEF_SIDE; ++k)
+    {
+        float face = lattice[k].shade, px, py, pz;
+
+        WorldPoint(builder, &lattice[k], &px, &py, &pz);
+        if (face <= sAmbient + 0.001f)
+            shade[k] = sAmbient * CachedContact(px, py, pz);
+        else
+        {
+            const LightSample *sample = CachedSample(px, py, pz);
+
+            shade[k] = (sample->lit ? face : sAmbient) * sample->contact;
+        }
+    }
 }
 
 /* A quad, or with `count` 3 the triangle a b c (d is c): lit alike, the

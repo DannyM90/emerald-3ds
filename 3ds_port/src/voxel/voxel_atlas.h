@@ -63,7 +63,7 @@ void VoxelAtlas_SolidUV(VoxelSolidColor color, float *u0, float *v0, float *u1, 
  * in the sea, without the rock. Id VOXEL_METATILE_REAL + i is variant i of
  * buildings.bin; it is composed, extended and animated like any other id.
  */
-#define VOXEL_VARIANTS 128u
+#define VOXEL_VARIANTS 160u
 /*
  * Then the cut tiles (voxel_relief.h): a rock's tile with the ground drawn
  * behind it clear, for its relief to stand over the ground drawn flat. Id

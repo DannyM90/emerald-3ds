@@ -57,6 +57,8 @@ bool CtrVoxel_DrawsFog(void);
 /* Whether the world drew the rain, the sand or the ash itself this frame (in
  * the scene, see DrawWeather): the compositor then leaves their sprites out. */
 bool CtrVoxel_DrawsWeather(void);
+/* The same for the sandstorm alone (CtrBattle_Sandstorm). */
+bool CtrVoxel_DrawsSand(void);
 /* The dark of a cave over the frame just drawn: an alpha texture to lay in
  * black, centred on (x, y) of the logical surface, size pixels across, at
  * amount. NULL when there is none. */

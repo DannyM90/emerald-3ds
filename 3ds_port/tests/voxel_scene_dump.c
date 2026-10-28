@@ -75,7 +75,7 @@ static double Seconds(void)
 /* voxel_tree.c compares a map's secondary tileset against their addresses */
 const char gTileset_Dewford[1], gTileset_Fortree[1], gTileset_Mauville[1], gTileset_Lavaridge[1],
     gTileset_Rustboro[1], gTileset_Lilycove[1], gTileset_EverGrande[1],
-    gTileset_BattleFrontierOutsideWest[1];
+    gTileset_BattleFrontierOutsideWest[1], gTileset_Mossdeep[1], gTileset_Fallarbor[1];
 static const char sGeneral[1], sOther[1];
 
 static VoxelMapInstance sMap;
@@ -165,7 +165,7 @@ int main(int argc, char **argv)
         static const char *const kSecondary[] = {
             sOther, gTileset_Dewford, gTileset_Fortree, gTileset_Mauville, gTileset_Lavaridge,
             gTileset_Rustboro, gTileset_Lilycove, gTileset_EverGrande,
-            gTileset_BattleFrontierOutsideWest,
+            gTileset_BattleFrontierOutsideWest, gTileset_Mossdeep, gTileset_Fallarbor,
         };
         unsigned secondary = (head[3] >> 2) & 15u;
         sMap.secondaryTileset = secondary < sizeof(kSecondary) / sizeof(kSecondary[0])

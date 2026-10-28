@@ -798,6 +798,103 @@ bool VoxelMesh_TreeOnRock(const VoxelMapInstance *inst, int x, int y)
         && (sides & VOXEL_RELIEF_FACE_TOP) && wall >= 0 && wall != VOXEL_RELIEF_NO_FACE;
 }
 
+/* Does the rectangle of lattice heights (or depths) from point (a0, c0),
+ * wa steps across and wc down, lie on one plane, every point where its
+ * corners put it? Exact: they are whole pixels. */
+static bool SpanFlat(const int16_t *v, int a0, int c0, int wa, int wc)
+{
+    const int k0 = c0 * VOXEL_RELIEF_SIDE + a0;
+    const int du = v[k0 + wa] - v[k0], dv = v[k0 + wc * VOXEL_RELIEF_SIDE] - v[k0];
+
+    for (int c = 0; c <= wc; ++c)
+        for (int a = 0; a <= wa; ++a)
+            if (wa * wc * v[k0 + c * VOXEL_RELIEF_SIDE + a] != wa * wc * v[k0] + a * wc * du + c * wa * dv)
+                return false;
+    return true;
+}
+
+#if CTR_VOXEL_LIGHTING
+/* Do the lattice's shades over that rectangle run as its corners' do - as
+ * one quad's triangles draw them - within half a step of the eight bits a
+ * colour is drawn in? The face term of a flank bends smoothly into the
+ * cells round it. */
+static bool SpanLinear(const float *shade, int a0, int c0, int wa, int wc)
+{
+    const int k0 = c0 * VOXEL_RELIEF_SIDE + a0;
+    const float du = shade[k0 + wa] - shade[k0], dv = shade[k0 + wc * VOXEL_RELIEF_SIDE] - shade[k0];
+
+    for (int c = 0; c <= wc; ++c)
+        for (int a = 0; a <= wa; ++a)
+            if (fabsf(shade[k0 + c * VOXEL_RELIEF_SIDE + a] - (shade[k0] + du * a / wa + dv * c / wc))
+                >= 0.5f / 255.0f)
+                return false;
+    return true;
+}
+#endif
+
+/* Is any quad of the rectangle from quad (i0, j0), wa by wc, drawn already? */
+static bool SpanDrawn(unsigned drawn, int i0, int j0, int wa, int wc)
+{
+    const int n = VOXEL_RELIEF_SIDE - 1;
+
+    for (int j = j0; j < j0 + wc; ++j)
+        for (int i = i0; i < i0 + wa; ++i)
+            if (drawn & (1u << (j * n + i)))
+                return true;
+    return false;
+}
+
+/* The rectangle of a relief cell's lattice from quad (i0, j0), wa quads
+ * across and wc down, drawn as one quad; `face` the lattice's face terms
+ * (vertexFace), or NULL. */
+static void EmitReliefSpan(VoxelBuilder *b, int x, int y, const int16_t *g, const int16_t *s,
+                           float u0, float v0, float u1, float v1, const float *face,
+                           int i0, int j0, int wa, int wc, bool onFloor, int floor,
+                           const uint8_t *rows, const CutDiagonals *cut)
+{
+    const int n = VOXEL_RELIEF_SIDE - 1;
+    static const int di[4] = { 0, 1, 1, 0 }, dj[4] = { 0, 0, 1, 1 };
+    VoxelVertex p[4];
+    float raise = 0.0f, px[4][2];
+
+    bool one = wa == 1 && wc == 1;
+
+    if (one && onFloor && OnFloor(g, i0, j0, floor))
+    {
+        /* the flat layer under rock is plain ground (EmitCutGround):
+         * rock on the foot is drawn, half a pixel over it */
+        int rock = rows != NULL ? CutRockPixels(rows, i0, j0) : 0;
+
+        if (rock == 0 || rock >= 12)
+            return;         /* all ground, or the flat layer is the rock itself */
+        raise = 0.5f / 16.0f;
+    }
+    for (int k = 0; k < 4; ++k)
+    {
+        int a = i0 + di[k] * wa, c = j0 + dj[k] * wc, at = c * VOXEL_RELIEF_SIDE + a;
+
+        p[k] = (VoxelVertex){ x + a / (float)n, g[at] / 16.0f + raise, y + c / (float)n + s[at] / 16.0f,
+                              u0 + (u1 - u0) * a / n, v0 + (v1 - v0) * c / n,
+                              face != NULL ? face[at] : SHADE_TOP };
+        px[k][0] = 16.0f * a / n;
+        px[k][1] = 16.0f * c / n;
+    }
+    /* Split along the crease: a mountain's corner is two planes meeting on
+     * a diagonal of the cell (gen_voxel_relief.py), and a quad on it has its
+     * two corners off the crease level with each other - cut the other way
+     * it would fold across the crease. (A rectangle of several is flat.) */
+    if (one && g[j0 * VOXEL_RELIEF_SIDE + i0] == g[(j0 + 1) * VOXEL_RELIEF_SIDE + i0 + 1]
+     && g[j0 * VOXEL_RELIEF_SIDE + i0 + 1] != g[(j0 + 1) * VOXEL_RELIEF_SIDE + i0])
+    {
+        const float pr[4][2] = { { px[1][0], px[1][1] }, { px[2][0], px[2][1] },
+                                 { px[3][0], px[3][1] }, { px[0][0], px[0][1] } };
+
+        EmitCutQuad(b, &p[1], &p[2], &p[3], &p[0], pr, cut);
+    }
+    else
+        EmitCutQuad(b, &p[0], &p[1], &p[2], &p[3], px, cut);
+}
+
 static void EmitReliefUV(VoxelBuilder *b, int x, int y, const int16_t *g, const int16_t *s,
                          float u0, float v0, float u1, float v1,
                          bool onFloor, int floor, const uint8_t *rows)
@@ -841,62 +938,84 @@ static void EmitReliefUV(VoxelBuilder *b, int x, int y, const int16_t *g, const 
                 face[c * VOXEL_RELIEF_SIDE + a] = ReliefFace(cells, a, c);
     }
     b->vertexFace = b->lighting;
-#endif
-    for (int j = 0; j < n; ++j)
-        for (int i = 0; i < n; ++i)
-        {
-            VoxelVertex p[4];
-            static const int di[4] = { 0, 1, 1, 0 }, dj[4] = { 0, 0, 1, 1 };
+    /* its shadows read ahead, with fewer rays (VoxelLighting_Lattice) */
+    bool latticeLit = b->lighting && b->lightingConstant < 0.0f && !b->rounded;
+    VoxelVertex lattice[VOXEL_RELIEF_SIDE * VOXEL_RELIEF_SIDE];
 
-            float raise = 0.0f;
-
-            if (onFloor && OnFloor(g, i, j, floor))
+    if (latticeLit)
+    {
+        for (int c = 0; c <= n; ++c)
+            for (int a = 0; a <= n; ++a)
             {
-                /* the flat layer under rock is plain ground (EmitCutGround):
-                 * rock on the foot is drawn, half a pixel over it */
-                int rock = rows != NULL ? CutRockPixels(rows, i, j) : 0;
+                int k = c * VOXEL_RELIEF_SIDE + a;
 
-                if (rock == 0 || rock >= 12)
-                    continue;       /* all ground, or the flat layer is the rock itself */
-                raise = 0.5f / 16.0f;
+                lattice[k] = (VoxelVertex){ x + a / (float)n, g[k] / 16.0f, y + c / (float)n + s[k] / 16.0f,
+                                            0.0f, 0.0f, face[k] };
             }
-
-            for (int k = 0; k < 4; ++k)
-            {
-                int a = i + di[k], c = j + dj[k];
-                float h = g[c * VOXEL_RELIEF_SIDE + a] / 16.0f;
-                float d = s[c * VOXEL_RELIEF_SIDE + a] / 16.0f;
-                float shade = SHADE_TOP;
-
+        VoxelLighting_Lattice(b, lattice);
+    }
+#endif
+    /*
+     * A rectangle of the lattice that is one plane, uncut, and lit as its
+     * corners run across it is the same picture as one quad: its corners,
+     * its texture's corners. Tried largest first - the whole cell, its
+     * halves, its quarters, rows and columns of them - and what is left is
+     * drawn quad by quad. A ramp's or a sloped flank's cell drew all sixteen,
+     * and the mountains' routes put twice a town's vertices before the GPU
+     * (Route 114: 66,000, 10 ms of an Old 3DS frame, port.log 2026-10-26).
+     */
+    static const int8_t kSpans[][2] = { { 4, 4 }, { 4, 2 }, { 2, 4 }, { 2, 2 }, { 4, 1 }, { 1, 4 },
+                                        { 2, 1 }, { 1, 2 }, { 1, 1 } };
+    unsigned drawn = 0;     /* the quads drawn so far, bit j * n + i */
+    const float *faces = NULL;
 #if CTR_VOXEL_LIGHTING
-                if (b->vertexFace)
-                    shade = face[c * VOXEL_RELIEF_SIDE + a];
+    float shade[VOXEL_RELIEF_SIDE * VOXEL_RELIEF_SIDE];
+    bool shaded = false;
+
+    if (b->vertexFace)
+        faces = face;
 #endif
-                p[k] = (VoxelVertex){ x + a / (float)n, h + raise, y + c / (float)n + d,
-                                      u0 + (u1 - u0) * a / n, v0 + (v1 - v0) * c / n, shade };
-            }
-            /* Split along the crease: a mountain's corner is two planes
-             * meeting on a diagonal of the cell (gen_voxel_relief.py), and a
-             * quad on it has its two corners off the crease level with each
-             * other - cut the other way it would fold across the crease. */
-            float px[4][2];
 
-            for (int k = 0; k < 4; ++k)
-            {
-                px[k][0] = 16.0f * (i + di[k]) / n;
-                px[k][1] = 16.0f * (j + dj[k]) / n;
-            }
-            if (g[j * VOXEL_RELIEF_SIDE + i] == g[(j + 1) * VOXEL_RELIEF_SIDE + i + 1]
-             && g[j * VOXEL_RELIEF_SIDE + i + 1] != g[(j + 1) * VOXEL_RELIEF_SIDE + i])
-            {
-                const float pr[4][2] = { { px[1][0], px[1][1] }, { px[2][0], px[2][1] },
-                                         { px[3][0], px[3][1] }, { px[0][0], px[0][1] } };
+    for (unsigned t = 0; t < sizeof(kSpans) / sizeof(kSpans[0]); ++t)
+    {
+        const int wa = kSpans[t][0], wc = kSpans[t][1];
+        const bool one = wa == 1 && wc == 1;
 
-                EmitCutQuad(b, &p[1], &p[2], &p[3], &p[0], pr, &cut);
+        /* (a cut tile's quads are cut one by one) */
+        if (!one && cut.count != 0)
+            continue;
+        for (int j0 = 0; j0 < n; j0 += wc)
+            for (int i0 = 0; i0 < n; i0 += wa)
+            {
+                bool merge = one;
+
+                if (SpanDrawn(drawn, i0, j0, wa, wc))
+                    continue;
+                if (!one && SpanFlat(g, i0, j0, wa, wc) && SpanFlat(s, i0, j0, wa, wc))
+                {
+                    merge = true;
+                    for (int j = j0; j < j0 + wc && merge; ++j)
+                        for (int i = i0; i < i0 + wa && merge; ++i)
+                            merge = !onFloor || !OnFloor(g, i, j, floor);
+#if CTR_VOXEL_LIGHTING
+                    if (merge && latticeLit)
+                    {
+                        if (!shaded)
+                            VoxelLighting_LatticeShades(b, lattice, shade);
+                        shaded = true;
+                        merge = SpanLinear(shade, i0, j0, wa, wc);
+                    }
+#endif
+                }
+                if (!merge)
+                    continue;
+                for (int j = j0; j < j0 + wc; ++j)
+                    for (int i = i0; i < i0 + wa; ++i)
+                        drawn |= 1u << (j * n + i);
+                EmitReliefSpan(b, x, y, g, s, u0, v0, u1, v1, faces, i0, j0, wa, wc,
+                               onFloor, floor, rows, &cut);
             }
-            else
-                EmitCutQuad(b, &p[0], &p[1], &p[2], &p[3], px, &cut);
-        }
+    }
     b->vertexFace = false;
     b->artShaded = false;
 }
@@ -1347,6 +1466,97 @@ static void WallStep(VoxelBuilder *b, float x, float za, float zb, float bot, fl
     }
 }
 
+/* the part of a wall polygon at or under (sign 1) or at or over (sign -1)
+ * `limit`, in height (or in z, `onZ`): its corners and where its edges
+ * cross it */
+static int ClipWall(const VoxelVertex *in, int n, float limit, float sign, bool onZ, VoxelVertex *out)
+{
+    int m = 0;
+
+    for (int i = 0; i < n; ++i)
+    {
+        const VoxelVertex *a = &in[i], *c = &in[(i + 1) % n];
+        float da = sign * ((onZ ? a->z : a->y) - limit), dc = sign * ((onZ ? c->z : c->y) - limit);
+
+        if (da <= 0.0f)
+            out[m++] = *a;
+        if ((da < 0.0f && dc > 0.0f) || (da > 0.0f && dc < 0.0f))
+        {
+            float t = da / (da - dc);
+            VoxelVertex v = *a;
+
+            v.x += (c->x - a->x) * t;
+            v.y += (c->y - a->y) * t;
+            v.z += (c->z - a->z) * t;
+            v.u += (c->u - a->u) * t;
+            v.v += (c->v - a->v) * t;
+            out[m++] = v;
+        }
+    }
+    return m;
+}
+
+/* a fan from the first corner, two triangles a quad */
+static void WallFan(VoxelBuilder *b, const VoxelVertex *p, int n)
+{
+    for (int i = 1; i + 1 < n; i += 2)
+        VoxelBuilder_Quad(b, &p[0], &p[i], &p[i + 1], &p[i + 2 < n ? i + 2 : i + 1]);
+}
+
+/*
+ * A wall standing more than a level, a tile a level: the quad `p` (its
+ * corners round it, placed) cut in bands down from `top`, each band the
+ * tile again, its row v0 at the band's top and v1 a level down. Stretched
+ * over the whole height, a wall of a cave carved deep (Meteor Falls' sides,
+ * nine levels and more) was one tile smeared to a few dark rows. A south
+ * wall keeps the u of its corners; a west or east one (`across` 1 or -1)
+ * takes it from where it stands in the world, a tile a cell of z from u0 to
+ * u1 (-1: the other way), cut where the cells meet: on a drawn map its
+ * points stand as far south as they are high, and such a wall runs over
+ * several cells of z.
+ */
+static void WallBands(VoxelBuilder *b, const VoxelVertex p[4], float top, float v0, float v1,
+                      int across, float u0, float u1)
+{
+    float lo = fminf(fminf(p[0].y, p[1].y), fminf(p[2].y, p[3].y));
+
+    for (float band = top; band > lo + 1.0f / 64.0f; band -= 1.0f)
+    {
+        VoxelVertex under[8], piece[8];
+        int n = ClipWall(p, 4, band, 1.0f, false, under);
+        float zlo, zhi;
+
+        n = ClipWall(under, n, band - 1.0f, -1.0f, false, piece);
+        if (n < 3)
+            continue;
+        for (int i = 0; i < n; ++i)
+            piece[i].v = v0 + (v1 - v0) * (band - piece[i].y);
+        if (across == 0)
+        {
+            WallFan(b, piece, n);
+            continue;
+        }
+        zlo = zhi = piece[0].z;
+        for (int i = 1; i < n; ++i)
+        {
+            zlo = fminf(zlo, piece[i].z);
+            zhi = fmaxf(zhi, piece[i].z);
+        }
+        for (float cell = floorf(zlo); cell < zhi; cell += 1.0f)
+        {
+            VoxelVertex south[12], tile[12];
+            int m = ClipWall(piece, n, cell + 1.0f, 1.0f, true, south);
+
+            m = ClipWall(south, m, cell, -1.0f, true, tile);
+            if (m < 3)
+                continue;
+            for (int i = 0; i < m; ++i)
+                tile[i].u = across > 0 ? u0 + (u1 - u0) * (tile[i].z - cell) : u1 - (u1 - u0) * (tile[i].z - cell);
+            WallFan(b, tile, m);
+        }
+    }
+}
+
 static void EmitCliffWalls(VoxelBuilder *b, const VoxelMapInstance *inst, int x, int y,
                            const int16_t *g, const int16_t *s, int wall, int art, int artY,
                            unsigned sides, bool backed)
@@ -1367,7 +1577,7 @@ static void EmitCliffWalls(VoxelBuilder *b, const VoxelMapInstance *inst, int x,
 
     for (int d = 0; d < 3; ++d)
     {
-        int nx = x + (d == 0 ? -1 : d == 1 ? 1 : 0), ny = y + (d == 2 ? 1 : 0);
+        int nx = x + (d == 0 ? -1 : d == 1 ? 1 : 0), ny = y + (d == 2 ? 1 : 0), st;
         const int16_t *o = NULL, *os = NULL;
 
         if (d == 2 ? !face : !(own || blockWalls))
@@ -1396,7 +1606,23 @@ static void EmitCliffWalls(VoxelBuilder *b, const VoxelMapInstance *inst, int x,
                 o = under;
             }
         }
-        for (int k = 0; k < n; ++k)
+        /* A wall the same all along the edge and more than a level tall
+         * (the rock round a cave carved deep): one piece the edge long, cut
+         * a tile a level (WallBands), not four */
+        st = 1;
+        if ((d == 2 ? face : blockWalls) && !(sides & VOXEL_RELIEF_THIN_DECK))
+        {
+            int a0 = d == 0 ? 0 : d == 1 ? n : n * R, c0 = d == 0 ? n : 0;
+            int along = d == 2 ? 1 : R;
+            bool same = g[a0] - o[c0] > 16;
+
+            for (int k = 1; k <= n && same; ++k)
+                same = g[a0 + k * along] == g[a0] && o[c0 + k * along] == o[c0]
+                    && s[a0 + k * along] == s[a0] && os[c0 + k * along] == os[c0];
+            if (same)
+                st = n;
+        }
+        for (int k = 0; k < n; k += st)
         {
             /* ours at a and b, theirs at c and d, along the edge */
             int ia, ib, ic, id;
@@ -1404,15 +1630,15 @@ static void EmitCliffWalls(VoxelBuilder *b, const VoxelMapInstance *inst, int x,
 
             if (d == 0)
             {
-                ia = k * R; ib = (k + 1) * R; ic = k * R + n; id = (k + 1) * R + n;
+                ia = k * R; ib = (k + st) * R; ic = k * R + n; id = (k + st) * R + n;
             }
             else if (d == 1)
             {
-                ia = k * R + n; ib = (k + 1) * R + n; ic = k * R; id = (k + 1) * R;
+                ia = k * R + n; ib = (k + st) * R + n; ic = k * R; id = (k + st) * R;
             }
             else
             {
-                ia = n * R + k; ib = n * R + k + 1; ic = k; id = k + 1;
+                ia = n * R + k; ib = n * R + k + st; ic = k; id = k + st;
             }
             if (g[ia] - o[ic] <= 0 && g[ib] - o[id] <= 0)
                 continue;
@@ -1432,16 +1658,24 @@ static void EmitCliffWalls(VoxelBuilder *b, const VoxelMapInstance *inst, int x,
             }
             if (d == 2)
             {
-                float ua = f0 + (f1 - f0) * k / n, ub = f0 + (f1 - f0) * (k + 1) / n;
+                float ua = f0 + (f1 - f0) * k / n, ub = f0 + (f1 - f0) * (k + st) / n;
                 float dva = (g1 - g0) * fminf(1.0f, ta - ba), dvb = (g1 - g0) * fminf(1.0f, tb - bb);
 
-                xa = x + k / (float)n; xb = x + (k + 1) / (float)n;
+                xa = x + k / (float)n; xb = x + (k + st) / (float)n;
                 za = y + 1 + s[ia] / 16.0f; zb = y + 1 + s[ib] / 16.0f;
                 zc = y + 1 + os[ic] / 16.0f; zd = y + 1 + os[id] / 16.0f;
-                VoxelBuilder_Quad(b, &(VoxelVertex){xa, ta, za, ua, g0, SHADE_SOUTH},
-                                  &(VoxelVertex){xb, tb, zb, ub, g0, SHADE_SOUTH},
-                                  &(VoxelVertex){xb, bb, zd, ub, g0 + dvb, SHADE_SOUTH},
-                                  &(VoxelVertex){xa, ba, zc, ua, g0 + dva, SHADE_SOUTH});
+                if (ta - ba > 1.0f || tb - bb > 1.0f)
+                {
+                    const VoxelVertex p[4] = {{xa, ta, za, ua, g0, SHADE_SOUTH}, {xb, tb, zb, ub, g0, SHADE_SOUTH},
+                                              {xb, bb, zd, ub, g0, SHADE_SOUTH}, {xa, ba, zc, ua, g0, SHADE_SOUTH}};
+
+                    WallBands(b, p, fmaxf(ta, tb), g0, g1, 0, 0.0f, 0.0f);
+                }
+                else
+                    VoxelBuilder_Quad(b, &(VoxelVertex){xa, ta, za, ua, g0, SHADE_SOUTH},
+                                      &(VoxelVertex){xb, tb, zb, ub, g0, SHADE_SOUTH},
+                                      &(VoxelVertex){xb, bb, zd, ub, g0 + dvb, SHADE_SOUTH},
+                                      &(VoxelVertex){xa, ba, zc, ua, g0 + dva, SHADE_SOUTH});
             }
             else if (blockWalls)
             {
@@ -1457,9 +1691,9 @@ static void EmitCliffWalls(VoxelBuilder *b, const VoxelMapInstance *inst, int x,
                 float zm, yt;
 
                 za = y + k / (float)n + s[ia] / 16.0f;
-                zb = y + (k + 1) / (float)n + s[ib] / 16.0f;
+                zb = y + (k + st) / (float)n + s[ib] / 16.0f;
                 zc = y + k / (float)n + os[ic] / 16.0f;
-                zd = y + (k + 1) / (float)n + os[id] / 16.0f;
+                zd = y + (k + st) / (float)n + os[id] / 16.0f;
                 if (walled)
                     WallClip(y + (d == 0 ? fmaxf(s[0], s[1]) : fmaxf(s[n - 1], s[n])) / 16.0f, &za, &zb, &zc, &zd);
                 zm = floorf((za + zb + zc + zd) * 0.25f);
@@ -1467,7 +1701,17 @@ static void EmitCliffWalls(VoxelBuilder *b, const VoxelMapInstance *inst, int x,
 #define WALL_U(z) (d == 0 ? f0 + (f1 - f0) * fminf(1.0f, fmaxf(0.0f, (z) - zm)) \
                           : f1 - (f1 - f0) * fminf(1.0f, fmaxf(0.0f, (z) - zm)))
 #define WALL_V(h) (g0 + (g1 - g0) * fminf(1.0f, fmaxf(0.0f, yt - (h))))
-                if (d == 0) /* faces west */
+                if (yt - fminf(ba, bb) > 1.0f)
+                {
+                    /* (facing east, its corners the other way round) */
+                    const VoxelVertex p[4] = {
+                        {xe, ta, za, 0.0f, 0.0f, shade}, {xe, tb, zb, 0.0f, 0.0f, shade},
+                        {xe, bb, zd, 0.0f, 0.0f, shade}, {xe, ba, zc, 0.0f, 0.0f, shade}};
+                    const VoxelVertex q[4] = {p[1], p[0], p[3], p[2]};
+
+                    WallBands(b, d == 0 ? p : q, yt, g0, g1, d == 0 ? 1 : -1, f0, f1);
+                }
+                else if (d == 0) /* faces west */
                     VoxelBuilder_Quad(b, &(VoxelVertex){xe, ta, za, WALL_U(za), WALL_V(ta), shade},
                                       &(VoxelVertex){xe, tb, zb, WALL_U(zb), WALL_V(tb), shade},
                                       &(VoxelVertex){xe, bb, zd, WALL_U(zd), WALL_V(bb), shade},
@@ -1484,13 +1728,13 @@ static void EmitCliffWalls(VoxelBuilder *b, const VoxelMapInstance *inst, int x,
             {
                 /* the edge column of the drawing, half a pixel in */
                 float ue = d == 0 ? o0 + (o1 - o0) / 32.0f : o1 - (o1 - o0) / 32.0f;
-                float va = p0 + (p1 - p0) * k / n, vb = p0 + (p1 - p0) * (k + 1) / n;
+                float va = p0 + (p1 - p0) * k / n, vb = p0 + (p1 - p0) * (k + st) / n;
                 float xe = (float)(d == 0 ? x : x + 1);
 
                 za = y + k / (float)n + s[ia] / 16.0f;
-                zb = y + (k + 1) / (float)n + s[ib] / 16.0f;
+                zb = y + (k + st) / (float)n + s[ib] / 16.0f;
                 zc = y + k / (float)n + os[ic] / 16.0f;
-                zd = y + (k + 1) / (float)n + os[id] / 16.0f;
+                zd = y + (k + st) / (float)n + os[id] / 16.0f;
                 if (walled)
                     WallClip(y + (d == 0 ? fmaxf(s[0], s[1]) : fmaxf(s[n - 1], s[n])) / 16.0f, &za, &zb, &zc, &zd);
                 /* lit as the drawing it goes on from: its own light is in
@@ -1755,9 +1999,11 @@ void VoxelMesh_EmitGroundRow(VoxelBuilder *builder, const VoxelMapInstance *inst
         VoxelVisualShape shape = VoxelMesh_Classify(x, y);
 
         /* The tree pass supplies both the trunk's ground and its crown; a
-         * step it stands on is drawn here. */
+         * step it stands on is drawn here. A trunk in water leaves the
+         * water to this pass (VoxelTree_LaysGround). */
         if (VoxelWorld_UsesTreeSprites(inst)
-         && VoxelTree_Part(inst->secondaryTileset, VoxelWorld_GetMetatileId(x, y)) >= 0)
+         && VoxelTree_Part(inst->secondaryTileset, VoxelWorld_GetMetatileId(x, y)) >= 0
+         && VoxelTree_LaysGround(inst->secondaryTileset, VoxelWorld_GetMetatileId(x, y)))
         {
             EmitTreeStep(builder, inst, x, y);
             continue;
@@ -1780,8 +2026,12 @@ void VoxelMesh_EmitGroundRow(VoxelBuilder *builder, const VoxelMapInstance *inst
              * a sea ramp under a rock, Rustboro's slopes under its fences
              * are still laid flat. */
             float modelTop;
+            /* a model's cell it stands over nothing of, its drawing on the
+             * face behind: the relief, drawn less the model */
+            int bare = -1;
 
-            if (relief != NULL && VoxelBuildings_CellAt(inst, x, y, NULL, &modelTop))
+            if (relief != NULL && VoxelBuildings_CellAt(inst, x, y, NULL, &modelTop)
+             && !VoxelBuildings_BareVariant(inst, x, y, &bare))
             {
                 int lo = relief[0], hi = relief[0];
 
@@ -1818,6 +2068,15 @@ void VoxelMesh_EmitGroundRow(VoxelBuilder *builder, const VoxelMapInstance *inst
                 if (sign && VoxelSign_Ground(inst, x, y, &art)
                  && !MetatileUV(builder, art, &u0, &v0, &u1, &v1))
                     art = -1;
+                /* and the cell north of a sign whose head is drawn in it
+                 * (a gym sign's round top): the ground under the head, as
+                 * on a map with no relief - its drawing laid on the relief
+                 * painted the head flat on the ground behind the sign */
+                if (!sign && cut == -1 && VoxelSign_HeadGround(inst, x, y, &art)
+                 && !MetatileUV(builder, art, &u0, &v0, &u1, &v1))
+                    art = -1;
+                if (bare >= 0 && MetatileUV(builder, bare, &u0, &v0, &u1, &v1))
+                    art = bare;
 
                 /* a canopy cleared: its variant on its relief, over a plate
                  * of the ground under the crown; the rest as a cell with no
@@ -2068,20 +2327,22 @@ void VoxelMesh_EmitGroundRow(VoxelBuilder *builder, const VoxelMapInstance *inst
                     builder->lift = 0.0f;
                     builder->shift = 0.0f;
                 }
-                /* a signpost on a bridge stands on its deck, lifted and
-                 * moved south by the deck's height as its drawing is */
+                /* a signpost in the model's cells stands in front of it
+                 * (Lavaridge's gym sign on the gym's corner: the model is
+                 * drawn without it); on a bridge it stands on its deck,
+                 * lifted and moved south by the deck's height as its
+                 * drawing is */
+                if (VoxelSign_IsCell(inst, x, y))
                 {
-                    float deck;
+                    float deck = 0.0f;
 
-                    if (VoxelSign_IsCell(inst, x, y)
-                     && VoxelBuildings_DeckAt(inst, x + 0.5f, y + 0.5f, 0, &deck))
-                    {
-                        builder->lift = VoxelRelief_CellLift(inst, x, y) + deck;
-                        builder->shift = VoxelRelief_CellShift(inst, x, y) + deck;
-                        VoxelSign_EmitStanding(builder, inst, x, y);
-                        builder->lift = 0.0f;
-                        builder->shift = 0.0f;
-                    }
+                    if (!VoxelBuildings_DeckAt(inst, x + 0.5f, y + 0.5f, 0, &deck))
+                        deck = 0.0f;
+                    builder->lift = VoxelRelief_CellLift(inst, x, y) + deck;
+                    builder->shift = VoxelRelief_CellShift(inst, x, y) + deck;
+                    VoxelSign_EmitStanding(builder, inst, x, y);
+                    builder->lift = 0.0f;
+                    builder->shift = 0.0f;
                 }
                 continue;
             }

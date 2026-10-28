@@ -30,6 +30,7 @@
  */
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define CTR_TILE_BANKS 2
@@ -113,6 +114,26 @@ static inline void CtrTileBank_Resolve(unsigned entry, unsigned *tile, bool *fro
     *bankPalette = pal >= CTR_TILE_BANK_FIRST_PALETTE
                 && pal < CTR_TILE_BANK_FIRST_PALETTE + CTR_TILE_BANK_PALETTES;
     *palette = *bankPalette ? pal - CTR_TILE_BANK_FIRST_PALETTE : pal;
+}
+
+/* The slot of the renderer's table of banked tilemaps (count slots, each a
+ * buffer and its row of banks; a free slot's buffer NULL) that a tilemap and
+ * its banks take: the one either is already in, else the first free one, else
+ * count. A row of banks keeps its slot whatever buffer it comes with: a warp
+ * resets the heap without unregistering, and the next buffers need not land
+ * where the last ones were (Route 111's Mirage Tower allocates first), which
+ * would leave every slot to a freed address. */
+static inline unsigned CtrTileBank_SourceSlot(const void *const *buffers, const uint8_t *const *banks,
+                                              unsigned count, const void *buffer, const uint8_t *rowBanks)
+{
+    unsigned free = count;
+
+    for (unsigned i = 0; i < count; ++i)
+    {
+        if (buffers[i] == buffer || banks[i] == rowBanks) return i;
+        if (buffers[i] == NULL && free == count) free = i;
+    }
+    return free;
 }
 
 #endif

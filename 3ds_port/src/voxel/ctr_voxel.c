@@ -2216,7 +2216,7 @@ static void BrightenCrowns(uint16_t *texels)
     static const struct
     {
         unsigned x, y, w, h;
-    } crowns[] = {{0, 0, 32, 36}, {32, 32, 16, 32}, {64, 0, 16, 32}, {0, 64, 64, 32}};
+    } crowns[] = {{0, 0, 32, 36}, {32, 32, 16, 32}, {64, 0, 16, 32}, {0, 64, 128, 32}};
 
     for (unsigned c = 0; c < sizeof(crowns) / sizeof(crowns[0]); ++c)
         for (unsigned y = crowns[c].y; y < crowns[c].y + crowns[c].h; ++y)
@@ -2626,7 +2626,12 @@ static void AtlasFailed(int mapGroup, int mapNum, const void *primary, const voi
  * (sViewRect) is where things are drawn; a map's chunks are its cells. */
 static int DrawnRows(const VoxelMapInstance *inst)
 {
-    return (int)floorf(VoxelRelief_Base(inst) + 0.5f);
+    /* floorf without the library call: asked for every map a few times a
+     * frame (atlases in view, the ring, the lamps, the near maps). */
+    float rows = VoxelRelief_Base(inst) + 0.5f;
+    int i = (int)rows;
+
+    return (float)i > rows ? i - 1 : i;
 }
 
 /* Bound all atlas pages together to the original six-texture budget. */
@@ -2657,7 +2662,11 @@ static bool AllocateAtlasPage(VoxelAtlasSlot *slot, unsigned page, bool mayEvict
         return true;
     for (;;)
     {
+        /* Asked of the allocator only when it can answer yes: a map in the
+         * prefetch ring asked every frame of a VRAM in pieces, and every
+         * refusal is a GPUMEM line (769 in a port.log of 2026-10-26). */
         if (CountAllocatedAtlases() < VOXEL_ATLAS_SLOTS
+         && CtrGpuMem_LargestVram() >= VOXEL_ATLAS_PIXELS * sizeof(uint16_t)
          && C3D_TexInitVRAM(tex, VOXEL_ATLAS_W, VOXEL_ATLAS_H, GPU_RGBA5551))
         {
             C3D_TexSetFilter(tex, GPU_NEAREST, GPU_NEAREST);
@@ -3146,6 +3155,8 @@ static struct
     unsigned sortPage, sortScan, sortWrite;
     VoxelBuildingCursor models;
     unsigned staticIndex;   /* JOB_STATICS: the next of sJobStatics */
+    bool lightWarm;         /* JOB_GROUND: its rays' casters read (VoxelLighting_Warm) */
+    unsigned warmCursor;
     uint64_t ticks;         /* spent on it, over every frame it took */
     /* ... and by phase, for the slow chunk log: where a chunk's time goes on
      * hardware is what says what to make cheaper next. */
@@ -3243,6 +3254,9 @@ static bool JobValid(void)
  */
 #define VOXEL_PACK_SLICE 256u
 #define VOXEL_GROUND_SLICE_CELLS 1
+/* Blocks of casters a slice reads ahead of the ground's rays: one is ~80 cells
+ * classified on a drawn map, under a ms on an Old 3DS. */
+#define VOXEL_WARM_SLICE_BLOCKS 1u
 
 /* Floor and ceiling of a packed coordinate, in whole tiles. */
 static int PackedFloor(int32_t q) { return q >> 9; }
@@ -3346,6 +3360,16 @@ static void JobStep(void)
          * lattice was 6 ms on hardware, more than a frame's spare time. */
         int x1 = sJob.col + VOXEL_GROUND_SLICE_CELLS;
 
+#if CTR_VOXEL_LIGHTING
+        /* The casters its rays will read first, a block a slice: read by
+         * its first rays they were all one slice, 6-8 ms on hardware. */
+        if (!sJob.lightWarm && sBuilder.lighting)
+        {
+            sJob.lightWarm = VoxelLighting_Warm(site->x0, site->y0, site->x1, site->y1,
+                                                &sJob.warmCursor, VOXEL_WARM_SLICE_BLOCKS);
+            return;
+        }
+#endif
         if (x1 > site->x1)
             x1 = site->x1;
         VoxelMesh_EmitGroundRow(&sBuilder, inst, sJob.col, x1, sJob.row);
@@ -5642,6 +5666,43 @@ static void DropTileAnimation(void)
     sBuildingAnimPending = false;
 }
 
+/*
+ * Where the update's world= share goes, for the hardware log: 3 ms of it on
+ * Route 110 against 1.5-2 elsewhere, before the GPU could start (port.log,
+ * 2026-10-26). Mean and worst per part over the last VOXEL_PARTS_FRAMES.
+ */
+enum { PART_INSTANCES, PART_CHECK, PART_SUN, PART_PLACE, PART_CROSSING, PART_COUNT };
+#define VOXEL_PARTS_FRAMES 600u
+static uint64_t sPartTicks[PART_COUNT], sPartWorst[PART_COUNT];
+static unsigned sPartFrames;
+
+static void NotePart(int part, uint64_t *since)
+{
+    uint64_t now = svcGetSystemTick(), ticks = now - *since;
+
+    sPartTicks[part] += ticks;
+    if (ticks > sPartWorst[part])
+        sPartWorst[part] = ticks;
+    *since = now;
+}
+
+static void LogParts(void)
+{
+    if (++sPartFrames < VOXEL_PARTS_FRAMES)
+        return;
+    CtrLog_Write(CTR_LOG_VIDEO, "VOXEL world parts (ms mean/worst): instances %.2f/%.2f check %.2f/%.2f "
+                 "sun %.2f/%.2f place %.2f/%.2f crossing %.2f/%.2f (%u maps)",
+                 TicksMs(sPartTicks[PART_INSTANCES]) / sPartFrames, TicksMs(sPartWorst[PART_INSTANCES]),
+                 TicksMs(sPartTicks[PART_CHECK]) / sPartFrames, TicksMs(sPartWorst[PART_CHECK]),
+                 TicksMs(sPartTicks[PART_SUN]) / sPartFrames, TicksMs(sPartWorst[PART_SUN]),
+                 TicksMs(sPartTicks[PART_PLACE]) / sPartFrames, TicksMs(sPartWorst[PART_PLACE]),
+                 TicksMs(sPartTicks[PART_CROSSING]) / sPartFrames, TicksMs(sPartWorst[PART_CROSSING]),
+                 VoxelWorld_InstanceCount());
+    memset(sPartTicks, 0, sizeof(sPartTicks));
+    memset(sPartWorst, 0, sizeof(sPartWorst));
+    sPartFrames = 0;
+}
+
 bool CtrVoxel_Update(void)
 {
     const VoxelMapInstance *inst;
@@ -5675,6 +5736,9 @@ bool CtrVoxel_Update(void)
     inst = VoxelWorld_Instance(0);
     if (inst == NULL)
         return false;
+    uint64_t partStart = started;
+
+    NotePart(PART_INSTANCES, &partStart);
 
     {
         /*
@@ -5729,6 +5793,7 @@ bool CtrVoxel_Update(void)
         sMeasureRead = sFrame + 64u;
     }
     sGlowWanted = sMeasureGlow && CtrDayNight_Get()->glow > 0.0f;
+    NotePart(PART_CHECK, &partStart);
 
 #if CTR_VOXEL_LIGHTING
     {
@@ -5741,6 +5806,7 @@ bool CtrVoxel_Update(void)
         }
     }
 #endif
+    NotePart(PART_SUN, &partStart);
 
     VoxelWorld_GetLocation(&mapGroup, &mapNum);
     /*
@@ -5810,6 +5876,7 @@ bool CtrVoxel_Update(void)
          * HandleMapChange has moved the last position with them. */
         TrackMotion(smoothX, smoothZ, cut);
     }
+    NotePart(PART_PLACE, &partStart);
     /* Heading off the current map into the one beside it (see
      * VOXEL_CROSSING_RESERVE_MS)? */
     {
@@ -5827,6 +5894,8 @@ bool CtrVoxel_Update(void)
     RememberInstanceOrigins();
     sMeshMapGroup = mapGroup;
     sMeshMapNum = mapNum;
+    NotePart(PART_CROSSING, &partStart);
+    LogParts();
 
     sStats.worldMs = (float)((svcGetSystemTick() - started) * 1000.0 / SYSCLOCK_ARM11);
     {
@@ -7517,6 +7586,11 @@ bool CtrVoxel_DrawsFog(void)
 bool CtrVoxel_DrawsWeather(void)
 {
     return sReady && sOwnsWeather;
+}
+
+bool CtrVoxel_DrawsSand(void)
+{
+    return sReady && sOwnsWeather && VoxelWorld_Weather() == VOXEL_WEATHER_SAND;
 }
 
 const C3D_Tex *CtrVoxel_Gloom(float *x, float *y, float *size, float *amount)

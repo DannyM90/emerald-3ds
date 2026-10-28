@@ -32,6 +32,7 @@ def main():
 #define VOXEL_ATLAS_SLOTS 6u
 #define VOXEL_ATLAS_W 512u
 #define VOXEL_ATLAS_H 256u
+#define VOXEL_ATLAS_PIXELS (VOXEL_ATLAS_W * VOXEL_ATLAS_H)
 #define GPU_RGBA5551 0
 #define GPU_NEAREST 0
 #define GPU_CLAMP_TO_EDGE 0
@@ -55,6 +56,8 @@ static bool C3D_TexInitVRAM(C3D_Tex *tex, unsigned w, unsigned h, int fmt) {
     (void)w; (void)h; (void)fmt; if (allocated >= 6) return false;
     ++allocated; tex->data = &allocated; return true;
 }
+/* Room for one more atlas exactly while fewer than six are allocated. */
+static unsigned long CtrGpuMem_LargestVram(void) { return allocated < 6 ? VOXEL_ATLAS_PIXELS * 2u : 0u; }
 static void C3D_TexDelete(C3D_Tex *tex) { assert(tex->data && allocated); --allocated; tex->data = NULL; }
 static void C3D_TexSetFilter(C3D_Tex *t, int a, int b) { (void)t; (void)a; (void)b; }
 static void C3D_TexSetWrap(C3D_Tex *t, int a, int b) { (void)t; (void)a; (void)b; }

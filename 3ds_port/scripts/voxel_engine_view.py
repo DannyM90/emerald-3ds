@@ -76,7 +76,8 @@ TREE_DIM = 128
 # the secondary tilesets voxel_tree.c tells apart, as voxel_scene_dump.c reads them
 TREE_TILESETS = {"gTileset_Dewford": 1, "gTileset_Fortree": 2, "gTileset_Mauville": 3,
                  "gTileset_Lavaridge": 4, "gTileset_Rustboro": 5, "gTileset_Lilycove": 6,
-                 "gTileset_EverGrande": 7, "gTileset_BattleFrontierOutsideWest": 8}
+                 "gTileset_EverGrande": 7, "gTileset_BattleFrontierOutsideWest": 8,
+                 "gTileset_Mossdeep": 9, "gTileset_Fallarbor": 10}
 
 
 def build_dump():

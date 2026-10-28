@@ -300,6 +300,100 @@ thing stands, a ghost where it does not. A wall that paints what stands in
 front of it (a post, a porch) needs a skin of its own wall over that part
 (the fan club's `Canopy`).
 
+## Fortree: houses in the treetops
+
+`scripts/voxel_fortree.py`. Fortree's houses stand on decks over the wood,
+joined by plank bridges, a ladder down from each deck. The cartridge walks
+the decks and bridges at elevation 4 and the ground at 3; under the
+southern bridge (x 30-33, row 14) the path is elevation 15, walked over and
+under. As with the Seaside Cycling Road, the decks are models and the deck
+table (VXB8) lifts whoever walks on them; `voxel_fortree.deck_table()` adds
+Fortree's cells to `voxel_bridge`'s.
+
+- **Height from the drawing**: a ladder is drawn from the deck's front edge
+  (row 80) to its foot on the path (row 108), so the decks stand
+  `DECK` = 28 px over the floor. Every part is built at its drawn rows and
+  lifted by `DECK` (`vb.Lifted`: `v = Z - Y` does not change), so the house
+  is its drawing at 45 degrees. A ladder cell's deck entry rises 16 px a
+  cell: climbing, the player stays at the ladder's foot in the world.
+- **The hut** is modelled like any house: walls on a plan with its front
+  corners cut at 45 degrees (the slanting walls beside the door), on a
+  3-px deck slab whose front edge is drawn rows 80-82.
+- **The roof of fronds** (`LeafRoof`) is a frustum with one pitch all round
+  (`inset_plan`). The front and its cut corners take the drawing projected,
+  its outline cutting the fronds' tips. The sides and the back take the
+  front's own fronds row for row at the same height (the faces share its
+  pitch, so the density holds); the top takes the drawing on from the
+  front's top edge, mirrored there, so the fronds run on without a seam.
+  Never a texture of their own or another part of the drawing: those did
+  not match the front.
+- **Bridges**: a 2-px slab under each drawn plank (found by its colours,
+  `plank_runs`), the gaps open, the two ropes a strip at the planks'
+  height. The planks a deck's end cell draws are the house's.
+- **Under them** is the wood: the cells the houses, decks and bridges are
+  drawn on are small trees (`voxel_tree.c FortreeWood`), whose crowns
+  (23 px) stand under the deck (25 px). Where a cell is both, the deck
+  casts the shadow (`voxel_lighting.c`).
+- **The palms** are cards like the General's trees (leaning back 50
+  degrees from their foot), but cut out of the map's own drawing, so they
+  live in this file (game data) and not in `trees.rgba5551`, which ships
+  with the engine and holds original art only. The card is as long as makes
+  it the drawing projected, so it is exact at 45 degrees; the trunk's
+  lowest cell is drawn from its lower layer, without the crown of the small
+  tree in front (that one stands as a tree of its own).
+- `owned` specs stand only where `repeat_at` says: the house at (10, 11) is
+  the one at (8, 1), and the palms repeat at (28, 6), (14, 16) and (27, 17).
+
+## Sootopolis: houses, walls and the Cave of Origin
+
+Everything in the crater is the white stone of `voxel_building_specs.py`;
+the rock drawn round it (`SOOTOPOLIS_ROCK`) is the map's, laid back as
+patches. The terraces are the user's hand marks (`relief_fixes.json`).
+
+- **Spire houses** (`spire_parts`): the octagonal base and its pyramid. The
+  window, door (diamond) and gate fronts are three specs over the same
+  shape. The gated one's pillars stand on the front (drawn a row lower,
+  z 80) and its gate 4 back between them under the lintel, on a threshold.
+  It has no plain stretch of front to dress its sides with, so it reads the
+  windowed house's (`sootopolis_spire_gate`: a band appended to its texture).
+- **Flat-roofed houses** (`sootopolis_flat_house`): a block 33 high with the
+  skylight on a raised slab 4 high (its front is the band drawn under the
+  panels). The gated one is set back to z 60 and its porch stands out in two
+  steps, the bay with the gate flush with the roof. A plinth runs along the
+  foot.
+- **Walls** (`sootopolis_wall`, a `components` spec): a 4-row top over 8 rows
+  of front, read column by column, cut into 4x4 blocks, each one terrace
+  level, so each stands on its own ground. The wall's ends drawn down the
+  face beside a flight of stairs (262, 263) are not part of it: a face is
+  upright, and an exact wall on it could not stand on the ground at its foot,
+  so they stay painted and the wall above ends at the terrace's edge.
+- **The Cave of Origin's doorway** (`cave_origin`): an open frame out of the
+  cliff's top over the plaza, on two legs. The lintel lies along the cliff's
+  top; two beams run out from its ends, their tops 25 up (drawn down to the
+  crossbar in the shade of a top, not of a front); the crossbar is the
+  frame's front beam, not a sill on the ground, and the two legs stand under
+  its corners (drawn below it in the shade of a front). Under the frame the
+  plaza runs on to the cliff. It owns the plaza's cells only (`owned`), so the
+  cliff's two rows keep their relief and the mouth stays the cliff's drawing;
+  an owned spec stands only in its own layout, so the legends' battle has
+  its twin (`cave_origin_legends`). The posts before it (`sootopolis_posts`)
+  are boxes 8 high, two to a cell.
+- **The cliff behind the houses** (`relief_bare`): every house is drawn
+  against the terrace behind it, its roof's or spire's top rows on the upper
+  layer over that terrace's face (the lower layer is the face's rock), where
+  the solid stands on nothing. Laid flat as a model's cells, the cliff had a
+  notch either side of the house; given back to the relief with their whole
+  drawing, the roof was painted a second time, flat, on the face behind the
+  house. With `relief_bare` those cells stay the model's with height 0 and
+  the quarters of their upper layer that draw something (`bare_quarters`);
+  the console keeps the relief there (`VoxelBuildings_BareVariant`) and draws
+  it with the ground variant of the cell's metatile less those quarters: the
+  rock face goes on behind the house, and the house stands once. Verdanturf's
+  battle tent uses it too: its top row is the foot of the cliff behind it.
+  Only where the terraces are marked by hand: on the Pokemon Center and the
+  Mart the relief, read off the drawing, made Lilycove's cliff stand over
+  the Center's roof, so they keep their whole rectangle.
+
 ## Finding faults: voxel_defect_scan.py
 
 The proofs only see the 45-degree view; every face it does not see is

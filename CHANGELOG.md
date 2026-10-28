@@ -173,7 +173,19 @@
   game's Japanese glyphs, the naming screen has the Japanese keyboard and
   5-character names, battles draw names, levels and HP as the Japanese game
   does, the touch screen has Japanese labels and the Pokédex shows metres
-  and kilograms. See docs/JAPANESE.md for what is still in English.
+  and kilograms. See docs/JAPANESE.md for what is still in English. The
+  touch screen no longer crashes the Japanese game half a second after a
+  save loads (wrapped text measured with the Japanese fonts' fixed width),
+  by @luksgrin (pull request #200). Also by @luksgrin (pull request #201):
+  the battle info boxes show the Japanese names and levels, the touch battle
+  menu puts each word on its own plate, 84 more texts come from the Japanese
+  ROM (the evolution message, stat words, type names, bag pockets, records,
+  the summary's page titles each on its own page) and the Pokédex info and
+  cry pages use the Japanese tilemaps.
+
+- Spanish, French, Italian, German and Japanese battles say "sharply rose!" /
+  "harshly fell!" with the game's own two words again instead of an English
+  text; only Portuguese joins them. By @luksgrin (pull request #201).
 
 - Locale manifests can be regenerated: `tools/locale_research/` holds the
   matcher that finds the English game's objects in another language's ROM

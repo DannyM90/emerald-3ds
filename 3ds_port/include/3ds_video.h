@@ -188,7 +188,7 @@ enum
     CTR_CENTRED_NONE,
     /* The fly map, the Town Map, the OPTION screen, and the others with
      * nothing of their own (ctr_gba_centred.h's default: contests,
-     * minigames, the slot machine). */
+     * minigames). */
     CTR_CENTRED_PLAIN,
     /* The title menu and the professor's speech. */
     CTR_CENTRED_MAIN_MENU,
@@ -248,6 +248,11 @@ enum
     /* The trainer card from the field (the classic menus): in the bottom
      * screen's window as the PokéNav. */
     CTR_CENTRED_CARD,
+    /* The Game Corner's roulette: its wheel, an affine layer that does not
+     * wrap, whole past the picture's left edge and only once. */
+    CTR_CENTRED_ROULETTE,
+    /* The Game Corner's slot machine, set in the casino's wall. */
+    CTR_CENTRED_SLOTS,
     CTR_CENTRED_SCREENS
 };
 void CtrVideo_SetCentred(unsigned screen);
