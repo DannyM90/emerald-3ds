@@ -498,10 +498,12 @@ class Cover:
         self.bitmap_ids: dict[tuple, int] = {}
 
     def run(self, data: bytes, mask: bytearray | None, hints: dict[int, int] | None = None,
-            remaps: dict | None = None, breaks: list[int] | None = None):
+            remaps: dict | None = None, breaks: list[int] | None = None, own: bytearray | None = None):
         """Cover `data`. `hints` maps payload offsets (symbol starts) to the
         ROM offset of the same symbol in the original game; `remaps` maps
-        payload offsets to record remaps (see find_remap)."""
+        payload offsets to record remaps (see find_remap). The ROM is not
+        searched where `own` is set (a translation's texts, which no ROM
+        holds): searching it every few bytes of them would take hours."""
         hints = hints or {}
         remaps = remaps or {}
         remap_starts = sorted(set(remaps) | set(breaks or ()))
@@ -617,7 +619,8 @@ class Cover:
             # per byte
             found = -1
             boundary = i > 0 and data[i - 1] in (0x00, 0xFF) and data[i] not in (0x00, 0xFF)
-            if pending is None or (i - pending) % SEARCH_STRIDE == 0 or i in break_set or boundary:
+            searched = own is None or not own[i]
+            if searched and (pending is None or (i - pending) % SEARCH_STRIDE == 0 or i in break_set or boundary):
                 # Longer windows first: a short one often matches a coincidental
                 # copy elsewhere in the ROM that then stops early. A game string
                 # is also tried whole, up to and including its 0xFF terminator.
@@ -712,15 +715,15 @@ def main() -> None:
         mask = pointer_mask(args.romfs, rel, len(data)) if rel in BUNDLES else None
         is_gd = rel == "gamedata/gamedata.bin"
         breaks = layout_breaks(args.decomp) if rel == "maps/layouts.bin" else None
+        own = translation_mask(data, runs) if runs else None
         ops, patches, stats = cover.run(data, mask, hints if is_gd else None, remaps if is_gd else None,
-                                        breaks)
+                                        breaks, own)
         entry = {"path": rel, "size": len(data), "crc": crc, "ops": ops}
         if patches:
             entry["patches"] = patches
         out.entries.append(entry)
-        if runs and stats["literal"]:
+        if own is not None and stats["literal"]:
             # The translation's texts among the unexplained literals (pointer sites aside).
-            own = translation_mask(data, runs)
             stats["translation"] = sum(1 for k in literal_positions(ops, rom) if own[k] and not (mask and mask[k]))
             stats["literal"] -= stats["translation"]
             own_masks[rel] = own
