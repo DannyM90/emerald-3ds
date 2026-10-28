@@ -284,10 +284,12 @@ def classify_literals(entry: dict, mask: bytearray, image_map: Path, image_elf: 
     """Say where every unexplained literal byte of the game data comes from.
 
     translation  a text of the fan translation (`own`, translation_mask)
-    reordered    with a translation: an object of the original game holding
-                 the same 16-bit values in another order (the EASY CHAT word
-                 lists, sorted for the translation's words): the order is the
-                 translation's, the values are indices the executable has
+    reordered    with a translation: a family of objects of the original game
+                 (gEasyChatWordsByLetter_A, _B...) holding, all together, only
+                 16-bit values the original family holds, in another order
+                 (the EASY CHAT word lists, sorted for the translation's
+                 words): the order is the translation's, every value one the
+                 original already has
     code     .rodata.<function>: tables the compiler built from a function
              (switch lookups); derived from code that the 3DSX already carries
     string   C string pools (format strings, assertion text)
@@ -296,6 +298,7 @@ def classify_literals(entry: dict, mask: bytearray, image_map: Path, image_elf: 
     """
     import re
     import subprocess
+    from collections import Counter
     lines = image_map.read_text(encoding="utf-8", errors="ignore").splitlines()
     secs, pending = [], None
     for line in lines:
@@ -368,19 +371,30 @@ def classify_literals(entry: dict, mask: bytearray, image_map: Path, image_elf: 
                 totals[kind] += 1
         pos += length
     if own is not None and rom is not None and data:
-        gba = nm(nm_tool, gba_elf)
-        for key, (start, size) in sections.items():
-            where = gba.get(key, [])
-            off = start - base
-            if len(where) != 1 or size % 2 or any(mask[off:off + size]):
+        out = subprocess.check_output([nm_tool, "--defined-only", "-S", str(gba_elf)], text=True, errors="ignore")
+        gba = {}   # name -> (ROM offset, size) of the original game's objects
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) == 4 and int(parts[0], 16) >= 0x08000000:
+                gba[parts[3]] = (int(parts[0], 16) - 0x08000000, int(parts[1], 16))
+        image = {name[len(".rodata."):]: (start - base, size) for start, size, name, _ in secs
+                 if name.startswith(".rodata.") and base <= start}
+
+        def values(blob: bytes) -> Counter:
+            return Counter(struct.unpack("<%dH" % (len(blob) // 2), blob[:len(blob) // 2 * 2]))
+
+        for family in sorted({key.rsplit("_", 1)[0] + "_" for key in sections if "_" in key}):
+            new = [image[k] for k in image if k.startswith(family)]
+            old = [gba[k] for k in gba if k.startswith(family)]
+            if (not new or len(new) != len(old) or any(size % 2 for _, size in new + old)
+                    or any(any(mask[off:off + size]) for off, size in new)):
                 continue
-            new = data[off:off + size]
-            old = rom[where[0] - 0x08000000:where[0] - 0x08000000 + size]
-            if (len(old) == size and new != old
-                    and sorted(struct.unpack("<%dH" % (size // 2), new))
-                    == sorted(struct.unpack("<%dH" % (size // 2), old))):
-                totals["game"] -= game[key]
-                totals["reordered"] += game.pop(key)
+            mine = b"".join(data[off:off + size] for off, size in sorted(new))
+            theirs = b"".join(rom[off:off + size] for off, size in sorted(old))
+            if mine != theirs and len(mine) <= len(theirs) and not values(mine) - values(theirs):
+                for key in [k for k in game if k.startswith(family)]:
+                    totals["game"] -= game[key]
+                    totals["reordered"] += game.pop(key)
     return totals, sorted(((n, s) for s, n in game.items()), reverse=True)
 
 
