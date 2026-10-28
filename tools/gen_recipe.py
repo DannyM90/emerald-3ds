@@ -547,6 +547,20 @@ class Cover:
         self.literals = bytearray()
         self.bitmaps: list[list[int]] = []
         self.bitmap_ids: dict[tuple, int] = {}
+        self.windows: dict[bytes, int] | None = None
+
+    WINDOW = 32        # inside a translation's texts the ROM is looked up by
+    WINDOW_STRIDE = 8  # sampled windows: any run of 40 bytes it holds is found
+
+    def window_at(self, dv: memoryview, i: int) -> int:
+        """The ROM offset of the WINDOW bytes at dv[i], if the ROM holds them at
+        a sampled offset; -1 otherwise. Built once, on first use."""
+        if self.windows is None:
+            rom = self.rom
+            self.windows = {}
+            for off in range(0, len(rom) - self.WINDOW + 1, self.WINDOW_STRIDE):
+                self.windows.setdefault(rom[off:off + self.WINDOW], off)
+        return self.windows.get(bytes(dv[i:i + self.WINDOW]), -1)
 
     def run(self, data: bytes, mask: bytearray | None, hints: dict[int, int] | None = None,
             remaps: dict | None = None, breaks: list[int] | None = None, own: bytearray | None = None):
@@ -671,7 +685,11 @@ class Cover:
             found = -1
             boundary = i > 0 and data[i - 1] in (0x00, 0xFF) and data[i] not in (0x00, 0xFF)
             searched = own is None or not own[i]
-            if searched and (pending is None or (i - pending) % SEARCH_STRIDE == 0 or i in break_set or boundary):
+            if not searched and seg_end - i >= self.WINDOW:
+                # A translation's text: no ROM search, but a stretch the ROM
+                # holds (a sentence left in English) is still copied from it.
+                found = self.window_at(dv, i)
+            elif searched and (pending is None or (i - pending) % SEARCH_STRIDE == 0 or i in break_set or boundary):
                 # Longer windows first: a short one often matches a coincidental
                 # copy elsewhere in the ROM that then stops early. A game string
                 # is also tried whole, up to and including its 0xFF terminator.
@@ -739,6 +757,12 @@ def main() -> None:
 
     source_rom = load_rom(args.rom)
     rom, sha1 = source_rom.data, source_rom.sha1
+    # A text the ROM already holds (one the translation left as it was) is
+    # not the translation's own: it is searched and copied like the rest.
+    in_rom = {text for text in runs | shorts if rom.find(text) >= 0}
+    runs, shorts = runs - in_rom, shorts - in_rom
+    if args.translation:
+        print("gen_recipe: %d of them are in the ROM as they are, copied from it" % len(in_rom))
     if source_rom.code != "BPEE" and not (args.gba_elf and args.elf and args.image_elf):
         raise SystemExit("gen_recipe: %s requires the game's own GBA ELF and matching 3DS/image ELFs; "
                          "English offsets and game data cannot be used." % source_rom.code)
