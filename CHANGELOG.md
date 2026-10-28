@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Releases can carry the Brazilian Portuguese translation (`build_release.py
+  --portuguese`: `payload/pt/`, `Emerald3DS-pt.3dsx`), made from the English
+  ROM. Its recipe carries the translated texts, which are in no ROM, and
+  `gen_recipe.py --translation` credits only the bytes inside the catalogs'
+  texts as the translation's own; everything else keeps the usual limits.
+
+- Builder: one ROM can make more than one language. With the English ROM the
+  window asks for the game language (English or Português (Brasil)) when the
+  release has both, and the command line takes `--language pt`; `verify`
+  tells the two packs apart by their data ABI. The web builder's entry point
+  is API 2 (`run_web_build(..., language)`), and `web-manifest.json` may list
+  the English ROM twice, once per language.
+
 - OPTIONS > ENHANCEMENTS > REAL-TIME PACING is on by default: a new
   settings.txt starts with it on (and so does one that never had it). A
   settings.txt that already chose off keeps off.
@@ -160,7 +173,19 @@
   game's Japanese glyphs, the naming screen has the Japanese keyboard and
   5-character names, battles draw names, levels and HP as the Japanese game
   does, the touch screen has Japanese labels and the Pokédex shows metres
-  and kilograms. See docs/JAPANESE.md for what is still in English.
+  and kilograms. See docs/JAPANESE.md for what is still in English. The
+  touch screen no longer crashes the Japanese game half a second after a
+  save loads (wrapped text measured with the Japanese fonts' fixed width),
+  by @luksgrin (pull request #200). Also by @luksgrin (pull request #201):
+  the battle info boxes show the Japanese names and levels, the touch battle
+  menu puts each word on its own plate, 84 more texts come from the Japanese
+  ROM (the evolution message, stat words, type names, bag pockets, records,
+  the summary's page titles each on its own page) and the Pokédex info and
+  cry pages use the Japanese tilemaps.
+
+- Spanish, French, Italian, German and Japanese battles say "sharply rose!" /
+  "harshly fell!" with the game's own two words again instead of an English
+  text; only Portuguese joins them. By @luksgrin (pull request #201).
 
 - Locale manifests can be regenerated: `tools/locale_research/` holds the
   matcher that finds the English game's objects in another language's ROM

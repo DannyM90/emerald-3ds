@@ -32,6 +32,7 @@ def main():
 #define VOXEL_ATLAS_SLOTS 6u
 #define VOXEL_ATLAS_W 512u
 #define VOXEL_ATLAS_H 256u
+#define VOXEL_ATLAS_PIXELS (VOXEL_ATLAS_W * VOXEL_ATLAS_H)
 #define GPU_RGBA5551 0
 #define GPU_NEAREST 0
 #define GPU_CLAMP_TO_EDGE 0
@@ -55,6 +56,8 @@ static bool C3D_TexInitVRAM(C3D_Tex *tex, unsigned w, unsigned h, int fmt) {
     (void)w; (void)h; (void)fmt; if (allocated >= 6) return false;
     ++allocated; tex->data = &allocated; return true;
 }
+/* Room for one more atlas exactly while fewer than six are allocated. */
+static unsigned long CtrGpuMem_LargestVram(void) { return allocated < 6 ? VOXEL_ATLAS_PIXELS * 2u : 0u; }
 static void C3D_TexDelete(C3D_Tex *tex) { assert(tex->data && allocated); --allocated; tex->data = NULL; }
 static void C3D_TexSetFilter(C3D_Tex *t, int a, int b) { (void)t; (void)a; (void)b; }
 static void C3D_TexSetWrap(C3D_Tex *t, int a, int b) { (void)t; (void)a; (void)b; }
@@ -133,7 +136,7 @@ static bool JobPack(void) { return true; }
 /* Drive the real post-submit entry point, not just cost admission in isolation. */
 typedef struct { float gameMs, vblankMs; } CtrTiming;
 static CtrTiming timing;
-static struct { float afterMs, afterBudgetMs; } sStats;
+static struct { float afterMs, afterBudgetMs, tailMs, tailExpectedMs; } sStats;
 static bool sReady, sViewReady, sCrossingSoon;
 static uint64_t sAfterEndTick;
 static float sTailMs;
@@ -172,7 +175,11 @@ static unsigned RunJobs(uint64_t a, float holes, float ahead, bool inFrame, bool
     source += function(voxel, 'void CtrVoxel_NoteFrameWait(')
     source += function(voxel, 'void CtrVoxel_AfterSubmit(')
     source += function(voxel, 'static void JobStep(')
+    source += '#define GX_QUEUE_SHARED 32u\nstatic unsigned sAnimCommands;\n'
+    source += function(video, 'static unsigned SharedCapacity(')
+    source += function(video, 'static unsigned SharedUsed(')
     source += function(video, 'bool CtrVideo_TryVoxelUpload(')
+    source += function(video, 'bool CtrVideo_TryVoxelAnimUpload(')
     begin = voxel.index('    /* Cancel first, then mark the surviving request consumed. */')
     end = voxel.index('    sHolesOnly = !warmup;', begin)
     source += 'static void Refresh(bool holes) {\n' + voxel[begin:end] + '}\n'
@@ -307,6 +314,20 @@ int main(void) {
         assert(uploads == (32-reserve)/2);
         queue.numEntries = 31; sUploadCommands = 0;
         assert(!CtrVideo_TryVoxelUpload());
+    }
+    /* A queue lengthened to 128: the animation's copies have the 96 past the
+     * shared 32 to themselves, and leave the shared room as it was. */
+    {
+        gxCmdQueue_s queue = {128, 0}; sFrameQueue = &queue; sUploadCommands = sAnimCommands = 0; sRenderReserve = 24;
+        unsigned anim = 0; while (CtrVideo_TryVoxelAnimUpload()) ++anim;
+        assert(anim == 48);
+        queue.numEntries = sAnimCommands;
+        unsigned uploads = 0; while (CtrVideo_TryVoxelUpload()) ++uploads;
+        assert(uploads == 4);
+        gxCmdQueue_s small = {32, 0}; sFrameQueue = &small; sUploadCommands = sAnimCommands = 0;
+        anim = 0; while (CtrVideo_TryVoxelAnimUpload()) ++anim;
+        assert(anim == 4); /* not lengthened: the shared room */
+        sAnimCommands = 0;
     }
     sFrameQueue = NULL; assert(!CtrVideo_TryVoxelUpload());
     /* Six physical pages total; eviction invalidates all of a hidden pair,

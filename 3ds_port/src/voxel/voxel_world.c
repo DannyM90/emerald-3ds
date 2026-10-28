@@ -780,7 +780,17 @@ VoxelVisualShape VoxelWorld_ClassifyTile(int worldX, int worldY)
     if (VoxelWorld_UsesTreeSprites(inst)
      && (VoxelTree_Part(inst->secondaryTileset, metatileId) >= 0
          || VoxelTree_GroundMetatile(inst->secondaryTileset, metatileId) != metatileId))
+    {
+        int ground = VoxelTree_GroundMetatile(inst->secondaryTileset, metatileId);
+
+        /* a crown's row over water, or a trunk standing in it, is that
+         * water where the ground pass lays it */
+        if ((VoxelTree_Part(inst->secondaryTileset, metatileId) < 0
+             || !VoxelTree_LaysGround(inst->secondaryTileset, metatileId))
+         && BehaviorShape(UNPACK_BEHAVIOR(GetMetatileAttribute(inst, ground))) == VOXEL_SHAPE_WATER)
+            return VOXEL_SHAPE_WATER;
         return VOXEL_SHAPE_FLAT;
+    }
     if (VoxelRegions_RoleAt((unsigned)inst->layoutId,
                             worldX - inst->originX, worldY - inst->originY)
         == VOXEL_ROLE_SIGNPOST)

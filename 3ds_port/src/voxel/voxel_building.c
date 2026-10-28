@@ -1228,6 +1228,27 @@ bool VoxelBuildings_CellAt(const VoxelMapInstance *inst, int x, int y,
     return true;
 }
 
+bool VoxelBuildings_BareVariant(const VoxelMapInstance *inst, int x, int y, int *metatile)
+{
+    unsigned i;
+    long k = ModelCell(inst, x, y, &i);
+    unsigned own;
+
+    /* a cell of the model it stands over nothing of, with quarters to
+     * leave out: a relief_bare house's roof drawn over the terrace face */
+    if (k < 0 || sHeights[k] != 0 || sQuarters[k] == 0)
+        return false;
+    own = (unsigned)VoxelWorld_GetMetatileId(x, y);
+    for (unsigned v = 0; v < sVariantCount && v < VOXEL_VARIANTS; ++v)
+        if (U16(sVariants + 6u * v + 2) == own && sVariants[6u * v + 4] == sQuarters[k]
+         && (sVariantFits == NULL || sVariantFits(inst, U16(sVariants + 6u * v), own)))
+        {
+            *metatile = (int)(VOXEL_METATILE_REAL + v);
+            return true;
+        }
+    return false;
+}
+
 bool VoxelBuildings_DeckAt(const VoxelMapInstance *inst, float worldX, float worldZ,
                            unsigned elevation, float *lift)
 {

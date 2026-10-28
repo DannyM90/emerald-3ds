@@ -4,7 +4,7 @@ Pillow every time, so the voxel data (and its precompiled programs) never
 depend on the maintainer's machine.
 
     python tools/docker_release.py --rom baserom.gba [--spanish-rom esmeralda.gba ...]
-                                   [build_release.py options, e.g. --skip-cia]
+                                   [build_release.py options, e.g. --portuguese --skip-cia]
 
 Needs Docker and the network (Git and the image registries); the release
 itself runs offline in the container. Steps:

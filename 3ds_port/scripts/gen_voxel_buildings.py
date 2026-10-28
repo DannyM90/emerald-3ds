@@ -34,6 +34,9 @@ import voxel_building as vb  # noqa: E402
 import voxel_building_specs as specs  # noqa: E402
 import voxel_cells as vc  # noqa: E402
 import voxel_bridge  # noqa: E402
+import voxel_fence  # noqa: E402
+import gen_voxel_sign_masks  # noqa: E402
+import voxel_fortree  # noqa: E402
 import voxel_props  # noqa: E402
 import voxel_relief_fixes  # noqa: E402
 import voxel_night
@@ -45,7 +48,7 @@ PORT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 # layer the model stands for, a variant of the metatile the atlas composes
 # in a slot of its own (`ground_variants`).
 OWN_GROUND = 0xFFFF
-MAX_VARIANTS = 128      # voxel_atlas.h VOXEL_VARIANTS
+MAX_VARIANTS = 160      # voxel_atlas.h VOXEL_VARIANTS
 
 
 def component_specs(spec, layouts):
@@ -54,7 +57,6 @@ def component_specs(spec, layouts):
     every layout whose secondary tileset is the one named (or, for
     metatiles of a primary tileset, every layout on that primary)."""
     comp = spec["components"]
-    tiles = comp["tiles"]
     layouts_json = json.load(open(os.path.join(vb.ROOT, "data", "layouts", "layouts.json"),
                                   encoding="utf-8"))["layouts"]
     out = []
@@ -63,6 +65,9 @@ def component_specs(spec, layouts):
             continue
         if ("primary" in comp and entry.get("primary_tileset") != comp["primary"]) or                 ("secondary" in comp and entry.get("secondary_tileset") != comp["secondary"]):
             continue
+        # and the metatiles of the secondary tileset that draw the same object
+        # (`also`: the General's fence in the Battle Frontier's own tiles)
+        tiles = set(comp["tiles"]) | set(comp.get("also", {}).get(entry.get("secondary_tileset"), ()))
         blocks = vb.read_u16(os.path.join(vb.ROOT, entry["blockdata_filepath"]))
         w, h = entry["width"], entry["height"]
         seen = set()
@@ -109,6 +114,11 @@ def component_specs(spec, layouts):
                 merged[key] = sp
         out = list(merged.values())
     return out
+
+
+# a colour no live texel of a flag draws: its live texels are clear only
+# where the tile's own pixel is (colour 0), never for a colour behind them
+FLAG_BG = (255, 0, 255)
 
 
 def prop_specs(spec):
@@ -160,6 +170,24 @@ def prop_specs(spec):
             parts = (lambda a, f: (lambda: [vb.Card("card", a, f)]))(
                 art, max(y for (x, y) in [(u, v) for v in range(art.size[1]) for u in range(art.size[0])
                                            if art.getpixel((u, v))[3] >= 128]) + 1)
+        elif shape == "flag":
+            # a flag on its pole: a card standing at the pole's foot, over
+            # the whole grid (a frame of the cloth's animation reaches where
+            # the first does not draw), the cloth's texels following the
+            # game's animation of its tiles ("live": every pixel of them)
+            gw, gh = len(grid[0]), len(grid)
+            foot = max(oy * 8 + j * 8 + 8 for (i, j) in present)
+            span = (ox * 8, ox * 8 + gw * 8, oy * 8)
+            parts = (lambda d, f, sp: (lambda: [vb.Card("flag~live", d, f, span=sp)]))(
+                drawing, foot, span)
+            live = {}
+            lo, hi = spec["live_tiles"]
+            for (i, j) in present:
+                t = grid[j][i]
+                if lo <= (t[0] if isinstance(t, tuple) else t) < hi:
+                    for k in range(64):
+                        px_ = (ox * 8 + i * 8 + k % 8, oy * 8 + j * 8 + k // 8)
+                        live[px_] = px_ + (FLAG_BG,)
         elif shape == "cylinder":
             # a round basket: its drawn top ellipse and a short side
             c = spec["cylinder"]
@@ -190,6 +218,8 @@ def prop_specs(spec):
                     "exact": spec.get("exact", [(0, 0, w * 16, h * 16)]), "at": at, "quads": quads,
                     "drawing": drawing, "static": spec.get("static", False),
                     "clip_art": spec.get("clip_art", False)})
+        if shape == "flag":
+            out[-1]["live_map"] = live
     return out
 
 
@@ -217,11 +247,38 @@ def piece_spec(spec, comp, entry, blocks, w, h, cells, tiles, run=None):
     pattern += (tuple(sorted(south)), below, tuple(sorted(north)), above,
                 tuple(sorted(east)), tuple(sorted(west)))
     name = "%s_%s_%d_%d" % (spec["name"], entry["id"][len("LAYOUT_"):].lower(), x0, y0)
-    return {"name": name, "layout": entry["id"], "rect": (x0, y0, x1 - x0, y1 - y0),
-            "ground": spec["ground"], "owned": owned, "relief": comp, "pattern": pattern,
-            "south": south, "north": north, "east": east, "west": west,
-            "patch_own": spec.get("patch_own", False),
-            **{k: spec[k] for k in ("ground_rgb", "ground_fixed") if k in spec}}
+    out = {"name": name, "layout": entry["id"], "rect": (x0, y0, x1 - x0, y1 - y0),
+           "ground": spec["ground"], "owned": owned, "relief": comp, "pattern": pattern,
+           "south": south, "north": north, "east": east, "west": west,
+           "patch_own": spec.get("patch_own", False),
+           **{k: spec[k] for k in ("ground_rgb", "ground_fixed") if k in spec}}
+    if out.get("ground_fixed") is True and any(m >= vb.NUM_PRIMARY for (_, _, m) in pattern[:len(owned)]):
+        # a piece with a secondary tileset's metatiles (`also`) stands on
+        # that tileset's own ground, not on the one the spec fixes
+        out["ground_fixed"] = False
+    return out
+
+
+def kept_by_others(layout_id):
+    """The map's pixels (X, Y) a building of its own keeps (its cells, or
+    with `keep` only those rectangles of them): a fence sharing a cell with
+    a building's wall (the Battle Pyramid's, the Battle Dome's) leaves the
+    wall to it."""
+    if layout_id not in _KEPT:
+        out = set()
+        for s in specs.SPECS:
+            if s.get("layout") != layout_id or "rect" not in s:
+                continue
+            x, y, w, h = s["rect"]
+            owned = s.get("owned") or {(i, j) for i in range(w) for j in range(h)}
+            keep = s.get("keep") or [(0, 0, w * 16, h * 16)]
+            out |= {(x * 16 + u, y * 16 + v) for (a, b, c, d) in keep
+                    for v in range(b, d) for u in range(a, c) if (u // 16, v // 16) in owned}
+        _KEPT[layout_id] = out
+    return _KEPT[layout_id]
+
+
+_KEPT = {}
 
 
 def clip_to_art(model):
@@ -2902,7 +2959,13 @@ def build_models(only=None):
                 for u in range(w * 16):
                     if not any(a <= u < c and b <= v < d for (a, b, c, d) in spec["keep"]):
                         apx[u, v] = (0, 0, 0, 0)
-        if "relief" in spec:
+        if "relief" in spec and spec["relief"].get("posts"):
+            # a fence of posts or logs: each one stands where its top is
+            # drawn (voxel_fence.py), judged against the block's own drawing
+            art, parts, spec["drawing"] = voxel_fence.build(layout, spec, spec["relief"]["posts"],
+                                                            kept_by_others(lid))
+            spec["exact"] = [(0, 0, w * 16, h * 16)]
+        elif "relief" in spec:
             height = spec["relief"]["height"]
             relief = spec["relief"]
             side = pick_side(art, height, longest=relief.get("side_longest", False))
@@ -2942,6 +3005,19 @@ def build_models(only=None):
         model.owned = owned if owned is not None else {(i, j) for i in range(w) for j in range(h)}
         model.spec = spec
         model.layout = layout
+        if spec.get("relief_bare"):
+            # the cells of its rectangle it stands over nothing of - a house
+            # drawn against the terrace behind it, its roof's rows over the
+            # face - are not its own: the relief goes on there (claimed, the
+            # face was laid flat at the cell's middle, a notch in the cliff
+            # either side of the house)
+            tops = cell_heights(model)
+            model.bare = {(i, j) for (i, j) in model.owned if tops[j * w + i] <= 0}
+            # still its own, so that the console draws the relief there
+            # without the house: the cell's drawing less the quarters of its
+            # upper layer the house is drawn on (bare_quarters), the rock
+            # face of its lower layer going on behind it
+            spec["quads"] = {**spec.get("quads", {}), **bare_quarters(model)}
         models.append(model)
         if spec.get("bare_at"):
             # the piece as it stands on another room's floor: without its
@@ -3027,6 +3103,25 @@ def cell_heights(model):
     if tops is None:
         tops = model._cell_heights = _cell_heights(model)
     return tops
+
+
+def bare_quarters(model):
+    """{(i, j): quarters} of a `relief_bare` model's bare cells: the quarters
+    of the cell's upper layer that draw something (bit 2 * row + column).
+    The console lays the relief there drawn with the metatile less those
+    (VoxelBuildings_BareVariant): a Sootopolis house's roof or spire is drawn
+    on the upper layer over the face of the terrace behind it, and painted
+    on that face it stood there a second time, flat."""
+    pair = vc.pair_for(model.layout.primary, model.layout.secondary)
+    x, y = model.spec["rect"][:2]
+    out = {}
+    for (i, j) in model.bare:
+        q = 0
+        for (px, py) in pair.layer_pixels(model.layout.metatile(x + i, y + j), 1):
+            q |= 1 << ((py // 8) * 2 + px // 8)
+        if q:
+            out[(i, j)] = q
+    return out
 
 
 def _cell_heights(model):
@@ -3248,7 +3343,8 @@ def patched_cells(model, layout_id, px, py, odd):
     w, h = model.cells
     tops = cell_heights(model)
     chosen = _cell_grounds(model, layout_id, px, py)
-    return {(i, j) for (i, j) in odd if (i, j) not in chosen
+    bare = getattr(model, "bare", set())     # the relief's, drawn less the house
+    return {(i, j) for (i, j) in odd if (i, j) not in chosen and (i, j) not in bare
             and (tops[j * w + i] == 0 or layout_id in model.spec.get("patch_all", ()))}
 
 
@@ -3493,7 +3589,8 @@ def find_placements(model, layouts_json):
                 if model.spec.get("patch_cells"):
                     # cells whose map paint shows round the model (the sea
                     # behind the Space Center's rocket): laid flat on them
-                    odd = sorted(set(odd) | set(model.spec["patch_cells"]))
+                    odd = sorted(set(odd) | (set(model.spec["patch_cells"])
+                                             & (model.owned - getattr(model, "bare", set()))))
                     model.spec.setdefault("patch_all", set()).add(entry["id"])
                 if model.spec.get("patch_own"):
                     odd = sorted(model.owned)
@@ -3555,13 +3652,45 @@ def _layout_art(layout_id):
 
 
 _LAYOUT_ART = {}
+_SIGN_METATILES = {}    # layout id -> metatiles a signpost is drawn on (_sign_metatiles)
+_MAP_EVENTS = None
+
+
+def _sign_metatiles(layout_id):
+    """The metatiles of a layout whose upper layer is a signpost's drawing
+    (voxel_sign.c models it): a sign's own cell, and the cell north of it
+    when the sign's head tops a wall there. Read once per layout."""
+    if layout_id not in _SIGN_METATILES:
+        if _MAP_EVENTS is None:
+            globals()["_MAP_EVENTS"] = vc.MapEvents()
+        entry = next(e for e in vc.load_layouts() if e.get("id") == layout_id)
+        layout = vc.Layout(entry, _MAP_EVENTS)
+        pair = vc.pair_for(layout.primary, layout.secondary)
+        found = set()
+        for y in range(layout.h):
+            for x in range(layout.w):
+                if layout.role_at(x, y) != "signpost":
+                    continue
+                m = layout.metatile(x, y)
+                if layout.draws_post_sign(m):
+                    found.add(m)
+                _, head, head_ground, _ = gen_voxel_sign_masks.sign_record(layout, pair, x, y)
+                if any(head) and head_ground == layout.metatile(x, y - 1):
+                    found.add(head_ground)      # a head on a blocked cell: all of its upper layer
+        _SIGN_METATILES[layout_id] = found
+    return _SIGN_METATILES[layout_id]
 
 
 def same_building_pixels(model, layout_id, metatile, i, j):
-    """Does `metatile` draw every pixel the model owns in its cell (i, j)?"""
+    """Does `metatile` draw every pixel the model owns in its cell (i, j)?
+
+    A sign drawn on its upper layer is the signpost's (voxel_sign.c), which
+    stands in front of the building with its own height: only the lower
+    layer is asked of it. Lavaridge's gym sign tops the gym's corner."""
     if layout_id not in _LAYOUT_ART:
         _LAYOUT_ART[layout_id] = vb.LayoutArt(layout_id)
-    ipx = _LAYOUT_ART[layout_id].cell_image(metatile).load()
+    layers = (0,) if metatile in _sign_metatiles(layout_id) else (0, 1)
+    ipx = _LAYOUT_ART[layout_id].cell_image(metatile, layers).load()
     apx = model.art.load()
     owned = 0
     for y in range(16):
@@ -4429,7 +4558,7 @@ def export(models, path):
     variants = ground_variants(models, layouts_json)
     index_of = {e.get("id"): k + 1 for k, e in enumerate(layouts_json)}
     decks = sorted((index_of[lid], y, x, top, bottom, gate)
-                   for (lid, x, y, top, bottom, gate) in voxel_bridge.deck_table())
+                   for (lid, x, y, top, bottom, gate) in voxel_bridge.deck_table() + voxel_fortree.deck_table())
     head = MAGIC + struct.pack("<HHHHHHIHHHH", len(pages), len(models), len(page_models),
                                len(placements), len(heights), len(masks), nverts,
                                len(variants), len(decks), len(conditions), 0)
@@ -4480,7 +4609,8 @@ def export(models, path):
 def ground_variants(models, layouts_json):
     """[(layout, metatile, quarters)]: every metatile a model found by its
     tiles (prop_specs) stands on, less the quarters of its upper layer the
-    model stands for. The console composes each in an atlas slot of its own
+    model stands for, and every bare cell of a relief_bare model less its
+    upper layer's quarters (bare_quarters). The console composes each in an atlas slot of its own
     and draws it under the model, so that the cell's drawing - its animated
     water - lies there without the rock painted flat on it. Any other copy
     of the metatile keeps its whole drawing."""
@@ -4489,7 +4619,11 @@ def ground_variants(models, layouts_json):
     blocks_of = {}
     out = {}
     for m in models:
-        for (lid, px, py) in m.spec.get("at", ()):
+        at = list(m.spec.get("at", ()))
+        if getattr(m, "bare", None):
+            # a relief_bare model's bare cells, wherever it stands
+            at += [(name, px, py) for (_, px, py, _, name, _) in find_placements(m, layouts_json)]
+        for (lid, px, py) in at:
             e = entry_of[lid]
             if lid not in blocks_of:
                 blocks_of[lid] = vb.read_u16(os.path.join(vb.ROOT, e["blockdata_filepath"]))

@@ -384,6 +384,16 @@ void CtrCentredBlender_SetVBlankCallback(IntrCallback callback)
     SetCentredCallback(callback, CTR_CENTRED_BLENDER);
 }
 
+void CtrCentredRoulette_SetVBlankCallback(IntrCallback callback)
+{
+    SetCentredCallback(callback, CTR_CENTRED_ROULETTE);
+}
+
+void CtrCentredSlots_SetVBlankCallback(IntrCallback callback)
+{
+    SetCentredCallback(callback, CTR_CENTRED_SLOTS);
+}
+
 /* trade.c: the trade menu's VBlank callback; the trade's is the other. */
 IntrCallback CtrTrade_MenuVBlankCallback(void);
 

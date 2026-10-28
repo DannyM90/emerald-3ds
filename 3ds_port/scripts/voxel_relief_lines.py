@@ -49,7 +49,7 @@ from PIL import Image  # noqa: E402
 
 GRID = 64                      # tests/voxel_mesh_dump.c: the virtual atlas
 METATILE_REAL = 1024           # voxel_atlas.h
-VARIANTS = 128
+VARIANTS = 160
 CUT_FIRST = METATILE_REAL + VARIANTS
 DUMP = os.path.join(PORT, "build", "voxel_mesh_dump.exe")
 RELIEF = os.path.join(PORT, "romfs", "voxel", "relief.bin")

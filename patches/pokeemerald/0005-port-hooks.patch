@@ -1224,6 +1224,54 @@ index f7bc6e31ae710b1a6dd6bc65650b72cf6408fb62..faa5c2c3c90bd516d4811045fb771073
              }
          }
          else
+diff --git a/src/battle_anim_rock.c b/src/battle_anim_rock.c
+index 376edfc0ebce4e12f7349ec5334e354d1796ead9..d780d8146844b0973ad9e3df72c89f22f1b5dba7 100644
+--- a/src/battle_anim_rock.c
++++ b/src/battle_anim_rock.c
+@@ -413,9 +413,16 @@ void AnimTask_LoadSandstormBackground(u8 taskId)
+     SetGpuReg(REG_OFFSET_BG1VOFS, gBattle_BG1_Y);
+ 
+     GetBattleAnimBg1Data(&animBg);
+-    AnimLoadCompressedBgGfx(animBg.bgId, gBattleAnimBgImage_Sandstorm, animBg.tilesOffset);
+-    AnimLoadCompressedBgTilemapHandleContest(&animBg, gBattleAnimBgTilemap_Sandstorm, FALSE);
+-    LoadCompressedPalette(gBattleAnimSpritePal_FlyingDirt, BG_PLTT_ID(animBg.paletteId), PLTT_SIZE_4BPP);
++#ifdef PLATFORM_3DS
++    // Over a voxel world blowing its own sandstorm: no picture, the sprites
++    // alone (3ds_video.c)
++    if (CtrBattle_Sandstorm() != CTR_SANDSTORM_NONE)
++#endif
++    {
++        AnimLoadCompressedBgGfx(animBg.bgId, gBattleAnimBgImage_Sandstorm, animBg.tilesOffset);
++        AnimLoadCompressedBgTilemapHandleContest(&animBg, gBattleAnimBgTilemap_Sandstorm, FALSE);
++        LoadCompressedPalette(gBattleAnimSpritePal_FlyingDirt, BG_PLTT_ID(animBg.paletteId), PLTT_SIZE_4BPP);
++    }
+ 
+     if (gBattleAnimArgs[0] && GetBattlerSide(gBattleAnimAttacker) != B_SIDE_PLAYER)
+         var0 = 1;
+@@ -428,12 +435,18 @@ static void AnimTask_LoadSandstormBackground_Step(u8 taskId)
+ {
+     struct BattleAnimBgData animBg;
+ 
+-    if (gTasks[taskId].data[0] == 0)
+-        gBattle_BG1_X += -6;
+-    else
+-        gBattle_BG1_X += 6;
++#ifdef PLATFORM_3DS
++    // Old 3DS: the sand held still, the scene composed once (3ds_video.c)
++    if (CtrBattle_Sandstorm() == CTR_SANDSTORM_BLOWN)
++#endif
++    {
++        if (gTasks[taskId].data[0] == 0)
++            gBattle_BG1_X += -6;
++        else
++            gBattle_BG1_X += 6;
+ 
+-    gBattle_BG1_Y += -1;
++        gBattle_BG1_Y += -1;
++    }
+ 
+     switch (gTasks[taskId].tState)
+     {
 diff --git a/src/battle_anim_throw.c b/src/battle_anim_throw.c
 old mode 100755
 new mode 100644
@@ -3187,7 +3235,7 @@ index 6a9b196440316b908c0045d3cae3d4c04d42a22f..157e87487e2120dcbffb58cc69bfed98
  
  static void TryUpdateBerryBlenderRecord(void)
 diff --git a/src/bg.c b/src/bg.c
-index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..f223de32bb398be8c65485fd201431db284d5c6d 100644
+index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..0c1d772f6a05868dcd56875d654c432a9863eb9f 100644
 --- a/src/bg.c
 +++ b/src/bg.c
 @@ -2,6 +2,14 @@
@@ -3205,18 +3253,19 @@ index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..f223de32bb398be8c65485fd201431db
  #include "gpu_regs.h"
  
  #define DISPCNT_ALL_BG_AND_MODE_BITS    (DISPCNT_BG_ALL_ON | 0x7)
-@@ -190,6 +198,10 @@ u8 LoadBgVram(u8 bg, const void *src, u16 size, u16 destOffset, u8 mode)
-     case 0x2:
-         offset = sGpuBgConfigs.configs[bg].mapBaseIndex * BG_SCREEN_SIZE;
-         offset = destOffset + offset;
-+#ifdef PLATFORM_3DS
-+        // The banks of the field's cells go with its tilemap (3ds_tile_banks.h).
-+        CtrVideo_TilemapRequested(offset, src, size);
-+#endif
+@@ -193,6 +201,11 @@ u8 LoadBgVram(u8 bg, const void *src, u16 size, u16 destOffset, u8 mode)
          cursor = RequestDma3Copy(src, (void *)(offset + BG_VRAM), size, 0);
          if (cursor == -1)
              return -1;
-@@ -441,6 +453,19 @@ bool8 IsDma3ManagerBusyWithBgCopy(void)
++#ifdef PLATFORM_3DS
++        // The banks of the field's cells go with its tilemap (3ds_tile_banks.h),
++        // once the copy is on its way: a full queue leaves VRAM as it was.
++        CtrVideo_TilemapRequested(offset, src, size);
++#endif
+         break;
+     default:
+         cursor = -1;
+@@ -441,6 +454,19 @@ bool8 IsDma3ManagerBusyWithBgCopy(void)
  {
      int i;
  
@@ -3236,7 +3285,7 @@ index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..f223de32bb398be8c65485fd201431db
      for (i = 0; i < 0x80; i++)
      {
          u8 div = i / 0x20;
-@@ -451,6 +476,10 @@ bool8 IsDma3ManagerBusyWithBgCopy(void)
+@@ -451,6 +477,10 @@ bool8 IsDma3ManagerBusyWithBgCopy(void)
              s8 reqSpace = CheckForSpaceForDma3Request(i);
              if (reqSpace == -1)
              {
@@ -3247,7 +3296,7 @@ index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..f223de32bb398be8c65485fd201431db
                  return TRUE;
              }
  
-@@ -875,6 +904,10 @@ void CopyToBgTilemapBuffer(u8 bg, const void *src, u16 mode, u16 destOffset)
+@@ -875,6 +905,10 @@ void CopyToBgTilemapBuffer(u8 bg, const void *src, u16 mode, u16 destOffset)
  {
      if (!IsInvalidBg32(bg) && !IsTileMapOutsideWram(bg))
      {
@@ -3258,7 +3307,7 @@ index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..f223de32bb398be8c65485fd201431db
          if (mode != 0)
              CpuCopy16(src, (void *)(sGpuBgConfigs2[bg].tilemap + (destOffset * 2)), mode);
          else
-@@ -912,6 +945,9 @@ void CopyToBgTilemapBufferRect(u8 bg, const void *src, u8 destX, u8 destY, u8 wi
+@@ -912,6 +946,9 @@ void CopyToBgTilemapBufferRect(u8 bg, const void *src, u8 destX, u8 destY, u8 wi
  
      if (!IsInvalidBg32(bg) && !IsTileMapOutsideWram(bg))
      {
@@ -3268,7 +3317,7 @@ index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..f223de32bb398be8c65485fd201431db
          switch (GetBgType(bg))
          {
          case BG_TYPE_NORMAL:
-@@ -957,6 +993,9 @@ void CopyRectToBgTilemapBufferRect(u8 bg, const void *src, u8 srcX, u8 srcY, u8
+@@ -957,6 +994,9 @@ void CopyRectToBgTilemapBufferRect(u8 bg, const void *src, u8 srcX, u8 srcY, u8
  
      if (!IsInvalidBg32(bg) && !IsTileMapOutsideWram(bg))
      {
@@ -3278,7 +3327,7 @@ index 6264a1e426e753aeb8cddd86b2f062fbc565ed95..f223de32bb398be8c65485fd201431db
          screenSize = GetBgControlAttribute(bg, BG_CTRL_ATTR_SCREENSIZE);
          screenWidth = GetBgMetricTextMode(bg, 0x1) * 0x20;
          screenHeight = GetBgMetricTextMode(bg, 0x2) * 0x20;
-@@ -1238,10 +1277,9 @@ bool32 IsInvalidBg32(u8 bg)
+@@ -1238,10 +1278,9 @@ bool32 IsInvalidBg32(u8 bg)
  
  bool32 IsTileMapOutsideWram(u8 bg)
  {
@@ -4476,7 +4525,7 @@ index f09425720ab4ceb002215d1d01c27b5f3d365369..32e5800a8c110aa2b0d251548cc6e7a5
      }
  }
 diff --git a/src/field_camera.c b/src/field_camera.c
-index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..9fcd384bf4fd6ae2aed97261f87ce8d93f793732 100644
+index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..fa5a7db2185da55d8c92d458836d131131019f1b 100644
 --- a/src/field_camera.c
 +++ b/src/field_camera.c
 @@ -12,29 +12,81 @@
@@ -4610,7 +4659,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..9fcd384bf4fd6ae2aed97261f87ce8d9
  
      SetGpuReg(REG_OFFSET_BG1HOFS, r5);
      SetGpuReg(REG_OFFSET_BG1VOFS, r4);
-@@ -87,39 +157,310 @@ void FieldUpdateBgTilemapScroll(void)
+@@ -87,39 +157,314 @@ void FieldUpdateBgTilemapScroll(void)
  
  void GetCameraOffsetWithPan(s16 *x, s16 *y)
  {
@@ -4804,6 +4853,10 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..9fcd384bf4fd6ae2aed97261f87ce8d9
 +    {MAP_LILYCOVE_CITY, EDGE_N},
 +    {MAP_MAUVILLE_CITY, EDGE_N},
 +    {MAP_ROUTE118,      EDGE_N},
++    {MAP_SOOTOPOLIS_CITY, EDGE_W | EDGE_E | EDGE_N | EDGE_S},
++    {MAP_VERDANTURF_TOWN, EDGE_W | EDGE_N},
++    {MAP_JAGGED_PASS,   EDGE_W | EDGE_E | EDGE_N | EDGE_S},
++    {MAP_ROUTE110,      EDGE_W},
 +};
 +
 +#undef EDGE_W
@@ -4936,7 +4989,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..9fcd384bf4fd6ae2aed97261f87ce8d9
  static void RedrawMapSlicesForCameraUpdate(struct FieldCameraOffset *cameraOffset, int x, int y)
  {
      const struct MapLayout *mapLayout = gMapHeader.mapLayout;
-@@ -137,69 +478,54 @@ static void RedrawMapSlicesForCameraUpdate(struct FieldCameraOffset *cameraOffse
+@@ -137,69 +482,54 @@ static void RedrawMapSlicesForCameraUpdate(struct FieldCameraOffset *cameraOffse
  
  static void RedrawMapSliceNorth(struct FieldCameraOffset *cameraOffset, const struct MapLayout *mapLayout)
  {
@@ -5035,7 +5088,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..9fcd384bf4fd6ae2aed97261f87ce8d9
  
  void CurrentMapDrawMetatileAt(int x, int y)
  {
-@@ -225,11 +551,30 @@ void DrawDoorMetatileAt(int x, int y, u16 *tiles)
+@@ -225,11 +555,30 @@ void DrawDoorMetatileAt(int x, int y, u16 *tiles)
  
  static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x, int y)
  {
@@ -5066,7 +5119,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..9fcd384bf4fd6ae2aed97261f87ce8d9
      if (metatileId < NUM_METATILES_IN_PRIMARY)
      {
          metatiles = mapLayout->primaryTileset->metatiles;
-@@ -239,7 +584,54 @@ static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x,
+@@ -239,7 +588,54 @@ static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x,
          metatiles = mapLayout->secondaryTileset->metatiles;
          metatileId -= NUM_METATILES_IN_PRIMARY;
      }
@@ -5121,7 +5174,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..9fcd384bf4fd6ae2aed97261f87ce8d9
  }
  
  static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
-@@ -304,20 +696,59 @@ static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
+@@ -304,20 +700,59 @@ static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
          gOverworldTilemapBuffer_Bg1[offset + 0x21] = tiles[7];
          break;
      }
@@ -5184,7 +5237,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..9fcd384bf4fd6ae2aed97261f87ce8d9
  
      y = (y - gSaveBlock1Ptr->pos.y) * 2;
      if (y >= 32 || y < 0)
-@@ -325,7 +756,12 @@ static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *cameraOffset, s32 x
+@@ -325,7 +760,12 @@ static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *cameraOffset, s32 x
      y = y + cameraOffset->yTileOffset;
      if (y >= 32)
          y -= 32;
@@ -5197,7 +5250,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..9fcd384bf4fd6ae2aed97261f87ce8d9
      return y * 32 + x;
  }
  
-@@ -400,9 +836,9 @@ void CameraUpdate(void)
+@@ -400,9 +840,9 @@ void CameraUpdate(void)
      if (curMovementOffsetY != 0 && curMovementOffsetY == -movementSpeedY)
      {
          if (movementSpeedY > 0)
@@ -5209,7 +5262,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..9fcd384bf4fd6ae2aed97261f87ce8d9
      }
  
      gFieldCamera.x += movementSpeedX;
-@@ -417,10 +853,40 @@ void CameraUpdate(void)
+@@ -417,10 +857,40 @@ void CameraUpdate(void)
          RotatingGatePuzzleCameraUpdate(deltaX, deltaY);
          SetBerryTreesSeen();
          AddCameraTileOffset(&sFieldCameraOffset, deltaX * 2, deltaY * 2);
@@ -5250,7 +5303,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..9fcd384bf4fd6ae2aed97261f87ce8d9
      gTotalCameraPixelOffsetX -= movementSpeedX;
      gTotalCameraPixelOffsetY -= movementSpeedY;
  }
-@@ -458,8 +924,15 @@ void UpdateCameraPanning(void)
+@@ -458,8 +928,15 @@ void UpdateCameraPanning(void)
      if (sFieldCameraPanningCallback != NULL)
          sFieldCameraPanningCallback();
      //Update sprite offset of overworld objects
@@ -6273,7 +6326,7 @@ index 10ce1bc37a9bdbd78c1601ca857fe67bf6fbac69..821dc7edce6e0b0262b8c72ac8f20a0e
 +}
 +#endif
 diff --git a/src/fieldmap.c b/src/fieldmap.c
-index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a54a8bfee5 100644
+index 97db758caac9fefa27d6c2809df48086dc4ef4e1..5ebd6a32c262d0f0f2ea30078992129341efd7d1 100644
 --- a/src/fieldmap.c
 +++ b/src/fieldmap.c
 @@ -6,6 +6,7 @@
@@ -6284,7 +6337,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
  #include "mirage_tower.h"
  #include "overworld.h"
  #include "palette.h"
-@@ -17,6 +18,21 @@
+@@ -17,6 +18,22 @@
  #include "constants/rgb.h"
  #include "constants/metatile_behaviors.h"
  
@@ -6294,6 +6347,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
 +#endif
 +#ifdef PLATFORM_3DS
 +#include "3ds_log.h"
++#include "3ds_platform.h"
 +#include "3ds_tile_banks.h"
 +#include "3ds_video.h"
 +#endif
@@ -6306,7 +6360,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
  struct ConnectionFlags
  {
      u8 south:1;
-@@ -48,16 +64,20 @@ static const struct MapConnection *GetIncomingConnection(u8 direction, int x, in
+@@ -48,16 +65,20 @@ static const struct MapConnection *GetIncomingConnection(u8 direction, int x, in
  static bool8 IsPosInIncomingConnectingMap(u8 direction, int x, int y, const struct MapConnection *connection);
  static bool8 IsCoordInIncomingConnectingMap(int coord, int srcMax, int destMax, int offset);
  
@@ -6337,7 +6391,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
  
  #define AreCoordsWithinMapGridBounds(x, y) (x >= 0 && x < gBackupMapLayout.width && y >= 0 && y < gBackupMapLayout.height)
  
-@@ -120,6 +140,11 @@ static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height)
+@@ -120,6 +141,11 @@ static void InitBackupMapLayoutData(const u16 *map, u16 width, u16 height)
  {
      u16 *dest;
      int y;
@@ -6349,7 +6403,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
      dest = gBackupMapLayout.map;
      dest += gBackupMapLayout.width * 7 + MAP_OFFSET;
      for (y = 0; y < height; y++)
-@@ -176,7 +201,11 @@ static void FillConnection(int x, int y, struct MapHeader const *connectedMapHea
+@@ -176,7 +202,11 @@ static void FillConnection(int x, int y, struct MapHeader const *connectedMapHea
      int mapWidth;
  
      mapWidth = connectedMapHeader->mapLayout->width;
@@ -6362,7 +6416,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
      dest = &gBackupMapLayout.map[gBackupMapLayout.width * y + x];
  
      for (i = 0; i < height; i++)
-@@ -362,9 +391,524 @@ u8 MapGridGetCollisionAt(int x, int y)
+@@ -362,9 +392,527 @@ u8 MapGridGetCollisionAt(int x, int y)
      return UNPACK_COLLISION(block);
  }
  
@@ -6643,6 +6697,8 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
 +    const void *tiles = tileset->tiles;
 +    void *decompressed = NULL;
 +    u32 size;
++    // Timed for the log: loaded in the field's frame, as the camera draws.
++    uint64_t started = CtrPlatform_Ticks();
 +
 +    if (!ReadTileBankPalettes(tileset, palettes))
 +        return;
@@ -6667,10 +6723,11 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
 +    }
 +    CtrVideo_SetTileBank(bank, tiles, size, palettes);
 +    sBankTilesets[bank] = tileset;
-+    CtrLog_Write(CTR_LOG_GAME, "2D tile bank %u: %lu bytes of tiles, for map %u/%u", bank, (unsigned long)size,
-+                 gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum);
 +    if (decompressed != NULL)
 +        Free(decompressed);
++    CtrLog_Write(CTR_LOG_GAME, "2D tile bank %u: %lu bytes of tiles, for map %u/%u, %.2f ms", bank, (unsigned long)size,
++                 gSaveBlock1Ptr->location.mapGroup, gSaveBlock1Ptr->location.mapNum,
++                 (double)CtrPlatform_TickMs(CtrPlatform_Ticks() - started));
 +}
 +
 +// Crossing into a map that a bank held: that bank is free from now on, and
@@ -6887,7 +6944,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
  
      if (block == MAPGRID_UNDEFINED)
          return UNPACK_METATILE(GetBorderBlockAt(x, y));
-@@ -375,6 +919,9 @@ u32 MapGridGetMetatileIdAt(int x, int y)
+@@ -375,6 +923,9 @@ u32 MapGridGetMetatileIdAt(int x, int y)
  u32 MapGridGetMetatileBehaviorAt(int x, int y)
  {
      u16 metatile = MapGridGetMetatileIdAt(x, y);
@@ -6897,7 +6954,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
      return UNPACK_BEHAVIOR(GetMetatileAttributesById(metatile));
  }
  
-@@ -412,11 +959,47 @@ u16 GetMetatileAttributesById(u16 metatile)
+@@ -412,11 +963,47 @@ u16 GetMetatileAttributesById(u16 metatile)
      if (metatile < NUM_METATILES_IN_PRIMARY)
      {
          attributes = gMapHeader.mapLayout->primaryTileset->metatileAttributes;
@@ -6945,7 +7002,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
          return attributes[metatile - NUM_METATILES_IN_PRIMARY];
      }
      else
-@@ -660,19 +1243,26 @@ bool8 CameraMove(int x, int y)
+@@ -660,19 +1247,26 @@ bool8 CameraMove(int x, int y)
      }
      else
      {
@@ -6972,7 +7029,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
      }
      return gCamera.active;
  }
-@@ -854,10 +1444,22 @@ static void CopyTilesetToVramUsingHeap(struct Tileset const *tileset, u16 numTil
+@@ -854,10 +1448,22 @@ static void CopyTilesetToVramUsingHeap(struct Tileset const *tileset, u16 numTil
  {
      if (tileset)
      {
@@ -6995,7 +7052,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
      }
  }
  
-@@ -878,20 +1480,53 @@ static void LoadTilesetPalette(struct Tileset const *tileset, u16 destOffset, u1
+@@ -878,20 +1484,53 @@ static void LoadTilesetPalette(struct Tileset const *tileset, u16 destOffset, u1
  
      if (tileset)
      {
@@ -7052,7 +7109,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..a448fff7e13954dbc783bd7c87dc97a5
              ApplyGlobalTintToPaletteEntries(destOffset, size >> 1);
          }
      }
-@@ -926,8 +1561,20 @@ void CopyMapTilesetsToVram(struct MapLayout const *mapLayout)
+@@ -926,8 +1565,20 @@ void CopyMapTilesetsToVram(struct MapLayout const *mapLayout)
  {
      if (mapLayout)
      {

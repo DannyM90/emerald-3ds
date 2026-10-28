@@ -124,9 +124,10 @@ always attach `web-manifest.json`. Consequences:
 - The direct download is the English `Emerald3DS.3dsx`. Players of another
   language check their own `emerald3ds.pak`: its header names the ROM it was
   built from, the site compares it with that language's `dataAbi` and offers
-  its executable (`Emerald3DS-es.3dsx`, `Emerald3DS-fr.3dsx`, `Emerald3DS-it.3dsx`
-  or `Emerald3DS-ja.3dsx`, saved as
-  `Emerald3DS.3dsx`).
+  its executable (`Emerald3DS-es.3dsx`, `Emerald3DS-fr.3dsx`, `Emerald3DS-it.3dsx`,
+  `Emerald3DS-de.3dsx`, `Emerald3DS-ja.3dsx` or `Emerald3DS-pt.3dsx`, saved as
+  `Emerald3DS.3dsx`). An English and a Portuguese pack come from the same ROM:
+  the site tells them apart by the pack's data ABI.
 
 ## Languages
 
@@ -135,11 +136,22 @@ The 3DS executable cannot be shared (the game data it links against differs
 in size between languages, so each has its own data ABI), but everything else
 is: `payload/` holds the English executable and recipe plus the voxel
 generators, and `payload/es/` (resp. `payload/fr/`, `payload/it/`,
-`payload/ja/`) the Spanish (resp. French, Italian, Japanese)
-executable and recipe. The builders
-(Windows and web) pick the variant whose recipe was made from the player's ROM;
-`web-manifest.json` describes the English one at its top level and the others
-in `variants` (a site that predates it ignores them and stays English-only).
+`payload/de/`, `payload/ja/`, `payload/pt/`) the Spanish (resp. French,
+Italian, German, Japanese, Brazilian Portuguese) executable and recipe. The
+builders (Windows and web) pick the variant whose recipe was made from the
+player's ROM; `web-manifest.json` describes the English one at its top level
+and the others in `variants` (a site that predates it ignores them and stays
+English-only).
+
+Portuguese has no cartridge: it is a fan translation built from the English
+ROM (docs/PORTUGUESE.md), so the English ROM makes two variants and only the
+game language the player chooses tells them apart. Its variant lists the
+English ROM with `"language": "pt"`; the manifest's `entrypoint.apiVersion`
+is 2, whose `run_web_build` takes that language as a sixth argument (the site
+asks for the language before the ROM). The Windows builder shows a *Game
+language* choice when the ROM makes more than one, and its command line takes
+`--language pt`. Without a language the ROM's own language is built (English
+for the English ROM), as before.
 
 `build_release.py --spanish-rom <clean BPES ROM> --french-rom <clean BPEF ROM>
 --italian-rom <clean BPEI ROM> --japanese-rom <clean BPEJ ROM>`
@@ -151,8 +163,25 @@ does not ignore) to `build/release-es` (resp. `build/release-fr`,
 `tools/localize_japanese.py` (docs/JAPANESE.md), builds the engine there and
 writes its recipe with the symbol names of `build/spanish-reference.s` (resp.
 `build/french-reference.s`, `build/italian-reference.s`,
-`build/japanese-reference.s`). Without these options the release is
-English-only, as before.
+`build/japanese-reference.s`). `--german-rom <clean BPED ROM>` adds German
+the same way (`build/release-de`, docs/GERMAN.md).
+
+`--portuguese` adds the Brazilian Portuguese translation: `build/release-pt`
+is localized with `tools/localize_portuguese.py` (the catalogs of
+`tools/locales/pt_br/`, no ROM), built with `PORT_LANG=pt_br`, and its recipe
+is made from the English ROM with the English game's ELF. The translated texts
+are in no ROM, so they are literals of that recipe; `gen_recipe.py
+--translation tools/locales/pt_br` encodes the catalog's texts as the game
+holds them and counts the literal bytes inside them as *translation* (the
+project's own writing, already published in `tools/locales/`) rather than
+unexplained (a whole short text, such as a 3-letter name, only where a
+string starts). A family of objects (`gEasyChatWordsByLetter_*`) holding, all
+together, only 16-bit values the original family holds, in another order,
+counts as *reordered*: the EASY CHAT word lists, sorted for the Portuguese
+words. Everything else stays held to `--max-literal` and
+`--max-game-literal`, so nothing of the game can hide behind the translation.
+
+Without these options the release is English-only, as before.
 
 ## Prerequisites (maintainer machine)
 
@@ -164,7 +193,7 @@ English-only, as before.
 
 - A tree from `tools/bootstrap.py --make` (or the maintainer's workspace).
 - The supported ROM, and, for each localized variant, that language's clean
-  ROM (BPES, BPEF, BPEI, BPEJ). The recipe generator also needs the ELF of the
+  ROM (BPES, BPEF, BPEI, BPED, BPEJ). Portuguese needs no other ROM. The recipe generator also needs the ELF of the
   original game built from the same
   pinned upstream (`make` in the upstream tree's root produces
   `pokeemerald.elf`): its symbol table says
@@ -187,7 +216,7 @@ environment, from scratch, on Linux, macOS or WSL with Docker:
 ```
 python tools/docker_release.py --rom baserom.gba \
     --spanish-rom esmeralda.gba --french-rom emeraude.gba --italian-rom smeraldo.gba \
-    --german-rom smaragd.gba --japanese-rom emerald-ja.gba --skip-cia
+    --german-rom smaragd.gba --japanese-rom emerald-ja.gba --portuguese --skip-cia
 ```
 
 - a fresh tree (`build/release-tree`, `tools/bootstrap.py`);
@@ -216,6 +245,7 @@ python tools/build_release.py --version 0.1.0 --rom baserom.gba \
     --spanish-rom esmeralda.gba \
     --french-rom emeraude.gba \
     --japanese-rom emerald-ja.gba \
+    --portuguese \
     --make "make -j8 PYTHON=python"
 ```
 

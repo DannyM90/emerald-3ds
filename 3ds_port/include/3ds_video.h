@@ -8,6 +8,12 @@
 bool CtrVideo_TryVoxelUpload(void);
 /* How many more uploads TryVoxelUpload would grant this frame. */
 unsigned CtrVideo_VoxelUploadsLeft(void);
+/* The same for the animated tiles' copies, from room of their own. */
+bool CtrVideo_TryVoxelAnimUpload(void);
+/* In a frame: GX_TextureCopy calls between these go behind one split of its
+ * command list, with no heap flush each (their sources flushed already). */
+void CtrVideo_CopiesBegin(void);
+void CtrVideo_CopiesEnd(void);
 
 #define CTR_GAME_WIDTH 400
 #define CTR_GAME_HEIGHT 240
@@ -188,7 +194,7 @@ enum
     CTR_CENTRED_NONE,
     /* The fly map, the Town Map, the OPTION screen, and the others with
      * nothing of their own (ctr_gba_centred.h's default: contests,
-     * minigames, the slot machine). */
+     * minigames). */
     CTR_CENTRED_PLAIN,
     /* The title menu and the professor's speech. */
     CTR_CENTRED_MAIN_MENU,
@@ -248,6 +254,11 @@ enum
     /* The trainer card from the field (the classic menus): in the bottom
      * screen's window as the PokéNav. */
     CTR_CENTRED_CARD,
+    /* The Game Corner's roulette: its wheel, an affine layer that does not
+     * wrap, whole past the picture's left edge and only once. */
+    CTR_CENTRED_ROULETTE,
+    /* The Game Corner's slot machine, set in the casino's wall. */
+    CTR_CENTRED_SLOTS,
     CTR_CENTRED_SCREENS
 };
 void CtrVideo_SetCentred(unsigned screen);

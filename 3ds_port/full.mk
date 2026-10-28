@@ -218,6 +218,8 @@ build/root/src/wallclock.o: FULLCFLAGS += -DCTR_CENTRED_CLOCK
 build/root/src/starter_choose.o: FULLCFLAGS += -DCTR_CENTRED_STARTER
 build/root/src/shop.o: FULLCFLAGS += -DCTR_CENTRED_SHOP
 build/root/src/berry_blender.o: FULLCFLAGS += -DCTR_CENTRED_BLENDER
+build/root/src/roulette.o: FULLCFLAGS += -DCTR_CENTRED_ROULETTE
+build/root/src/slot_machine.o: FULLCFLAGS += -DCTR_CENTRED_SLOTS
 # On the bottom screen, as the PC's boxes it is mostly opened from.
 build/root/src/pokemon_summary_screen.o: FULLCFLAGS += -DCTR_CENTRED_SUMMARY
 # The PokéNav: every screen of it laid out for the GBA screen, shown whole on
@@ -495,7 +497,10 @@ romfs/voxel/signposts.bin: scripts/gen_voxel_sign_masks.py scripts/voxel_sign_ma
 
 romfs/voxel/trees.rgba5551: scripts/gen_voxel_trees.py \
 		assets/voxel/trees/tree_crown.png assets/voxel/trees/tree_trunk.png \
-		assets/voxel/trees/tree_small_crown.png assets/voxel/trees/tree_small_trunk.png 		assets/voxel/trees/tree_2_small_crown.png assets/voxel/trees/tree_2_small_trunk.png 		assets/voxel/trees/tree_small_trunk_jungle.png assets/voxel/trees/tree_small_trunk_grass_road.png 		assets/voxel/trees/tree_small_trunk_volcan.png assets/voxel/trees/tree_crown_base_floor.png 		assets/voxel/trees/tree_crown_base.png assets/voxel/trees/tree_crown_base_open.png
+		assets/voxel/trees/tree_small_crown.png assets/voxel/trees/tree_small_trunk.png 		assets/voxel/trees/tree_2_small_crown.png assets/voxel/trees/tree_2_small_trunk.png 		assets/voxel/trees/tree_small_trunk_jungle.png assets/voxel/trees/tree_small_trunk_grass_road.png 		assets/voxel/trees/tree_small_trunk_volcan.png assets/voxel/trees/tree_crown_base_floor.png 		assets/voxel/trees/tree_crown_base.png assets/voxel/trees/tree_crown_base_open.png \
+		assets/voxel/trees/tree_crown_mossdeep.png assets/voxel/trees/tree_base_mossdeep.png \
+		assets/voxel/trees/tree_base_water_mossdeep.png assets/voxel/trees/tree_north_crown.png \
+		assets/voxel/trees/tree_north_base_rock.png assets/voxel/trees/tree_north_base_ash.png
 	@mkdir -p $(@D)
 	"$(PYTHON)" scripts/gen_voxel_trees.py --output $@
 
@@ -510,7 +515,7 @@ romfs/voxel/trees.rgba5551: scripts/gen_voxel_trees.py \
 # verify-voxel-buildings runs the proofs alone, even when the file is
 # up to date: the release build asks for it.
 romfs/voxel/buildings.bin: scripts/gen_voxel_buildings.py scripts/voxel_building.py scripts/voxel_night.py \
-		scripts/voxel_building_specs.py scripts/voxel_bridge.py scripts/dump_region_art.py scripts/voxel_props.py \
+		scripts/voxel_building_specs.py scripts/voxel_bridge.py scripts/voxel_fence.py scripts/voxel_fortree.py scripts/dump_region_art.py scripts/voxel_props.py \
 		scripts/voxel_relief_fixes.py assets/voxel/relief_fixes.json \
 		scripts/gen_voxel_relief.py \
 		scripts/voxel_defect_scan.py assets/voxel/interior_lint_allow.toml \
@@ -760,6 +765,25 @@ verify-voxel-interior-lint:
 	"$(PYTHON)" -B tests/voxel_interior_lint_test.py
 	"$(PYTHON)" -B tests/voxel_interior_parts_test.py
 	"$(PYTHON)" -B tests/voxel_building_crop_test.py
+
+# The fences built post by post (scripts/voxel_fence.py): every metatile a
+# map draws a fence post's cap or a log's cut face with is a posts spec's,
+# the posts and logs stand as tall as their drawing, every block of every
+# run is exact at 45 degrees, and the Battle Pyramid and Dome leave their
+# fences to them.
+.PHONY: verify-voxel-fences
+verify: verify-voxel-fences
+verify-voxel-fences:
+	"$(PYTHON)" -B tests/voxel_fence_test.py
+
+# The Battle Frontier's outside (voxel_building_specs.py, voxel_props.py):
+# every flag a card whose cloth plays the game's animation, the East's houses,
+# the halls, arches and flowerbeds, the Pike's tail apart, all exact at 45
+# degrees.
+.PHONY: verify-voxel-frontier
+verify: verify-voxel-frontier
+verify-voxel-frontier:
+	"$(PYTHON)" -B tests/voxel_frontier_test.py
 
 # The hand marks over the terraces (voxel_terraces.py "7. hand marks", the
 # editor's mountain page): the piece a level gives, the runs, the ledges.

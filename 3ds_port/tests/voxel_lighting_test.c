@@ -36,6 +36,8 @@ const struct Tileset gTileset_Rustboro = {0};
 const struct Tileset gTileset_Lilycove = {0};
 const struct Tileset gTileset_EverGrande = {0};
 const struct Tileset gTileset_BattleFrontierOutsideWest = {0};
+const struct Tileset gTileset_Mossdeep = {0};
+const struct Tileset gTileset_Fallarbor = {0};
 
 unsigned VoxelWorld_InstanceCount(void) { return 2; }
 const VoxelMapInstance *VoxelWorld_Instance(unsigned i) { return i < 2 ? &sMaps[i] : NULL; }
@@ -83,6 +85,11 @@ bool VoxelBuildings_CellAt(const VoxelMapInstance *inst, int x, int y,
     if (groundMetatile != NULL) *groundMetatile = 1;
     if (top != NULL) *top = HOUSE_TOP;
     return true;
+}
+bool VoxelBuildings_BareVariant(const VoxelMapInstance *inst, int x, int y, int *metatile)
+{
+    (void)inst; (void)x; (void)y; (void)metatile;
+    return false;
 }
 const uint16_t *VoxelBuildings_Footprint(const VoxelMapInstance *inst, int x, int y)
 {

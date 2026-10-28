@@ -19,7 +19,13 @@ SOURCES = (("tree_crown.png", (32, 36), (0, 0)),
            ("tree_small_trunk_volcan.png", (16, 16), (64, 32)),
            ("tree_crown_base_floor.png", (32, 32), (96, 0)),
            ("tree_crown_base.png", (32, 32), (0, 64)),
-           ("tree_crown_base_open.png", (32, 32), (32, 64)))
+           ("tree_crown_base_open.png", (32, 32), (32, 64)),
+           ("tree_crown_mossdeep.png", (32, 32), (64, 64)),
+           ("tree_north_crown.png", (32, 32), (96, 64)),
+           ("tree_base_mossdeep.png", (32, 16), (64, 96)),
+           ("tree_base_water_mossdeep.png", (32, 16), (96, 96)),
+           ("tree_north_base_rock.png", (32, 16), (0, 96)),
+           ("tree_north_base_ash.png", (32, 16), (32, 96)))
 
 
 def texel_offset(x, y):

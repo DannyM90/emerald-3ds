@@ -1513,7 +1513,7 @@ static int TextLinesBy(const u8 *str, int x, int y, int w, int lineH, int max, c
             }
             if (g == CHAR_SPACE)
                 space = at;
-            thin += narrow->widths[g];
+            thin += GlyphWidth(narrow, g);
             if (thin > w && space)
             {
                 end = space;

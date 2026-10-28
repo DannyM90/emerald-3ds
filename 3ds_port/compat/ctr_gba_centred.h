@@ -48,6 +48,10 @@
 #define SetVBlankCallback CtrCentredTrade_SetVBlankCallback
 #elif defined(CTR_CENTRED_BLENDER)
 #define SetVBlankCallback CtrCentredBlender_SetVBlankCallback
+#elif defined(CTR_CENTRED_ROULETTE)
+#define SetVBlankCallback CtrCentredRoulette_SetVBlankCallback
+#elif defined(CTR_CENTRED_SLOTS)
+#define SetVBlankCallback CtrCentredSlots_SetVBlankCallback
 #elif defined(CTR_CENTRED_CARD)
 #define SetVBlankCallback CtrCentredCard_SetVBlankCallback
 #else
