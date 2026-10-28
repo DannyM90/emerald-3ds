@@ -9,6 +9,9 @@ paths = [
     "tools/locales/italian-symbols.s.gz",
     "tools/locales/german-symbols.s.gz",
     "tools/locales/japanese-symbols.s.gz",
+    # The mountains' relief marked by hand in the voxel editor: JSON of cell
+    # levels and shapes, the port's own data.
+    "3ds_port/assets/voxel/relief_fixes.json",
     "Emerald3DS-v*-Windows/Emerald3DS-Builder.exe",
     "Emerald3DS-v*-Windows/emerald3ds-builder-cli.exe",
     "Emerald3DS-v*-Windows/payload/Emerald3DS.3dsx",
@@ -41,6 +44,12 @@ paths = [
 "3ds_port/assets/voxel/trees/tree_crown_base.png" = "original art by the Emerald 3DS author"
 "3ds_port/assets/voxel/trees/tree_crown_base_floor.png" = "original art by the Emerald 3DS author"
 "3ds_port/assets/voxel/trees/tree_crown_base_open.png" = "original art by the Emerald 3DS author"
+"3ds_port/assets/voxel/trees/tree_base_mossdeep.png" = "original art by the Emerald 3DS author"
+"3ds_port/assets/voxel/trees/tree_base_water_mossdeep.png" = "original art by the Emerald 3DS author"
+"3ds_port/assets/voxel/trees/tree_crown_mossdeep.png" = "original art by the Emerald 3DS author"
+"3ds_port/assets/voxel/trees/tree_north_base_ash.png" = "original art by the Emerald 3DS author"
+"3ds_port/assets/voxel/trees/tree_north_base_rock.png" = "original art by the Emerald 3DS author"
+"3ds_port/assets/voxel/trees/tree_north_crown.png" = "original art by the Emerald 3DS author"
 "3ds_port/assets/artwork/icon.png" = "HOME Menu icon of the forwarder CIA, made by the Emerald 3DS author"
 "3ds_port/assets/artwork/banner.png" = "HOME Menu banner of the forwarder CIA, made by the Emerald 3DS author"
 "3ds_port/assets/artwork/banner-sound.wav" = "HOME Menu banner jingle of the forwarder CIA, made by the Emerald 3DS author"

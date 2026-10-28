@@ -24,6 +24,8 @@ const struct Tileset gTileset_Rustboro = {0};
 const struct Tileset gTileset_Lilycove = {0};
 const struct Tileset gTileset_EverGrande = {0};
 const struct Tileset gTileset_BattleFrontierOutsideWest = {0};
+const struct Tileset gTileset_Mossdeep = {0};
+const struct Tileset gTileset_Fallarbor = {0};
 
 static VoxelMapInstance sMap={.layoutId=1,.width=8,.height=8};
 static VoxelAtlasMap sAtlas;

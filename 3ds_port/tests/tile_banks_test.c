@@ -91,9 +91,50 @@ static void ResolveTests(void)
     puts("PASS tile banks: a banked entry's tile and palette, and the entries that keep their own");
 }
 
+/* The table of banked tilemaps through Route 111 with the Mirage Tower: in by
+ * a warp the field's buffers land past the tower's (B), out by another warp
+ * the heap is reset without unregistering and they are back where they were
+ * (A). Each row of banks must find its slot again. */
+static void SourceSlotTests(void)
+{
+    static uint8_t rows[3][4];
+    static char a[3], b[3];
+    const void *buffers[3] = {NULL, NULL, NULL};
+    const uint8_t *banks[3] = {NULL, NULL, NULL};
+
+#define REGISTER(set)                                                                       \
+    for (unsigned bg = 0; bg < 3; ++bg)                                                     \
+    {                                                                                       \
+        unsigned slot = CtrTileBank_SourceSlot(buffers, banks, 3, &(set)[bg], rows[bg]);    \
+        assert(slot < 3);                                                                   \
+        buffers[slot] = &(set)[bg];                                                         \
+        banks[slot] = rows[bg];                                                             \
+    }
+    REGISTER(a);
+    REGISTER(b);
+    REGISTER(a);
+#undef REGISTER
+    for (unsigned bg = 0; bg < 3; ++bg)
+    {
+        unsigned found = 3;
+
+        for (unsigned i = 0; i < 3; ++i)
+            if (buffers[i] == &a[bg]) found = i;
+        assert(found < 3 && banks[found] == rows[bg]);
+    }
+
+    /* A tilemap of another screen with no row there yet: a free slot, else none. */
+    buffers[1] = NULL;
+    assert(CtrTileBank_SourceSlot(buffers, banks, 3, &b[0], (const uint8_t *)&b[1]) == 1);
+    buffers[1] = &a[1];
+    assert(CtrTileBank_SourceSlot(buffers, banks, 3, &b[0], (const uint8_t *)&b[1]) == 3);
+    printf("PASS tile banks: each row of banks keeps its slot when the field's buffers move\n");
+}
+
 int main(void)
 {
     LutTests();
     ResolveTests();
+    SourceSlotTests();
     return 0;
 }

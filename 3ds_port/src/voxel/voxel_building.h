@@ -95,6 +95,14 @@ float VoxelBuildings_LayoutTop(const VoxelMapInstance *inst);
  */
 bool VoxelBuildings_CellAt(const VoxelMapInstance *inst, int x, int y,
                            int *groundMetatile, float *top);
+/*
+ * A cell of a model it stands over nothing of, whose drawing carries the
+ * model on its upper layer (a Sootopolis house's roof over the face of the
+ * terrace behind it: scripts/gen_voxel_buildings.py bare_quarters): the
+ * ground variant of the cell's own metatile less those quarters. The
+ * relief stays there, drawn with it.
+ */
+bool VoxelBuildings_BareVariant(const VoxelMapInstance *inst, int x, int y, int *metatile);
 
 /*
  * A bridge's deck (voxel_bridge.py): whoever stands at world (x, z) of

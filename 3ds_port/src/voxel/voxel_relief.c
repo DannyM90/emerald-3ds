@@ -170,6 +170,8 @@ static uint32_t U32(const uint8_t *p)
          | ((uint32_t)p[3] << 24);
 }
 
+static void ForgetSeams(void);
+
 bool VoxelRelief_Init(void)
 {
     FILE *file;
@@ -330,6 +332,7 @@ void VoxelRelief_Shutdown(void)
     }
     memset(sFindMemo, 0, sizeof(sFindMemo));
     memset(sCutMemo, 0, sizeof(sCutMemo));
+    ForgetSeams();
     free(sLayouts);
     free(sLayoutIndex);
     sLayoutIndex = NULL;
@@ -704,7 +707,62 @@ float VoxelRelief_Base(const VoxelMapInstance *inst)
  */
 #define SEAM_CELLS_MAX 256
 
+/*
+ * Kept, as the relief it is read from never changes: the world is placed
+ * again every frame (voxel_world.c BuildInstances), and its seams measured
+ * with it took 2-3 ms of every frame round Route 110's eleven maps on an Old
+ * 3DS, before the GPU could start (port.log, 2026-10-26: "VOXEL world parts
+ * ... instances 2.92"). A seam is the two layouts, their sizes and where one
+ * stands from the other.
+ */
+#define SEAM_MEMO 256u
+
+static struct
+{
+    bool used;
+    uint16_t layoutA, layoutB;
+    int16_t dx, dy, widthA, heightA, widthB, heightB;
+    int step;
+} sSeamMemo[SEAM_MEMO];
+
+static int SeamStepOf(const VoxelMapInstance *a, const VoxelMapInstance *b);
+
+static void ForgetSeams(void)
+{
+    memset(sSeamMemo, 0, sizeof(sSeamMemo));
+}
+
 int VoxelRelief_SeamStep(const VoxelMapInstance *a, const VoxelMapInstance *b)
+{
+    int dx, dy;
+    unsigned key;
+
+    if (a == NULL || b == NULL)
+        return 0;
+    dx = b->originX - a->originX;
+    dy = b->originY - a->originY;
+    key = ((unsigned)a->layoutId * 73856093u ^ (unsigned)b->layoutId * 19349663u
+         ^ (unsigned)dx * 83492791u ^ (unsigned)dy * 2654435761u) % SEAM_MEMO;
+    if (!sSeamMemo[key].used || sSeamMemo[key].layoutA != a->layoutId
+     || sSeamMemo[key].layoutB != b->layoutId || sSeamMemo[key].dx != dx || sSeamMemo[key].dy != dy
+     || sSeamMemo[key].widthA != a->width || sSeamMemo[key].heightA != a->height
+     || sSeamMemo[key].widthB != b->width || sSeamMemo[key].heightB != b->height)
+    {
+        sSeamMemo[key].used = true;
+        sSeamMemo[key].layoutA = (uint16_t)a->layoutId;
+        sSeamMemo[key].layoutB = (uint16_t)b->layoutId;
+        sSeamMemo[key].dx = (int16_t)dx;
+        sSeamMemo[key].dy = (int16_t)dy;
+        sSeamMemo[key].widthA = (int16_t)a->width;
+        sSeamMemo[key].heightA = (int16_t)a->height;
+        sSeamMemo[key].widthB = (int16_t)b->width;
+        sSeamMemo[key].heightB = (int16_t)b->height;
+        sSeamMemo[key].step = SeamStepOf(a, b);
+    }
+    return sSeamMemo[key].step;
+}
+
+static int SeamStepOf(const VoxelMapInstance *a, const VoxelMapInstance *b)
 {
     const ReliefLayout *la = LayoutOf(a), *lb = LayoutOf(b);
     const unsigned last = VOXEL_RELIEF_SIDE - 1;

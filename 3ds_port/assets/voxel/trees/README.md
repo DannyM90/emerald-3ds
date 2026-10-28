@@ -17,6 +17,14 @@ Original art for the voxel mode's trees, drawn for Emerald 3DS:
   tree, on a 2×2-cell footprint.
 - `tree_crown_base.png`, `tree_crown_base_open.png`: 32×32 RGBA, its crown
   closed and with the base's entrance opened (the same upper half).
+- `tree_crown_mossdeep.png`: 32×32 RGBA, Mossdeep's round tree, trunk
+  included; `tree_base_mossdeep.png`: 32×16, opaque, its trunk row's grass
+  and shadow; `tree_base_water_mossdeep.png`: 32×16 RGBA, its roots and
+  shadow on a transparent background, laid over the animated shallows.
+- `tree_north_crown.png`: 32×32 RGBA, the leaning tree of Route 113,
+  Fallarbor Town and Route 114; `tree_north_base_rock.png`,
+  `tree_north_base_ash.png`: 32×16, its trunk row on the brown soil and on
+  the ash.
 
 - `grass_tuft.png`: 16×10 RGBA, a row of tall grass blades on a transparent
   background.
@@ -29,7 +37,9 @@ Original art for the voxel mode's trees, drawn for Emerald 3DS:
 crown at 0,0; large trunk at 32,0; small crown at 32,32; small trunk at
 48,32; Dewford's small crown at 64,0 and its trunk at 80,0; the jungle,
 pale-grass and volcanic trunks at 48,48, 80,16 and 64,32; the secret base
-tree's floor at 96,0, its crown at 0,64 and the opened one at 32,64; grass tufts at 0,44, 16,44 and 80,32; flowers at 0,54). It is an engine file and ships inside the 3DSX. The build regenerates
+tree's floor at 96,0, its crown at 0,64 and the opened one at 32,64;
+Mossdeep's crown at 64,64 and the leaning tree's at 96,64, their trunk rows
+at 64,96 (grass), 96,96 (water), 0,96 (soil) and 32,96 (ash); grass tufts at 0,44, 16,44 and 80,32; flowers at 0,54). It is an engine file and ships inside the 3DSX. The build regenerates
 it whenever a source changes; it needs Pillow like the port's other graphics
 tools.
 
@@ -111,3 +121,45 @@ The top edge of every tuft and flower card is written with a negative shade:
 `voxel.v.pica` moves those vertices by the frame's wind (`SetWind` in
 `ctr_voxel.c`), so fields sway together. The flowers' own animation is the
 tileset's, on the flat drawing these cards replace.
+
+Fortree's tree houses, decks and bridges stand in the treetops
+(`scripts/voxel_fortree.py`): the cells they are drawn on (`224-226`,
+`22B-22F`, `233-237`, `23B-23F`, `243`, `245-247`, `256`) are that same
+General trunk on grass, as `22A` is round them, so the wood fills the space
+between the floor and the planks (the crowns stand 23 px, the planks 25).
+The canopy over the next row's trunks (`244`, like the General's `00E-00F`)
+and the cells of a palm (a model of its own) get the grass `001` back, the
+crown's top over the path (`24B-24C`) the path `261`.
+
+Two secondary tilesets draw 2×2 trees of their own, replaced with that art:
+Mossdeep's round tree (Mossdeep City and Routes 124–129) and the leaning tree
+of the Fallarbor tileset (Route 113, Fallarbor Town, Route 114, also in the
+repeated border of all three). Only the trunk row is a tree part: Mossdeep's
+`322–323` and `326–327` on grass, `2F8–2F9` in the shallows, Fallarbor's
+`20E–20F` on the brown soil, `20C–20D` on the ash and `2CA–2CB` on the soil's
+orange rim (drawn with the soil's trunk). Its cell lays the trunk row's ground
+and carries the crown, 32×32 in two rows at the same 50°, the upper row added
+over the cell north of it, across a map's edge too. That crown row's own cells
+get the ground their lower layer is: Mossdeep's `31A–31B` grass `001`,
+`31C–31D` the cliff's face `07C` (the old crown is not cast on the rock),
+`31E–31F` `002`, `2F0–2F1` the shallows `19E`; Fallarbor's `204–205` ash
+`218`, `206–207` soil `279`, `214–215` the rim `271`, `2C2–2C3` the brick
+rock `269`, `2CC–2CD` water `170`. In a wood the trees are staggered and a
+trunk's cell also holds the next tree's crown top (Mossdeep's `324–325` in
+the water and `355–356` on grass; Fallarbor's `26B–26E`, `273–276`, and
+`2CE–2CF` on the rim): it is the trunk, and the next tree's own trunk adds
+that top.
+
+A trunk in the shallows lays no ground of its own: the cell stays water
+(`VoxelTree_LaysGround`), the ground pass lays the animated `19E`, and the
+tree pass lays `tree_base_water_mossdeep.png` 0.02 over it, alpha tested, so
+the water keeps moving between its roots. A crown row over water is water too.
+
+The crown's foot stands a cell south of the trunk row's
+north edge (1.15 for Mossdeep's on grass, 0.95 in the shallows), over the middle of its shadow. Against rock it stands up steeper,
+as the small tree does: when the crown row is a cliff or a shelf, a mountain's
+rock is right behind it, or the ground one or two rows north stands higher than
+the trunk (the terrace over a cliff's face behind Mossdeep's woods, Fallarbor's
+brick by its Pokemon Center). Leant back, its upper row went into that ground
+and was cut across. Both columns of a tree stand alike.
+
