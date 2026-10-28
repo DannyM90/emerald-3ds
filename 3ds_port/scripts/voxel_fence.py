@@ -217,7 +217,7 @@ def build(layout, spec, family, foreign=()):
         for p in posts:
             if p.own:
                 parts.append(vb.PlanPrism("post", [(p.x0, p.z0), (p.x1, p.z0), (p.x1, p.z1),
-                                                   (p.x0, p.z1)], -1.0, p.h, side))
+                                                   (p.x0, p.z1)], -1.0, p.h, side, art=tex))
         # rails along a row: between the posts of one row, wherever the
         # drawing has their top and front's first row
         levels = sorted({(p.z0, p.z1) for p in posts if p.own})
@@ -255,7 +255,7 @@ def build(layout, spec, family, foreign=()):
                 rails.append((a + inset, b - inset, p.z1, q.z0))
         for (a, b, z0, z1) in rails:
             parts.append(vb.PlanPrism("rail", [(a, z0), (b, z0), (b, z1), (a, z1)],
-                                      ry0, ry1, side))
+                                      ry0, ry1, side, art=tex))
     else:
         bark = vb.Tile(0, R, strip.width, R + CELL)
         for p in posts:
