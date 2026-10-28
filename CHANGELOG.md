@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Voxel world: the Sky Pillar's tower and its five floors, the Abandoned
+  Ship's corridors, cabins, deck and flooded rooms, and the Aqua and Magma
+  Hideouts stand in 3D, by @Deunnis (pull requests #185, #188, #189 and #191,
+  issue #179). Room for 1024 texture pages of modelled maps instead of 256,
+  so the caves and dungeons still to come fit, also by @Deunnis (pull request
+  #184). docs/VOXEL_STATUS.md has the buildings found on Routes 111 and
+  118-134 and a console review of the rows to check, by @Deunnis (pull
+  requests #192 and #198).
+
 - Releases can carry the Brazilian Portuguese translation (`build_release.py
   --portuguese`: `payload/pt/`, `Emerald3DS-pt.3dsx`), made from the English
   ROM. Its recipe carries the translated texts, which are in no ROM, and
