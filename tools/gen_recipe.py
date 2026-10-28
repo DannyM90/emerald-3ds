@@ -279,10 +279,17 @@ def gamedata_remaps(nm_tool: str, elf3: Path, elfgba: Path, rom: bytes, data: by
 
 
 def classify_literals(entry: dict, mask: bytearray, image_map: Path, image_elf: Path,
-                      gba_elf: Path, nm_tool: str, own: bytearray | None = None) -> tuple[dict, list]:
+                      gba_elf: Path, nm_tool: str, own: bytearray | None = None,
+                      rom: bytes | None = None) -> tuple[dict, list]:
     """Say where every unexplained literal byte of the game data comes from.
 
     translation  a text of the fan translation (`own`, translation_mask)
+    reordered    with a translation: a family of objects of the original game
+                 (gEasyChatWordsByLetter_A, _B...) holding, all together, only
+                 16-bit values the original family holds, in another order
+                 (the EASY CHAT word lists, sorted for the translation's
+                 words): the order is the translation's, every value one the
+                 original already has
     code     .rodata.<function>: tables the compiler built from a function
              (switch lookups); derived from code that the 3DSX already carries
     string   C string pools (format strings, assertion text)
@@ -291,6 +298,7 @@ def classify_literals(entry: dict, mask: bytearray, image_map: Path, image_elf: 
     """
     import re
     import subprocess
+    from collections import Counter
     lines = image_map.read_text(encoding="utf-8", errors="ignore").splitlines()
     secs, pending = [], None
     for line in lines:
@@ -324,9 +332,11 @@ def classify_literals(entry: dict, mask: bytearray, image_map: Path, image_elf: 
     funcs, _ = symbols(image_elf)
     _, gba_names = symbols(gba_elf)
     base = nm(nm_tool, image_elf)["__ctr_gamedata"][0]
-    totals = {"padding": 0, "zero": 0, "code": 0, "string": 0, "port": 0, "game": 0, "translation": 0}
+    totals = {"padding": 0, "zero": 0, "code": 0, "string": 0, "port": 0, "game": 0, "translation": 0,
+              "reordered": 0}
     data = None
     game = {}
+    sections = {}   # game object -> its section (start address, size) in the image
     pos = 0
     for op in entry["ops"]:
         length = op[2] if op[0] in "CFL" else (op[3] * op[4] if op[0] == "R" else 0)
@@ -354,28 +364,59 @@ def classify_literals(entry: dict, mask: bytearray, image_map: Path, image_elf: 
                     kind = "port"
                 else:
                     kind = "game"
-                    game[sym or name + " (" + secs[j][3].split("/")[-1] + ")"] = \
-                        game.get(sym or name + " (" + secs[j][3].split("/")[-1] + ")", 0) + 1
+                    key = sym or name + " (" + secs[j][3].split("/")[-1] + ")"
+                    game[key] = game.get(key, 0) + 1
+                    if sym:
+                        sections[key] = secs[j][:2]
                 totals[kind] += 1
         pos += length
+    if own is not None and rom is not None and data:
+        out = subprocess.check_output([nm_tool, "--defined-only", "-S", str(gba_elf)], text=True, errors="ignore")
+        gba = {}   # name -> (ROM offset, size) of the original game's objects
+        for line in out.splitlines():
+            parts = line.split()
+            if len(parts) == 4 and int(parts[0], 16) >= 0x08000000:
+                gba[parts[3]] = (int(parts[0], 16) - 0x08000000, int(parts[1], 16))
+        image = {name[len(".rodata."):]: (start - base, size) for start, size, name, _ in secs
+                 if name.startswith(".rodata.") and base <= start}
+
+        def values(blob: bytes) -> Counter:
+            return Counter(struct.unpack("<%dH" % (len(blob) // 2), blob[:len(blob) // 2 * 2]))
+
+        for family in sorted({key.rsplit("_", 1)[0] + "_" for key in sections if "_" in key}):
+            new = [image[k] for k in image if k.startswith(family)]
+            old = [gba[k] for k in gba if k.startswith(family)]
+            if (not new or len(new) != len(old) or any(size % 2 for _, size in new + old)
+                    or any(any(mask[off:off + size]) for off, size in new)):
+                continue
+            mine = b"".join(data[off:off + size] for off, size in sorted(new))
+            theirs = b"".join(rom[off:off + size] for off, size in sorted(old))
+            if mine != theirs and len(mine) <= len(theirs) and not values(mine) - values(theirs):
+                for key in [k for k in game if k.startswith(family)]:
+                    totals["game"] -= game[key]
+                    totals["reordered"] += game.pop(key)
     return totals, sorted(((n, s) for s, n in game.items()), reverse=True)
 
 
 # The control codes a catalog writes as \\n, \\l and \\p (charmap.txt).
 CONTROL_CODES = {"n": 0xFE, "l": 0xFA, "p": 0xFB}
 EOS = 0xFF
-SHORTEST_TEXT = 6   # shorter runs of a translation are not credited: they could be anything
+SHORTEST_TEXT = 6   # shorter runs of a translation are credited only as a whole text
+SHORTEST_WHOLE = 4  # a whole short text ("SIM" + terminator), right after another string or a 0
 
 
-def translation_texts(catalog: Path, decomp: Path) -> set[bytes]:
+def translation_texts(catalog: Path, decomp: Path) -> tuple[set[bytes], set[bytes]]:
     """The texts of a translation catalog (tools/locales/pt_br) as the game
     holds them: each run of plain characters and line codes, cut at the
     placeholders ({PLAYER}...), the terminator included where the text ends.
-    Runs shorter than SHORTEST_TEXT bytes are left out."""
+    Runs shorter than SHORTEST_TEXT bytes are left out, except a whole text
+    of at least SHORTEST_WHOLE bytes (a short name, "SIM"), returned apart:
+    it is credited only where a string starts."""
     sys.path.insert(0, str(ROOT / "tools"))
     import localize_portuguese
     codes = localize_portuguese.Charset(decomp).codes
     runs: set[bytes] = set()
+    shorts: set[bytes] = set()
     for path in sorted(catalog.rglob("*.txt")):
         relative = path.relative_to(catalog)
         if relative.parts[0] == "referencia":
@@ -383,10 +424,13 @@ def translation_texts(catalog: Path, decomp: Path) -> set[bytes]:
         script = localize_portuguese.is_script(relative.with_suffix("").as_posix())
         for entry in localize_portuguese.read_catalog(path):
             run, text, i = bytearray(), entry.text, 0
+            whole = "{" not in text
 
             def close():
                 if len(run) >= SHORTEST_TEXT:
                     runs.add(bytes(run))
+                elif whole and len(run) >= SHORTEST_WHOLE and run[-1] == EOS:
+                    shorts.add(bytes(run))
                 run.clear()
 
             while i < len(text):
@@ -411,12 +455,19 @@ def translation_texts(catalog: Path, decomp: Path) -> set[bytes]:
             if run and not script:
                 run.append(EOS)   # _("...") ends the string
             close()
-    return runs
+    return runs, shorts
 
 
-def translation_mask(data: bytes, runs: set[bytes]) -> bytearray:
-    """1 where `data` holds one of the translation's texts."""
+def translation_mask(data: bytes, runs: set[bytes], shorts: set[bytes] = frozenset()) -> bytearray:
+    """1 where `data` holds one of the translation's texts (a whole short
+    text only right after a terminator or a 0, where a string starts)."""
     mask = bytearray(len(data))
+    for short in shorts:
+        pos = data.find(short)
+        while pos >= 0:
+            if pos == 0 or data[pos - 1] in (0x00, EOS):
+                mask[pos:pos + len(short)] = b"\x01" * len(short)
+            pos = data.find(short, pos + 1)
     if not runs:
         return mask
     by_head: dict[bytes, list[bytes]] = {}
@@ -496,12 +547,28 @@ class Cover:
         self.literals = bytearray()
         self.bitmaps: list[list[int]] = []
         self.bitmap_ids: dict[tuple, int] = {}
+        self.windows: dict[bytes, int] | None = None
+
+    WINDOW = 32        # inside a translation's texts the ROM is looked up by
+    WINDOW_STRIDE = 8  # sampled windows: any run of 40 bytes it holds is found
+
+    def window_at(self, dv: memoryview, i: int) -> int:
+        """The ROM offset of the WINDOW bytes at dv[i], if the ROM holds them at
+        a sampled offset; -1 otherwise. Built once, on first use."""
+        if self.windows is None:
+            rom = self.rom
+            self.windows = {}
+            for off in range(0, len(rom) - self.WINDOW + 1, self.WINDOW_STRIDE):
+                self.windows.setdefault(rom[off:off + self.WINDOW], off)
+        return self.windows.get(bytes(dv[i:i + self.WINDOW]), -1)
 
     def run(self, data: bytes, mask: bytearray | None, hints: dict[int, int] | None = None,
-            remaps: dict | None = None, breaks: list[int] | None = None):
+            remaps: dict | None = None, breaks: list[int] | None = None, own: bytearray | None = None):
         """Cover `data`. `hints` maps payload offsets (symbol starts) to the
         ROM offset of the same symbol in the original game; `remaps` maps
-        payload offsets to record remaps (see find_remap)."""
+        payload offsets to record remaps (see find_remap). The ROM is not
+        searched where `own` is set (a translation's texts, which no ROM
+        holds): searching it every few bytes of them would take hours."""
         hints = hints or {}
         remaps = remaps or {}
         remap_starts = sorted(set(remaps) | set(breaks or ()))
@@ -617,7 +684,12 @@ class Cover:
             # per byte
             found = -1
             boundary = i > 0 and data[i - 1] in (0x00, 0xFF) and data[i] not in (0x00, 0xFF)
-            if pending is None or (i - pending) % SEARCH_STRIDE == 0 or i in break_set or boundary:
+            searched = own is None or not own[i]
+            if not searched and seg_end - i >= self.WINDOW:
+                # A translation's text: no ROM search, but a stretch the ROM
+                # holds (a sentence left in English) is still copied from it.
+                found = self.window_at(dv, i)
+            elif searched and (pending is None or (i - pending) % SEARCH_STRIDE == 0 or i in break_set or boundary):
                 # Longer windows first: a short one often matches a coincidental
                 # copy elsewhere in the ROM that then stops early. A game string
                 # is also tried whole, up to and including its 0xFF terminator.
@@ -678,12 +750,19 @@ def main() -> None:
     ap.add_argument("--translation", type=Path, default=None,
                     help="a fan translation's catalog (tools/locales/pt_br): its texts are not unexplained")
     args = ap.parse_args()
-    runs = translation_texts(args.translation, args.decomp) if args.translation else set()
+    runs, shorts = translation_texts(args.translation, args.decomp) if args.translation else (set(), set())
     if args.translation:
-        print("gen_recipe: %d texts of the translation in %s" % (len(runs), args.translation))
+        print("gen_recipe: %d texts of the translation in %s (and %d short whole texts)"
+              % (len(runs), args.translation, len(shorts)))
 
     source_rom = load_rom(args.rom)
     rom, sha1 = source_rom.data, source_rom.sha1
+    # A text the ROM already holds (one the translation left as it was) is
+    # not the translation's own: it is searched and copied like the rest.
+    in_rom = {text for text in runs | shorts if rom.find(text) >= 0}
+    runs, shorts = runs - in_rom, shorts - in_rom
+    if args.translation:
+        print("gen_recipe: %d of them are in the ROM as they are, copied from it" % len(in_rom))
     if source_rom.code != "BPEE" and not (args.gba_elf and args.elf and args.image_elf):
         raise SystemExit("gen_recipe: %s requires the game's own GBA ELF and matching 3DS/image ELFs; "
                          "English offsets and game data cannot be used." % source_rom.code)
@@ -712,15 +791,15 @@ def main() -> None:
         mask = pointer_mask(args.romfs, rel, len(data)) if rel in BUNDLES else None
         is_gd = rel == "gamedata/gamedata.bin"
         breaks = layout_breaks(args.decomp) if rel == "maps/layouts.bin" else None
+        own = translation_mask(data, runs, shorts) if runs else None
         ops, patches, stats = cover.run(data, mask, hints if is_gd else None, remaps if is_gd else None,
-                                        breaks)
+                                        breaks, own)
         entry = {"path": rel, "size": len(data), "crc": crc, "ops": ops}
         if patches:
             entry["patches"] = patches
         out.entries.append(entry)
-        if runs and stats["literal"]:
+        if own is not None and stats["literal"]:
             # The translation's texts among the unexplained literals (pointer sites aside).
-            own = translation_mask(data, runs)
             stats["translation"] = sum(1 for k in literal_positions(ops, rom) if own[k] and not (mask and mask[k]))
             stats["literal"] -= stats["translation"]
             own_masks[rel] = own
@@ -791,10 +870,11 @@ def main() -> None:
         gd_entry["_data"] = (args.romfs / "gamedata" / "gamedata.bin").read_bytes()
         gd_mask = pointer_mask(args.romfs, "gamedata/gamedata.bin", gd_entry["size"])
         kinds, game = classify_literals(gd_entry, gd_mask, args.image_map, args.image_elf,
-                                        args.gba_elf, args.nm, own_masks.get("gamedata/gamedata.bin"))
+                                        args.gba_elf, args.nm, own_masks.get("gamedata/gamedata.bin"),
+                                        rom if args.translation else None)
         print("gen_recipe: game-data literal by origin: padding %(padding)d  zero %(zero)d  "
-              "code %(code)d  string %(string)d  port %(port)d  game %(game)d  translation %(translation)d"
-              % kinds)
+              "code %(code)d  string %(string)d  port %(port)d  game %(game)d  translation %(translation)d  "
+              "reordered %(reordered)d" % kinds)
         for n, name in game[:25]:
             print("   %6d  %s" % (n, name))
         if kinds["game"] > args.max_game_literal:

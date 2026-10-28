@@ -174,7 +174,11 @@ are in no ROM, so they are literals of that recipe; `gen_recipe.py
 --translation tools/locales/pt_br` encodes the catalog's texts as the game
 holds them and counts the literal bytes inside them as *translation* (the
 project's own writing, already published in `tools/locales/`) rather than
-unexplained. Everything else stays held to `--max-literal` and
+unexplained (a whole short text, such as a 3-letter name, only where a
+string starts). A family of objects (`gEasyChatWordsByLetter_*`) holding, all
+together, only 16-bit values the original family holds, in another order,
+counts as *reordered*: the EASY CHAT word lists, sorted for the Portuguese
+words. Everything else stays held to `--max-literal` and
 `--max-game-literal`, so nothing of the game can hide behind the translation.
 
 Without these options the release is English-only, as before.
