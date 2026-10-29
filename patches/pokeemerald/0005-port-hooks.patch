@@ -4525,7 +4525,7 @@ index f09425720ab4ceb002215d1d01c27b5f3d365369..32e5800a8c110aa2b0d251548cc6e7a5
      }
  }
 diff --git a/src/field_camera.c b/src/field_camera.c
-index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..fa5a7db2185da55d8c92d458836d131131019f1b 100644
+index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..4a5e341978adc7c5eda388d91a8511d21b5b300f 100644
 --- a/src/field_camera.c
 +++ b/src/field_camera.c
 @@ -12,29 +12,81 @@
@@ -4659,7 +4659,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..fa5a7db2185da55d8c92d458836d1311
  
      SetGpuReg(REG_OFFSET_BG1HOFS, r5);
      SetGpuReg(REG_OFFSET_BG1VOFS, r4);
-@@ -87,39 +157,314 @@ void FieldUpdateBgTilemapScroll(void)
+@@ -87,39 +157,315 @@ void FieldUpdateBgTilemapScroll(void)
  
  void GetCameraOffsetWithPan(s16 *x, s16 *y)
  {
@@ -4856,6 +4856,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..fa5a7db2185da55d8c92d458836d1311
 +    {MAP_SOOTOPOLIS_CITY, EDGE_W | EDGE_E | EDGE_N | EDGE_S},
 +    {MAP_VERDANTURF_TOWN, EDGE_W | EDGE_N},
 +    {MAP_JAGGED_PASS,   EDGE_W | EDGE_E | EDGE_N | EDGE_S},
++    {MAP_MT_CHIMNEY,    EDGE_W | EDGE_E | EDGE_N | EDGE_S},
 +    {MAP_ROUTE110,      EDGE_W},
 +};
 +
@@ -4989,7 +4990,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..fa5a7db2185da55d8c92d458836d1311
  static void RedrawMapSlicesForCameraUpdate(struct FieldCameraOffset *cameraOffset, int x, int y)
  {
      const struct MapLayout *mapLayout = gMapHeader.mapLayout;
-@@ -137,69 +482,54 @@ static void RedrawMapSlicesForCameraUpdate(struct FieldCameraOffset *cameraOffse
+@@ -137,69 +483,54 @@ static void RedrawMapSlicesForCameraUpdate(struct FieldCameraOffset *cameraOffse
  
  static void RedrawMapSliceNorth(struct FieldCameraOffset *cameraOffset, const struct MapLayout *mapLayout)
  {
@@ -5088,7 +5089,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..fa5a7db2185da55d8c92d458836d1311
  
  void CurrentMapDrawMetatileAt(int x, int y)
  {
-@@ -225,11 +555,30 @@ void DrawDoorMetatileAt(int x, int y, u16 *tiles)
+@@ -225,11 +556,30 @@ void DrawDoorMetatileAt(int x, int y, u16 *tiles)
  
  static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x, int y)
  {
@@ -5119,7 +5120,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..fa5a7db2185da55d8c92d458836d1311
      if (metatileId < NUM_METATILES_IN_PRIMARY)
      {
          metatiles = mapLayout->primaryTileset->metatiles;
-@@ -239,7 +588,54 @@ static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x,
+@@ -239,7 +589,54 @@ static void DrawMetatileAt(const struct MapLayout *mapLayout, u16 offset, int x,
          metatiles = mapLayout->secondaryTileset->metatiles;
          metatileId -= NUM_METATILES_IN_PRIMARY;
      }
@@ -5174,7 +5175,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..fa5a7db2185da55d8c92d458836d1311
  }
  
  static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
-@@ -304,20 +700,59 @@ static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
+@@ -304,20 +701,59 @@ static void DrawMetatile(s32 metatileLayerType, const u16 *tiles, u16 offset)
          gOverworldTilemapBuffer_Bg1[offset + 0x21] = tiles[7];
          break;
      }
@@ -5237,7 +5238,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..fa5a7db2185da55d8c92d458836d1311
  
      y = (y - gSaveBlock1Ptr->pos.y) * 2;
      if (y >= 32 || y < 0)
-@@ -325,7 +760,12 @@ static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *cameraOffset, s32 x
+@@ -325,7 +761,12 @@ static s32 MapPosToBgTilemapOffset(struct FieldCameraOffset *cameraOffset, s32 x
      y = y + cameraOffset->yTileOffset;
      if (y >= 32)
          y -= 32;
@@ -5250,7 +5251,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..fa5a7db2185da55d8c92d458836d1311
      return y * 32 + x;
  }
  
-@@ -400,9 +840,9 @@ void CameraUpdate(void)
+@@ -400,9 +841,9 @@ void CameraUpdate(void)
      if (curMovementOffsetY != 0 && curMovementOffsetY == -movementSpeedY)
      {
          if (movementSpeedY > 0)
@@ -5262,7 +5263,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..fa5a7db2185da55d8c92d458836d1311
      }
  
      gFieldCamera.x += movementSpeedX;
-@@ -417,10 +857,40 @@ void CameraUpdate(void)
+@@ -417,10 +858,40 @@ void CameraUpdate(void)
          RotatingGatePuzzleCameraUpdate(deltaX, deltaY);
          SetBerryTreesSeen();
          AddCameraTileOffset(&sFieldCameraOffset, deltaX * 2, deltaY * 2);
@@ -5303,7 +5304,7 @@ index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..fa5a7db2185da55d8c92d458836d1311
      gTotalCameraPixelOffsetX -= movementSpeedX;
      gTotalCameraPixelOffsetY -= movementSpeedY;
  }
-@@ -458,8 +928,15 @@ void UpdateCameraPanning(void)
+@@ -458,8 +929,15 @@ void UpdateCameraPanning(void)
      if (sFieldCameraPanningCallback != NULL)
          sFieldCameraPanningCallback();
      //Update sprite offset of overworld objects
