@@ -1,6 +1,6 @@
 # ポケットモンスター エメラルド（日本語版）
 
-Pokémon Emerald 3Ds Dual Screen は、日本版 **ポケットモンスター エメラルド
+Emerald 3DS は、日本版 **ポケットモンスター エメラルド
 （BPEJ）** のクリーンな ROM でも遊べます。テキストとグラフィックはあなた自身の
 ROM から作られ、配布はされません。生成はあなたのパソコンかブラウザの中で行われます。
 
@@ -156,6 +156,9 @@ SD に置き換える（`asset_index` はエンジン側で 3DSX に入る。pak
 
 ## クレジット
 
+日本語版は luksgrin 氏の実装です（[pull request #59](https://github.com/ZallaxDev/emerald-3ds/pull/59)、
+[#200](https://github.com/ZallaxDev/emerald-3ds/pull/200)、
+[#201](https://github.com/ZallaxDev/emerald-3ds/pull/201)）。
 スペイン語版の仕組み（Jesus Oliva 氏、
 [pull request #6](https://github.com/ZallaxDev/pokeemerald-3Ds-dualscreen/pull/6)）を
 もとにしています。
