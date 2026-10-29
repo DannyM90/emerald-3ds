@@ -1,6 +1,168 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-10-29
+
+The first beta.
+
+Most of Hoenn is now recreated in voxels, but the 3D world is still under
+construction: there are still many faults, flat elements and other problems,
+which will be fixed in the coming versions. Everything keeps being built and
+improved.
+
+- Voxel world: most of Hoenn's interiors stand in 3D, by @Deunnis:
+  Lilycove's contest stage, lobby and hall (pull request #125, issue #119),
+  its Department Store from 1F to the rooftop with the elevator (pull
+  requests #129 and #132, issue #126), its museum and the Pokémon Trainer
+  Fan Club (pull request #139, issue #138); the Day Care, Lanette's house,
+  the Seashore House and Devon Corp 1F (pull request #143, issue #142); the
+  Battle Tents, Slateport's Fan Club and Harbor, and Stern's Shipyard (pull
+  requests #145 and #155, issue #144); the shops, route houses and stations
+  (pull request #156, issue #154); the Mossdeep Game Corner and the
+  Sootopolis Mystery Events House (pull request #159, issue #157); the
+  Pokémon League (pull request #161, issue #160); the gyms of Mauville,
+  Mossdeep, Fortree and Sootopolis (pull request #163, issue #162); the
+  Battle Frontier's lobbies, Scott's house, the lounges, battle rooms and
+  corridors (pull requests #167 and #168, issue #164); the Trick House's
+  puzzle rooms (pull request #170, issue #169); the link rooms, the moving
+  truck, the S.S. Tidal and Trainer Hill's entrance (pull requests #172 and
+  #173, issue #171). Cells that scripts change (the contest lobby, the
+  Mossdeep Game Corner, the Elite Four's rooms) show the change (pull
+  request #165). The steps under trees are closed (pull request #120, issue
+  #107) and no cut tile's ground shows in a pit (pull request #124, issue
+  #117), also by @Deunnis.
+
+- Voxel world: every gym in 3D. Dewford's is finished; Mauville's beams
+  switch as its puzzle switches them; Lavaridge's 1F and B1F, Petalburg's
+  sliding doors, Fortree's round green columns, Mossdeep's panelled walls
+  and Sootopolis's tiers, stairs and slides stand at their own levels. Doors
+  open with their own frames on every wall. The gyms are modelled but still
+  have faults, to be fixed in the coming versions.
+
+- Voxel world: Fortree's tree houses, plank bridges and treetop palms;
+  every house of Sootopolis, its white walls, its cliff and the Cave of
+  Origin; the Battle Frontier finished outside, every flag waving, with its
+  halls, arches and the Pike; the first room of Meteor Falls; the Safari
+  Zone's gate on Route 121 and its building from inside the Zone; Route
+  118's pink house and Verdanturf's tent.
+
+- Voxel mountains: Lavaridge, Routes 111 to 113 (Route 112's plateau, stairs
+  cliff and rough rock among them), 114, 120 and 121, Lilycove, Mossdeep and
+  Routes 124 to 129 stand in hand-marked terraces. Ledges between two levels
+  are steps; bridges cross the mountains with the rock under them only where
+  they cross; corners keep their grey outline; trees on the rock stand on
+  it. Each map stands at the height of the seam it was reached by, so the
+  maps round Lilycove and Route 124 meet again.
+
+- Voxel trees and nature: Mossdeep's and Fallarbor's own 2x2 trees, small
+  trees on Fortree's, Mauville's and Lavaridge's grounds and the secret base
+  tree, long grass in 3D, clouds lying on the water as the GBA shows them,
+  and fences built post by post.
+
+- Voxel world: animated water stays in step with the 2D tiles and costs an
+  Old 3DS little; shadows fall where the geometry casts them; no seam lines
+  between chunks or lines of another metatile along tile edges while
+  walking; the land past a map's edge is filled with that edge's own
+  ground.
+
+- Voxel overworld: a camera swoop between the 3D world and the 2D field:
+  switching VOXEL 3D on or off (or a fallback to 2D) tilts the camera to the
+  2D field's view and crossfades, both ways, instead of a cut. By
+  @darkmattericecoffee (pull request #121).
+
+- The bottom screen, redesigned (v4.2): a header with the place, the grass
+  toggle, Repel, the clock and RUN; a dock of sections (MAP, POKéDEX,
+  POKéMON, BAG, POKéNAV, CARD, SAVE, OPTIONS, and NUZLOCKE when it is on);
+  the game's screens in a window. The party, summary, bag and Pokédex
+  (entries, AREA, CRY, SIZE, search) are drawn natively at the touch
+  screen's resolution, in battle too, with held items, a scroll bar in the
+  bag and the summary's Pokémon moving with its animation. A tap on a
+  section jumps straight there. The trainer card has its back, and CLASSIC MENUS (off by default) brings back
+  the game's own party, bag, Pokédex and card in the window. Plates are made
+  ahead and kept on the SD card, so the screen redraws much faster.
+
+- OPTIONS, reorganised: every option of the game, the port and the
+  enhancements in one place on the bottom screen, sorted into five
+  categories - GENERAL (interface, system), WORLD (3D, field, helpers,
+  clock), BATTLE (scene, rules, experience), MODES (Nuzlocke, randomizer)
+  and CHEATS (catching, perks, Pokédex, items) - each with its groups as
+  tabs, six rows to a page. A row is a switch, a value between arrows, an
+  action or a line of information; options a build does not have are left
+  out.
+
+- Nuzlocke tracker (off by default, OPTIONS > MODES > NUZLOCKE): record by hand
+  each area's catch or miss, mark fallen Pokémon and check the next badge's
+  level cap. It never enforces a rule or changes the save, and keeps its
+  records in `emerald3ds.nuzlocke` beside the save. By @jacobcorbett (pull
+  request #112).
+
+- Randomizer (off by default, OPTIONS > MODES > RANDOMIZER): wild Pokémon,
+  starters and trainers' Pokémon by one reproducible seed; the ROM and the
+  saves are untouched. By @jacobcorbett (pull request #113).
+
+- Field information (off by default, OPTIONS > WORLD > HELPERS and CLOCK): the wild Pokémon of the current area
+  with their levels and rates (names hidden until seen), the Repel steps
+  left, and a notice when the saved clock had to fall back. SYNC CLOCK
+  brings a fast clock back to the console's time without losing the berries'
+  growth. By @jacobcorbett (pull requests #115 and #109).
+
+- The game's random number generator is seeded from the console's timing at
+  boot, soft reset and new game, instead of always from zero. By
+  @jacobcorbett (pull request #116).
+
+- Voxel: nearby wild Pokémon get their sprites before ambient effects, the
+  S.S. Tidal and the submarine are drawn at full width, and seated people
+  sit right; the text box stands in front of the scenery in 3D, and a door's
+  animation is no longer lost while the world loads after a warp. By
+  @jacobcorbett (pull requests #110 and #114).
+
+- Windows and web builders: the SD card install is staged and only then
+  replaces the old files, the save (and its clock and Nuzlocke files) is
+  backed up first, and a missing DSP firmware (`3ds/dspfirm.cdc`) is
+  reported; a damaged recipe, a malformed release manifest or a missing
+  language executable give a clear error. By @jacobcorbett (pull requests
+  #101, #102, #103 and #104). The builder names the other regional Gen 3
+  games when one is loaded by mistake, by @abrahammordev (pull request #95).
+
+- Game Corner: the slot machine and the roulette are shown centred as GBA
+  screens instead of in the screen's top left corner, each with a backdrop
+  of its own filling the wide screen - the slot machine the casino's wall
+  with coins and a gold frame of bulbs round the machine, the roulette a
+  green felt with Poké Balls and a gold cord - and the roulette's wheel is
+  drawn once instead of in rotated copies round the margins.
+
+- Wide screen and GBA screens: the OPTION screen is shown centred as a GBA
+  screen, the cave entrance and exit tunnel covers the whole screen, Fly's
+  bird and its rider fly round the player, and move backgrounds that are one
+  picture (Psychic, Thunder, Ice, Solar Beam...) are magnified to the
+  screen; the others no longer stop in bands at the top and bottom.
+
+- Fixes: an HP bar at 1 HP shows a sliver, as on the GBA; with visible wild
+  Pokémon on MANY, nothing could be met while diving (they asked for a
+  surfing player); a map two crossings behind the player, still on screen,
+  no longer drops out of the voxel world and shows black; in 3D battles the sandstorm no
+  longer turns the Pokémon into sand-filled silhouettes on the console and
+  Surf's wave no longer draws a pale band over the other Pokémon; a 2D map next to one with
+  another tileset draws its neighbour with that tileset; with PHYS/SPEC
+  SPLIT on, closing the summary no longer read freed memory; taps on a list
+  menu's odd entries count again.
+
+- Performance: data files, follower and visible wild sprites are read ahead
+  on a worker instead of in the frame; the 3D battle starts without a stall
+  and uses less VRAM; the Old 3DS keeps its frame rate on the mountain
+  routes (fewer light rays, merged relief quads, a seam cache) and in 3D
+  battles with sandstorm or Surf.
+
+- Building from source: the voxel world is always compiled in (`VOXEL=0` is
+  gone).
+
+- Voxel world: the Sky Pillar's tower and its five floors, the Abandoned
+  Ship's corridors, cabins, deck and flooded rooms, and the Aqua and Magma
+  Hideouts stand in 3D, by @Deunnis (pull requests #185, #188, #189 and #191,
+  issue #179). Room for 1024 texture pages of modelled maps instead of 256,
+  so the caves and dungeons still to come fit, also by @Deunnis (pull request
+  #184). docs/VOXEL_STATUS.md has the buildings found on Routes 111 and
+  118-134 and a console review of the rows to check, by @Deunnis (pull
+  requests #192 and #198).
 
 - Releases can carry the Brazilian Portuguese translation (`build_release.py
   --portuguese`: `payload/pt/`, `Emerald3DS-pt.3dsx`), made from the English
@@ -15,7 +177,7 @@
   is API 2 (`run_web_build(..., language)`), and `web-manifest.json` may list
   the English ROM twice, once per language.
 
-- OPTIONS > ENHANCEMENTS > REAL-TIME PACING is on by default: a new
+- OPTIONS > GENERAL > SYSTEM > REAL-TIME PACING is on by default: a new
   settings.txt starts with it on (and so does one that never had it). A
   settings.txt that already chose off keeps off.
 
@@ -92,7 +254,8 @@
   113 while it is hidden; Route 131 shows the Sky Pillar, and Mirage Island
   and the Sky Pillar's clean floors get their own relief and objects. Route
   111's hand-shaped mountains apply to its layout without the tower too.
-  Reported, with the cause, by @Deunnis (issue #179).
+  Reported, with the cause, by @Deunnis (issue #179), who also keyed the
+  current map's data on the swapped layout (pull request #180).
 
 - Bottom screen map: a magnifier button in the map's bottom right corner
   zooms in on the player's place and back out. Touching a place on the map
@@ -123,7 +286,7 @@
   (patch 0006-quick-ball); the ball button on the bottom screen is as before.
 
 - Soft reset is now L+R+START+SELECT, as in the 3DS games, instead of the
-  GBA's A+B+START+SELECT.
+  GBA's A+B+START+SELECT. By @eathanpage.
 
 - Pokédex on the top screen: while the Pokédex is open on the bottom
   screen, the top shows the device itself - the red shell, lens and lights,
@@ -131,14 +294,17 @@
   cursor, at 2x over the battle terrain of the place it is met (tall grass,
   cave, water, pond, mountain; by type for one never met wild). With the 3D
   slider up the Pokémon stands in front of the screen and the terrain
-  behind it. Its patch is 0058-pokedex-top-screen.
+  behind it. Its patch is 0058-pokedex-top-screen. By
+  @darkmattericecoffee (pull request #69).
 
 - The camera can stop at the edge of a map: on the edges chosen map by map
   (for now Routes 103 to 107 and Rustboro City), in 2D and in voxel, the
   picture no longer shows the border tiled past the edge that the wider screen
   used to bring into view; only the player walks on. Where another map joins
   part of such an edge, the camera follows the player in front of it. Every
-  other map keeps the camera on the player as before.
+  other map keeps the camera on the player as before. Since then the edges
+  of Routes 111 to 114, 116, 117 and 119 to 121, Lavaridge, Fallarbor,
+  Lilycove, Sootopolis, Jagged Pass and Mt. Chimney stop it too.
 
 - Brazilian Portuguese, by @carlosmozart (pull request #60): the whole game in
   Portuguese over your own English ROM, as a build option (`tools/bootstrap.py
@@ -165,8 +331,8 @@
   pack errors, the client/builder ROM check test and the cleanup when
   switching back to English come from andyst-dev's German pull request.
 
-- Japanese (experimental): the game in Japanese from your own Pocket Monsters
-  Emerald (Japan) ROM. The web and Windows builders accept it and pick the
+- Japanese (experimental), by @luksgrin (pull request #59): the game in
+  Japanese from your own Pocket Monsters Emerald (Japan) ROM. The web and Windows builders accept it and pick the
   language from the ROM; every release carries the Japanese variant too
   (`Emerald3DS-ja.3dsx` for Quick Update). The texts, graphics, fonts,
   credits and the maps that differ come from your ROM; text is drawn in the

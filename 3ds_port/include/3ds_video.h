@@ -115,6 +115,10 @@ void CtrVideo_ClearOamAnchors(void);
 void CtrVideo_SetOamAnchor(unsigned first, unsigned end, int y);
 void CtrVideo_ClearVoxelWeatherOam(void);
 void CtrVideo_MarkVoxelWeatherOam(unsigned first, unsigned end);
+/* OAM entries of the clouds of WEATHER_SUNNY_CLOUDS: the GBA shows them only
+ * through the water (priority 3, under the ground's layer), and the voxel
+ * view lays them on its water itself (voxel_entities.c), never over the view. */
+void CtrVideo_MarkVoxelCloudOam(unsigned first, unsigned end);
 /* OAM entries of the fog's sprites, one picture on a 64-pixel lattice: the
  * compositor repeats it over the whole view (src/sprite.c). */
 void CtrVideo_ClearFogOam(void);

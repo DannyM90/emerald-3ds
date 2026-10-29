@@ -126,6 +126,11 @@ typedef enum
 VoxelGrass VoxelWorld_Grass(int worldX, int worldY);
 /* The General tileset's flowers: grass under them, drawn on the upper layer. */
 #define VOXEL_FLOWER_METATILE 0x004
+/* Where in the cell the GBA shows a priority-3 sprite (the clouds of
+ * WEATHER_SUNNY_CLOUDS): a bit per pixel, row 0 the north one, bit 0 the west
+ * column. False when the cell's art is not at hand (a neighbour drawn with
+ * other tilesets than the ones loaded). */
+bool VoxelWorld_UnderGroundMask(int worldX, int worldY, uint16_t rows[16]);
 /* Explicit tileset identity: these tree IDs mean other art in other tilesets. */
 bool VoxelWorld_UsesTreeSprites(const VoxelMapInstance *inst);
 

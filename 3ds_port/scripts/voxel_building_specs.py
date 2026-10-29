@@ -457,7 +457,7 @@ def gym():
 GYM_EXACT = [(2, 45, 40, 72), (72, 45, 94, 72), (3, 5, 93, 45), (40, 41, 72, 80)]
 
 def flat_block(width, height, roof, cornice, facade_top, unit=None, brick=None, rim=None,
-               x0=0, x1=None):
+               x0=0, x1=None, pilaster=None):
     """A flat-roofed block: parapeted roof, cornice, facade (any size).
 
     `roof` = (fixed, repeat, tail): the roof's rows as the drawing lays them
@@ -474,7 +474,9 @@ def flat_block(width, height, roof, cornice, facade_top, unit=None, brick=None, 
     stretch of the facade, by default the 8 x 16 next to its west corner)
     between the corner posts, and the parapet's sides with `rim` (by default
     the cornice next to the corner): a facade whose first rows there are
-    something else (an awning drawn slanting) names its own.
+    something else (an awning drawn slanting) names its own. `pilaster`
+    (u0, v0, u1, v1): the corner post at the sides' ends, by default the
+    facade's first 8 columns, 16 rows.
 
     `x0`, `x1`: the columns the block is drawn over, when its drawing does
     not fill the whole rectangle (the gatehouses start a column in, the
@@ -488,7 +490,7 @@ def flat_block(width, height, roof, cornice, facade_top, unit=None, brick=None, 
     top = wall + (c1 - c0)
     fixed, repeat, tail = roof
     brick = Tile(*(brick or (8, facade_top, 16, facade_top + 16)), top=wall)
-    pilaster = Tile(x0, facade_top, x0 + 8, facade_top + 16, top=wall)
+    pilaster = Tile(*(pilaster or (x0, facade_top, x0 + 8, facade_top + 16)), top=wall)
     rim = Tile(*(rim or (8, c0, 16, c1)), top=top)
     body = Prism(
         "body", x0, x1,
@@ -538,6 +540,80 @@ def olive_block(width, height, meta):
     ventilation unit on the right end of the roof (metatiles 222 223)."""
     unit = (width - 24, width - 4, 1, 16, 31) if meta.get("unit") else None
     return flat_block(width, height, ((8, 40), (8, 16), (0, 8)), (40, 48), 48, unit)
+
+
+def safari_canopy(z, v):
+    """The Safari Zone building's porch roof over its glass door (x 24-56):
+    3 out from the wall at `z`, its top drawn the 3 rows above `v`, its
+    front rows v..v+4 - 23 high on a facade 33 high."""
+    y1 = z + 3 - v
+    return Prism(
+        "canopy", 24, 56, [(z, y1 - 4), (z + 3, y1 - 4), (z + 3, y1), (z, y1)],
+        edges={1: Proj(v, v + 4), 2: Proj(v - 3, v)}, skip=(0, 3),
+        caps=[Band(y1 - 4, y1 + 1, Tile(24, v, 28, v + 4, top=y1), z + 3)])
+
+
+def safari_gate():
+    """The Safari Zone's entrance on Route 121 (80 x 96, cells 35..39 x
+    0..5), cut by the map's top edge:
+
+        rows  0-56  the flat roof, its pattern 8 rows (from row 2), the
+                    parapet's rims down its sides and along its front
+                    (rows 53-56); no back parapet: the map ends first
+        rows 56-63  the parapet's front
+        rows 63-96  the facade: windows, the hedge drawn along its foot,
+                    the glass door under a canopy (x 24-56)
+
+    The canopy stands 3 out at the door's top: its top drawn rows 73-76,
+    its front 76-80, so it is 23 high at Z 99. The sides take a plain
+    stretch of the facade (x 4-8: the dotted plaster, the hedge on period),
+    the corners its outline columns."""
+    parts = flat_block(80, 96, ((2, 56), (2, 10), None), (56, 63), 63,
+                       brick=(4, 63, 8, 96), pilaster=(0, 63, 4, 96))
+    return parts + [safari_canopy(96, 76)]
+
+
+# The same building seen from inside the Safari Zone: an L across the seam
+# of Safari South and Southeast, a long wing (South x 30-39 and Southeast x
+# 0) whose front is the gate's, 16 rows higher, and an east wing (Southeast
+# x 1-5) running south off the map. Both are 40 high, as the gate:
+#
+#     rows  0- 7  the back parapet over the north wall (collision row 29)
+#     rows  7-40  the roof, its pattern 8 rows; the east wing's on down
+#     rows 40-47  the long wing's parapet front
+#     rows 47-80  its facade (the door's canopy in South, rows 57-64)
+#
+# Real depth: the walls stand where the collision starts, Z 0, so the roof
+# is 40 rows deeper than drawn: its courses repeat back to the parapet
+# (`tail`), and the drawn rows 0-7 are not proved. The east wing ends at the
+# map's bottom edge, its south face the drawing projected. No wall stands at
+# the seam: each map's half is open there.
+SAFARI_ROOF = ((7, 40), (7, 15), (0, 7))
+
+
+def safari_wing(x0, x1, brick, rim, west=True, east=True):
+    return flat_part("wing", x0, x1, 80, 0, SAFARI_ROOF, (40, 47), 47, brick, rim,
+                     west=west, east=east)
+
+
+def safari_south():
+    """The long wing's 160 columns in Safari South: dressed with the plain
+    stretch between its third and fourth windows (x 72-88)."""
+    return safari_wing(0, 160, (72, 47, 88, 80), (72, 40, 88, 47), east=False) + \
+        [safari_canopy(80, 60)]
+
+
+def safari_southeast():
+    """Southeast's half: the long wing's last 16 columns, and the east wing
+    (x 16-96) from the back wall to the map's bottom edge (Z 176), its roof
+    the drawing's rows 7-136, its front the rest projected."""
+    brick = Tile(8, 47, 16, 80, top=33)
+    fixed, repeat, tail = SAFARI_ROOF
+    wing = Prism(
+        "east_wing", 16, 96, [(176, 0), (176, 40), (0, 40), (0, 0)],
+        edges={0: Proj(), 1: Strip((fixed[0], 136), repeat=repeat, tail=tail), 2: brick},
+        skip=(3,), caps=[Band(0, 41, brick, 176)])
+    return safari_wing(0, 16, (8, 47, 16, 80), (8, 40, 16, 47), west=False, east=False) + [wing]
 
 
 def flat_block_exact(width, height, first_roof_row):
@@ -6241,6 +6317,15 @@ SPECS = [
         "exact": pink_house_exact(64),
     },
     {
+        # Route 118's house by the sea: the same, plain wall where the door is
+        "name": "pink_house_4w",
+        "layout": "LAYOUT_ROUTE118",
+        "rect": (0, 14, 4, 4),
+        "ground": [GRASS, 0x004],
+        "parts": lambda: pink_house(64),
+        "exact": pink_house_exact(64),
+    },
+    {
         "name": "pink_house_5",
         "layout": "LAYOUT_MAUVILLE_CITY",
         "rect": (34, 2, 5, 4),
@@ -6512,6 +6597,33 @@ SPECS = [
         "parts_art": flat(lambda: [SectionPrism("harbor", [(96, 0), (96, 34), (98, 36), (98, 44), (56, 55), (14, 44),
                                                 (14, 36), (16, 34), (16, 0)], 0, 112, (2, 10, 96))]),
         "exact": [(0, 0, 112, 96)],
+    },
+    {
+        "name": "safari_gate",
+        "layout": "LAYOUT_ROUTE121",
+        "rect": (35, 0, 5, 6),
+        "ground": [GRASS, 0x004],
+        "parts": safari_gate,
+        "exact": [(0, 0, 80, 96)],
+    },
+    {
+        "name": "safari_south_wing",
+        "layout": "LAYOUT_SAFARI_ZONE_SOUTH",
+        "rect": (30, 29, 10, 5),
+        "ground": [GRASS, 0x004],
+        "parts": safari_south,
+        "exact": [(0, 7, 160, 80)],
+    },
+    {
+        # its first column only down to the long wing's foot: the trees
+        # below are the wood's
+        "name": "safari_southeast_wing",
+        "layout": "LAYOUT_SAFARI_ZONE_SOUTHEAST",
+        "rect": (0, 29, 6, 11),
+        "owned": {(0, j) for j in range(5)} | {(i, j) for i in range(1, 6) for j in range(11)},
+        "ground": [GRASS, 0x004],
+        "parts": safari_southeast,
+        "exact": [(0, 7, 16, 80), (16, 7, 96, 176)],
     },
     {
         "name": "lilycove_motel",

@@ -91,7 +91,7 @@ version.
    exists). Attach every file of step 2, for example:
 
    ```
-   gh release create vX.Y.Z --title "Alpha X.Y.Z" --notes-file notes.md \
+   gh release create vX.Y.Z --title "Beta X.Y.Z" --notes-file notes.md \
        dist/Emerald3DS-WebPayload.zip dist/web-manifest.json \
        dist/Emerald3DS.3dsx dist/Emerald3DS.smdh dist/Emerald3DS-es.3dsx \
        dist/Emerald3DS-fr.3dsx \

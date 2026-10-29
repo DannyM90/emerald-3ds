@@ -500,7 +500,9 @@ romfs/voxel/trees.rgba5551: scripts/gen_voxel_trees.py \
 		assets/voxel/trees/tree_small_crown.png assets/voxel/trees/tree_small_trunk.png 		assets/voxel/trees/tree_2_small_crown.png assets/voxel/trees/tree_2_small_trunk.png 		assets/voxel/trees/tree_small_trunk_jungle.png assets/voxel/trees/tree_small_trunk_grass_road.png 		assets/voxel/trees/tree_small_trunk_volcan.png assets/voxel/trees/tree_crown_base_floor.png 		assets/voxel/trees/tree_crown_base.png assets/voxel/trees/tree_crown_base_open.png \
 		assets/voxel/trees/tree_crown_mossdeep.png assets/voxel/trees/tree_base_mossdeep.png \
 		assets/voxel/trees/tree_base_water_mossdeep.png assets/voxel/trees/tree_north_crown.png \
-		assets/voxel/trees/tree_north_base_rock.png assets/voxel/trees/tree_north_base_ash.png
+		assets/voxel/trees/tree_north_base_rock.png assets/voxel/trees/tree_north_base_ash.png \
+		assets/voxel/trees/tall_grass.png assets/voxel/trees/tall_grass_floor.png \
+		assets/voxel/trees/tree_small_trunk_access.png
 	@mkdir -p $(@D)
 	"$(PYTHON)" scripts/gen_voxel_trees.py --output $@
 

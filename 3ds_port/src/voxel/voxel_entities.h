@@ -44,6 +44,11 @@
  * it (EmitReflection): at most one quad a strip. */
 #define VOXEL_REFLECTION_STRIPS 4u
 #define VOXEL_REFLECTION_VERTICES (6u * VOXEL_REFLECTION_STRIPS)
+/* The clouds of WEATHER_SUNNY_CLOUDS laid on the water (EmitClouds): three
+ * 64x64 sprites, each laid more than once over the view (its lattice), a
+ * quad for a cell of open water and some for one of its rim (a run of
+ * pixels a quad, up to 18, most 3-10). Copies over dry ground lay nothing. */
+#define VOXEL_CLOUD_VERTICES (256u * 6u)
 
 /* Forgets every cached slot, so the next update re-decodes from scratch. */
 void VoxelEntities_Reset(void);

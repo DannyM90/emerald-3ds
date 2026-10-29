@@ -45,6 +45,8 @@ static bool FortreeWood(int metatileId)
 /* Where a small trunk's ground is packed: the General one's at 48,32,
  * Dewford's at 80,0, and the trunks a secondary tileset draws on its own
  * ground (3: the General's own grass). -1 for any other metatile. */
+enum { TRUNK_JUNGLE, TRUNK_GRASS_ROAD, TRUNK_VOLCAN, TRUNK_GENERAL, TRUNK_ACCESS };
+
 static int SmallTrunkGround(const void *secondaryTileset, int metatileId)
 {
     if (secondaryTileset == &gTileset_Fortree && metatileId == 0x253)
@@ -55,6 +57,12 @@ static int SmallTrunkGround(const void *secondaryTileset, int metatileId)
         return 3;
     if (secondaryTileset == &gTileset_Mauville && metatileId == 0x226)
         return 1; /* tree_small_trunk_grass_road.png at 80,16 */
+    /* At a wood's way in, on the darker grass of its path: Rustboro's 307
+     * (Route 104, Southern Island, Faraway Island) and Lavaridge's 201
+     * (Route 112) */
+    if ((secondaryTileset == &gTileset_Rustboro && metatileId == 0x307)
+     || (secondaryTileset == &gTileset_Lavaridge && metatileId == 0x201))
+        return TRUNK_ACCESS; /* tree_small_trunk_access.png at 112,32 */
     /* 21A, 3B8 and 203 inside a wood, where the next crown overlaps the
      * trunk (the General's 0C6), on the soil and on the dark rock */
     if (secondaryTileset == &gTileset_Lavaridge
@@ -157,6 +165,10 @@ int VoxelTree_Part(const void *secondaryTileset, int metatileId)
          * jungle floor, Route 111's pale grass, Route 112's volcanic soil. */
         if (SmallTrunkGround(secondaryTileset, metatileId) >= 0)
             return VOXEL_TREE_SMALL;
+        /* Fortree's long grass at a patch's south edge, over another ground */
+        if (secondaryTileset == &gTileset_Fortree
+         && (metatileId == 0x208 || (metatileId >= 0x281 && metatileId <= 0x283)))
+            return VOXEL_TREE_GRASS;
         return -1;
     }
     switch (metatileId)
@@ -185,6 +197,7 @@ int VoxelTree_Part(const void *secondaryTileset, int metatileId)
      * overlaps the trunk. 1F4-1F5 also carry a neighbour's leaves. */
     case 0x016: case 0x017: case 0x0C6: case 0x0C7:
     case 0x1F4: case 0x1F5: return VOXEL_TREE_SMALL;
+    case 0x015: return VOXEL_TREE_GRASS; /* long grass */
     default: return -1;
     }
 }
@@ -299,14 +312,22 @@ static void EmitGround(VoxelBuilder *builder, const VoxelMapInstance *inst, int 
 /* The small crown is 16:32: width 1, length 2 tiles, at the same 50 degrees
  * and sunk the same way as the large one, standing on its one-cell trunk.
  * Dewford's own small tree has its art at 64,0, the General one at 32,32;
- * a trunk on a secondary tileset's ground keeps the General's crown. */
+ * a trunk on a secondary tileset's ground keeps the General's crown.
+ * Long grass is drawn the same: its tuft (16:32 at 80,32) leant back over
+ * its floor (96,32), every cell of a patch alike. The tuft of the cell south
+ * of a walker stands in front of it up to its shoulders, as the GBA's grass
+ * covers all but its head. */
 static void EmitSmallCell(VoxelBuilder *builder, const VoxelMapInstance *inst, int x, int y,
-                          const void *secondaryTileset, int metatileId, bool rock)
+                          const void *secondaryTileset, int metatileId, int part, bool rock)
 {
-    static const uint8_t kTrunks[][2] = { { 48, 48 }, { 80, 16 }, { 64, 32 }, { 48, 32 } };
-    int ground = SmallTrunkGround(secondaryTileset, metatileId);
-    bool dewford = metatileId >= SECONDARY_ID && ground < 0;
-    int cx = dewford ? 64 : 32, cy = dewford ? 0 : 32;
+    static const uint8_t kTrunks[][2] = {
+        [TRUNK_JUNGLE] = { 48, 48 }, [TRUNK_GRASS_ROAD] = { 80, 16 }, [TRUNK_VOLCAN] = { 64, 32 },
+        [TRUNK_GENERAL] = { 48, 32 }, [TRUNK_ACCESS] = { 112, 32 },
+    };
+    bool grass = part == VOXEL_TREE_GRASS;
+    int ground = grass ? -1 : SmallTrunkGround(secondaryTileset, metatileId);
+    bool dewford = !grass && metatileId >= SECONDARY_ID && ground < 0;
+    int cx = grass ? 80 : dewford ? 64 : 32, cy = dewford ? 0 : 32;
     int tx = ground >= 0 ? kTrunks[ground][0] : cx + 16, ty = ground >= 0 ? kTrunks[ground][1] : cy;
     float wx = (float)x, wz = (float)y;
     /* Against a mountain's face (its rock right behind the crown's cell,
@@ -421,9 +442,9 @@ static void EmitCell(VoxelBuilder *builder, const VoxelMapInstance *inst, const 
     float v0 = 1.0f - (art->groundY + row * 16.0f) / VOXEL_TREE_TEXTURE_DIM;
     float v1 = v0 - 16.0f / VOXEL_TREE_TEXTURE_DIM;
 
-    if (part == VOXEL_TREE_SMALL)
+    if (part == VOXEL_TREE_SMALL || part == VOXEL_TREE_GRASS)
     {
-        EmitSmallCell(builder, inst, x, y, secondaryTileset, metatileId, rock);
+        EmitSmallCell(builder, inst, x, y, secondaryTileset, metatileId, part, rock);
         return;
     }
     /* over the water: its roots and shadow just off the surface, where the
@@ -438,7 +459,7 @@ static void EmitCell(VoxelBuilder *builder, const VoxelMapInstance *inst, const 
 
 /* A tree part at a cell anywhere: this map's, the next map's (its own
  * tileset), or the repeated border's past the last map. */
-static int PartAt(int x, int y)
+int VoxelTree_PartAt(int x, int y)
 {
     const VoxelMapInstance *at = VoxelWorld_GetInstanceAt(x, y);
 
@@ -473,11 +494,11 @@ static void EmitMissingRow(VoxelBuilder *builder, const VoxelMapInstance *inst, 
     int other = row == 0 ? y + 1 : y - 1;
     bool own = metatileId >= SECONDARY_ID && OwnLargePart(secondaryTileset, metatileId, NULL) >= 0;
 
-    if (part == VOXEL_TREE_SMALL)
+    if (part == VOXEL_TREE_SMALL || part == VOXEL_TREE_GRASS)
         return;
     if (own)
     {
-        if (PartAt(x, other) == (part ^ 2))
+        if (VoxelTree_PartAt(x, other) == (part ^ 2))
             return;
     }
     else
@@ -501,18 +522,18 @@ static bool AgainstRock(const VoxelMapInstance *inst, int x, int y, float lift)
 {
     unsigned behind = VoxelRegions_RoleAt((unsigned)inst->layoutId, x - inst->originX, y - 2 - inst->originY);
     unsigned over = VoxelRegions_RoleAt((unsigned)inst->layoutId, x - inst->originX, y - 1 - inst->originY);
+    int part = VoxelTree_Part(inst->secondaryTileset, VoxelWorld_GetMetatileId(x, y));
+    bool large = part != VOXEL_TREE_SMALL && part != VOXEL_TREE_GRASS;
 
     if (behind == VOXEL_ROLE_CLIFF || behind == VOXEL_ROLE_SHELF)
         return true;
-    if (VoxelTree_Part(inst->secondaryTileset, VoxelWorld_GetMetatileId(x, y)) != VOXEL_TREE_SMALL
-     && (over == VOXEL_ROLE_CLIFF || over == VOXEL_ROLE_SHELF))
+    if (large && (over == VOXEL_ROLE_CLIFF || over == VOXEL_ROLE_SHELF))
         return true;
     if (y - 1 >= inst->originY && VoxelRelief_CellLift(inst, x, y - 1) > lift + 0.25f)
         return true;
     /* a 2x2 crown leans back over two rows: the terrace over a cliff's
      * face north of its crown row (Mossdeep's woods under the cliffs) */
-    return VoxelTree_Part(inst->secondaryTileset, VoxelWorld_GetMetatileId(x, y)) != VOXEL_TREE_SMALL
-        && y - 2 >= inst->originY && VoxelRelief_CellLift(inst, x, y - 2) > lift + 0.25f;
+    return large && y - 2 >= inst->originY && VoxelRelief_CellLift(inst, x, y - 2) > lift + 0.25f;
 }
 
 /*
@@ -537,7 +558,7 @@ static void EmitGrass(VoxelBuilder *builder, int x, int y, VoxelGrass kind)
     } tufts[] = {
         [VOXEL_GRASS_TALL] = {0, 44, 10},
         [VOXEL_GRASS_LONG] = {16, 44, 16},
-        [VOXEL_GRASS_ASH] = {80, 32, 10},
+        [VOXEL_GRASS_ASH] = {64, 48, 10},
         [VOXEL_GRASS_FLOWER] = {0, 54, 10},
     };
     const float u0 = (float)tufts[kind].x / VOXEL_TREE_TEXTURE_DIM;

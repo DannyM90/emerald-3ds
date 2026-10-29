@@ -187,8 +187,9 @@ static void ReadCell(StageCell *cell, int x, int z, bool indoor)
     {
         int part = VoxelTree_Part(inst->secondaryTileset, metatile);
 
-        /* A tree's trunk, or the cell its crown leans over. */
-        if (part >= 0)
+        /* A tree's trunk, or the cell its crown leans over. Long grass is
+         * the ground a battle stands on. */
+        if (part >= 0 && part != VOXEL_TREE_GRASS)
             top = part == VOXEL_TREE_SMALL ? 1.8f : 2.4f;
         else if (VoxelTree_GroundMetatile(inst->secondaryTileset, metatile) != metatile)
             top = 2.4f;

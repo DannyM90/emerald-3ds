@@ -25,6 +25,7 @@
 #include "voxel_grade.h"
 #include "voxel_relief.h"
 #include "voxel_sprite_slots.h"
+#include "voxel_tree.h"
 #include "voxel_world.h"
 #include "voxel_lighting.h"
 
@@ -1161,6 +1162,110 @@ static void EmitReflection(VoxelBuilder *reflections, const VoxelSpriteSlot *slo
     }
 }
 
+/* The part of a cloud whose corner is (left, top) over the world's rectangle
+ * (x0, z0)-(x1, z1), on the water at height y. */
+static void EmitCloudPiece(VoxelBuilder *reflections, const VoxelSpriteSlot *slot, unsigned index,
+                           float left, float top, float x0, float z0, float x1, float z1,
+                           float y, float shift)
+{
+    unsigned baseX = (index % VOXEL_SPRITE_COLUMNS) * VOXEL_SPRITE_SLOT_DIM;
+    unsigned baseY = (index / VOXEL_SPRITE_COLUMNS) * VOXEL_SPRITE_SLOT_DIM;
+    float width = slot->width / VOXEL_PIXELS_PER_TILE, height = slot->height / VOXEL_PIXELS_PER_TILE;
+    float u0, u1, v0, v1;
+
+    x0 = fmaxf(x0, left);
+    x1 = fminf(x1, left + width);
+    z0 = fmaxf(z0, top);
+    z1 = fminf(z1, top + height);
+    if (x1 <= x0 || z1 <= z0)
+        return;
+    u0 = (baseX + slot->atlasWidth * (x0 - left) / width) / (float)VOXEL_SPRITE_ATLAS_W;
+    u1 = (baseX + slot->atlasWidth * (x1 - left) / width) / (float)VOXEL_SPRITE_ATLAS_W;
+    v0 = 1.0f - (baseY + slot->height * (z0 - top) / height) / (float)VOXEL_SPRITE_ATLAS_H;
+    v1 = 1.0f - (baseY + slot->height * (z1 - top) / height) / (float)VOXEL_SPRITE_ATLAS_H;
+    VoxelBuilder_Quad(reflections,
+        &(VoxelVertex){x0, y, z0 + shift, u0, v0, 1.0f},
+        &(VoxelVertex){x1, y, z0 + shift, u1, v0, 1.0f},
+        &(VoxelVertex){x1, y, z1 + shift, u1, v1, 1.0f},
+        &(VoxelVertex){x0, y, z1 + shift, u0, v1, 1.0f});
+}
+
+/*
+ * A cloud of WEATHER_SUNNY_CLOUDS. The GBA draws it under the ground's
+ * layer, so it shows only through the water, drifting over it: here it lies
+ * on the water's cells alone, with the reflections, and in each only where
+ * the GBA shows it (VoxelWorld_UnderGroundMask): not over a pond's grassy
+ * rim or a puddle's corners. Rows alike are one band, each run of pixels in
+ * it a quad. (left, top): its north-west corner in the world.
+ */
+static void EmitCloud(VoxelBuilder *reflections, const VoxelSpriteSlot *slot, unsigned index,
+                      float left, float top)
+{
+    float right = left + slot->width / VOXEL_PIXELS_PER_TILE;
+    float bottom = top + slot->height / VOXEL_PIXELS_PER_TILE;
+
+    for (int z = (int)floorf(top); z < (int)ceilf(bottom); ++z)
+        for (int x = (int)floorf(left); x < (int)ceilf(right); ++x)
+        {
+            uint16_t rows[16];
+            float y, shift;
+
+            if (!VoxelWorld_IsVisibleReflectiveSurface(x, z))
+                continue;
+            y = VoxelRelief_LiftAt((float)x + 0.5f, (float)z + 0.5f) + 0.035f;
+            shift = VoxelRelief_ShiftAt((float)x + 0.5f, (float)z + 0.5f);
+            if (!VoxelWorld_UnderGroundMask(x, z, rows))
+            {
+                EmitCloudPiece(reflections, slot, index, left, top,
+                               (float)x, (float)z, (float)x + 1.0f, (float)z + 1.0f, y, shift);
+                continue;
+            }
+            for (unsigned r0 = 0, r1; r0 < 16; r0 = r1)
+            {
+                uint16_t mask = rows[r0];
+
+                for (r1 = r0 + 1; r1 < 16 && rows[r1] == mask; ++r1)
+                    ;
+                for (unsigned a = 0, b; a < 16; a = b)
+                {
+                    if (!(mask & (1u << a)))
+                    {
+                        b = a + 1;
+                        continue;
+                    }
+                    for (b = a + 1; b < 16 && (mask & (1u << b)); ++b)
+                        ;
+                    EmitCloudPiece(reflections, slot, index, left, top,
+                                   x + a / 16.0f, z + r0 / 16.0f, x + b / 16.0f, z + r1 / 16.0f, y, shift);
+                }
+            }
+        }
+}
+
+/*
+ * The clouds drift west for ever (UpdateCloudSprite), far off the map: the
+ * GBA shows them because a sprite's place on the screen wraps, every 512
+ * pixels across and 256 down. So a cloud is a lattice on the map, 32 cells
+ * across by 16 down, laid wherever it meets the camera's view (wider and
+ * deeper to the north than the GBA's screen).
+ */
+#define VOXEL_CLOUD_PERIOD_X 32.0f
+#define VOXEL_CLOUD_PERIOD_Z 16.0f
+
+static void EmitClouds(VoxelBuilder *reflections, const VoxelSpriteSlot *slot, unsigned index,
+                       const VoxelCamera *camera, float left, float top)
+{
+    float width = slot->width / VOXEL_PIXELS_PER_TILE, height = slot->height / VOXEL_PIXELS_PER_TILE;
+    float minX = camera->targetX - 16.0f, maxX = camera->targetX + 16.0f;
+    float minZ = camera->targetZ - 20.0f, maxZ = camera->targetZ + 10.0f;
+
+    left -= VOXEL_CLOUD_PERIOD_X * floorf((left + width - minX) / VOXEL_CLOUD_PERIOD_X);
+    top -= VOXEL_CLOUD_PERIOD_Z * floorf((top + height - minZ) / VOXEL_CLOUD_PERIOD_Z);
+    for (float z = top; z < maxZ; z += VOXEL_CLOUD_PERIOD_Z)
+        for (float x = left; x < maxX; x += VOXEL_CLOUD_PERIOD_X)
+            EmitCloud(reflections, slot, index, x, z);
+}
+
 /* ── Field effects ──────────────────────────────────────────────────────── */
 
 /*
@@ -1184,6 +1289,7 @@ static void EmitReflection(VoxelBuilder *reflections, const VoxelSpriteSlot *slo
  * move, the bird of Fly and its rider), drawn over the view too.
  */
 bool8 CtrSprite_IsVoxelWeather(const struct Sprite *sprite);   /* sprite.c */
+bool8 CtrSprite_IsVoxelCloud(const struct Sprite *sprite);     /* sprite.c */
 
 #define VOXEL_EFFECTS_MAX VOXEL_SPRITE_SLOTS
 /* How far an effect card sits in front of or behind the object it belongs to. */
@@ -1214,6 +1320,7 @@ typedef struct
     int owner;               /* object index, or -1 */
     bool front, decal, tile;
     bool surf;               /* the surf mon: lying on the water, ridden */
+    bool cloud;              /* a cloud, laid on the water (EmitCloud) */
 } VoxelEffectCard;
 
 static bool IsTemplate(const struct SpriteTemplate *template, unsigned first, unsigned last)
@@ -1484,14 +1591,15 @@ unsigned VoxelEntities_Emit(VoxelBuilder *builder, uint16_t *atlas, const VoxelC
         const VoxelObjectCard *reference;
         unsigned t;
         int w, h;
-        bool inRange = false;
+        bool inRange = false, cloud;
 
         /* sprite->invisible is honoured: an effect hidden on purpose (a
          * blinking one's off frames) is hidden here too. */
         if (!sprite->inUse || sprite->invisible || !sprite->coordOffsetEnabled || objectSprite[id])
             continue;
+        cloud = CtrSprite_IsVoxelCloud(sprite);
         if (IsTemplate(sprite->template, FLDEFFOBJ_SHADOW_S, FLDEFFOBJ_SHADOW_XL)
-         || CtrSprite_IsVoxelWeather(sprite))
+         || (CtrSprite_IsVoxelWeather(sprite) && !cloud))
             continue;
         /* A reflection is a copy of its object's picture. */
         for (t = 0; t < objectTileCount && objectTiles[t] != sprite->oam.tileNum; ++t)
@@ -1504,7 +1612,8 @@ unsigned VoxelEntities_Emit(VoxelBuilder *builder, uint16_t *atlas, const VoxelC
         effect->sprite = sprite;
         effect->slot = 0;
         effect->surf = sprite->template == gFieldEffectObjectTemplatePointers[FLDEFFOBJ_SURF_BLOB];
-        effect->decal = IsDecal(sprite->template);
+        effect->cloud = cloud;
+        effect->decal = IsDecal(sprite->template) || cloud;
         effect->tile = IsTileEffect(sprite->template);
         /* A visible wild Pokemon stands on its own tile, never on an object:
          * a tile south of the player, owned by it, it sank under the ground. */
@@ -1526,6 +1635,12 @@ unsigned VoxelEntities_Emit(VoxelBuilder *builder, uint16_t *atlas, const VoxelC
                 cx += (float)VoxelWorld_Instance(0)->originX;
                 cz += (float)VoxelWorld_Instance(0)->originY;
             }
+            /* Long grass stands in 3D there (voxel_tree.c): its tuft hides
+             * the walker, and the GBA's picture of it laid on the new floor
+             * was a patch of the old drawing. */
+            if (sprite->template == gFieldEffectObjectTemplatePointers[FLDEFFOBJ_LONG_GRASS]
+             && VoxelTree_PartAt((int)floorf(cx), (int)floorf(cz)) == VOXEL_TREE_GRASS)
+                continue;
             inRange = fabsf(cx - camera->targetX) <= VOXEL_EFFECT_RANGE
                    && fabsf(cz - camera->targetZ) <= VOXEL_EFFECT_RANGE;
         }
@@ -1544,6 +1659,9 @@ unsigned VoxelEntities_Emit(VoxelBuilder *builder, uint16_t *atlas, const VoxelC
             inRange = fabsf(cx - camera->targetX) <= VOXEL_EFFECT_RANGE
                    && fabsf(cz - camera->targetZ) <= VOXEL_EFFECT_RANGE;
         }
+        /* A cloud is everywhere its lattice repeats it (EmitClouds). */
+        if (cloud)
+            inRange = true;
         request->id = (uint8_t)id;
         request->priority = EffectPriority(sprite, id);
         request->inRange = inRange;
@@ -1660,6 +1778,21 @@ unsigned VoxelEntities_Emit(VoxelBuilder *builder, uint16_t *atlas, const VoxelC
         h = sSlots[effect->slot].height;
         x = sprite->x + sprite->x2;
         base = sprite->y + sprite->centerToCornerVecY + h;
+        if (effect->cloud)
+        {
+            /* Placed from the player as a decal is: its picture's bottom
+             * edge 8 px under the middle of the player's tile. */
+            reference = gPlayerAvatar.objectEventId < OBJECT_EVENTS_COUNT
+                      ? &objects[gPlayerAvatar.objectEventId] : NULL;
+            if (reflections != NULL && reference != NULL && reference->drawn)
+                EmitClouds(reflections, &sSlots[effect->slot], effect->slot, camera,
+                           reference->worldX + 0.5f
+                               + (x - reference->screenX) / VOXEL_PIXELS_PER_TILE
+                               - sSlots[effect->slot].width / VOXEL_PIXELS_PER_TILE * 0.5f,
+                           reference->worldZ + 0.5f
+                               + (base - h - (reference->base - 8)) / VOXEL_PIXELS_PER_TILE);
+            continue;
+        }
         if (effect->tile)
         {
             /* Lying on its own tile over the ground's drawing of it, which it

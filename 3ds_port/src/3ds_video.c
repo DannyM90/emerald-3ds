@@ -589,6 +589,7 @@ static int OamUnwrapY(unsigned index, int y)
 }
 
 static uint32_t sVoxelWeatherOam[4];
+static uint32_t sVoxelCloudOam[4];
 /*
  * Which sprites the voxel view draws over itself: the weather, before its
  * text layer, and then the sprites placed on the screen rather than on the
@@ -606,6 +607,7 @@ static bool sSwoopFieldObjs;
 void CtrVideo_ClearVoxelWeatherOam(void)
 {
     memset(sVoxelWeatherOam, 0, sizeof(sVoxelWeatherOam));
+    memset(sVoxelCloudOam, 0, sizeof(sVoxelCloudOam));
 }
 
 void CtrVideo_MarkVoxelWeatherOam(unsigned first, unsigned end)
@@ -613,6 +615,13 @@ void CtrVideo_MarkVoxelWeatherOam(unsigned first, unsigned end)
     if (end > 128) end = 128;
     for (unsigned i = first; i < end; ++i)
         sVoxelWeatherOam[i >> 5] |= 1u << (i & 31);
+}
+
+void CtrVideo_MarkVoxelCloudOam(unsigned first, unsigned end)
+{
+    if (end > 128) end = 128;
+    for (unsigned i = first; i < end; ++i)
+        sVoxelCloudOam[i >> 5] |= 1u << (i & 31);
 }
 
 /* OAM entries of sprites placed on the screen rather than on the map. */
@@ -5967,6 +5976,9 @@ static void DrawObjects(unsigned priority, bool effects)
         /* ... and its own rain, sand and ash (DrawWeather): the sand's
          * swirls too, which are particles. */
         if ((lattice || particle) && sVoxelObjPass != VOXEL_OBJ_NONE && CtrVoxel_DrawsWeather()) continue;
+        /* The clouds lie on the voxel world's water (voxel_entities.c). */
+        if (sVoxelObjPass != VOXEL_OBJ_NONE && (sVoxelCloudOam[i >> 5] & (1u << (i & 31))))
+            continue;
         if (sVoxelObjPass != VOXEL_OBJ_NONE)
         {
             bool weather = (sVoxelWeatherOam[i >> 5] & (1u << (i & 31))) != 0;
