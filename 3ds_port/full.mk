@@ -141,6 +141,8 @@ ROMFS_SHADER_OUTS += romfs/stage/leaves.bin
 ROMFS_SHADER_OUTS += romfs/bottom/battle.bin
 # The bottom screen's menu backdrop: the port's own art (scripts/gen_menu_art.py).
 ROMFS_SHADER_OUTS += romfs/bottom/menu.bin
+# The Frontier Pass's backdrop on the top screen (scripts/gen_pass_top_art.py).
+ROMFS_SHADER_OUTS += romfs/bottom/pass_top.bin
 # The battle's info boxes and text box: the port's own art (scripts/gen_battle_hud.py).
 ROMFS_SHADER_OUTS += romfs/battle/hud.bin
 
@@ -550,6 +552,10 @@ romfs/bottom/battle.bin: scripts/gen_battle_art.py
 romfs/bottom/menu.bin: scripts/gen_menu_art.py scripts/gen_battle_art.py
 	@mkdir -p $(@D)
 	"$(PYTHON)" scripts/gen_menu_art.py --output $@
+
+romfs/bottom/pass_top.bin: scripts/gen_pass_top_art.py scripts/gen_menu_art.py scripts/gen_battle_art.py
+	@mkdir -p $(@D)
+	"$(PYTHON)" scripts/gen_pass_top_art.py --output $@
 
 romfs/battle/hud.bin: scripts/gen_battle_hud.py
 	@mkdir -p $(@D)

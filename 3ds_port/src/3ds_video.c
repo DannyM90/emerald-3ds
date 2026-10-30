@@ -12,6 +12,7 @@
 #include "3ds_video.h"
 #include "3ds_tile_banks.h"
 #include "3ds_dex_top.h"
+#include "3ds_pass_top.h"
 #include "3ds_corner_art.h"
 #include "3ds_data.h"
 #include "3ds_bottom.h"
@@ -12329,6 +12330,31 @@ static void RenderDexTop(bool stereo, float slider)
     BlendForget();
 }
 
+/*
+ * The Frontier Pass drawn natively over the whole top screen
+ * (3ds_pass_top.c) in the game picture's place, flat in both eyes, with the
+ * 2D program and no depth test as the FPS counter is.
+ */
+static void RenderPassTop(bool stereo)
+{
+    C2D_Prepare();
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+    BlendForget();
+    CtrPassTop_Upload();
+    SceneOn(sTop);
+    C2D_ViewReset();
+    Blend(5, false, false);
+    CtrPassTop_Draw();
+    if (stereo)
+    {
+        SceneOn(sTopRight);
+        C2D_ViewReset();
+        CtrPassTop_Draw();
+    }
+    C2D_Flush();
+    BlendForget();
+}
+
 void CtrVideo_Present(void)
 {
     /* The frame's entry tick: its preparation, before FrameBegin. */
@@ -12958,6 +12984,10 @@ void CtrVideo_Present(void)
             }
         }
     }
+    if (!CtrPassTop_Active())
+        CtrPassTop_Idle();
+    else if (!down && !blank)
+        RenderPassTop(stereo);
 #if CTR_SHOW_FPS
     if (CtrSettings_ShowFps())
     {
