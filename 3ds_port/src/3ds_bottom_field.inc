@@ -719,8 +719,8 @@ static void DrawTrainerCard(const ViewState *s)
         }
     }
     {
-        /* Danny edition: with the Frontier Pass, FLIP over PASS, each half
-         * the height (issue #150: the pass was out of reach). */
+        /* With the Frontier Pass, FLIP over PASS, each half the height: the
+         * pass is the game's, which PLAYER opened in the original. */
         int fh = s->hasPass ? CARD_BADGES_H / 2 - 1 : CARD_BADGES_H;
 
         oy = Plate(AREA_X + AREA_W - CARD_FLIP_W, CARD_BADGES_Y, CARD_FLIP_W, fh, s->pressed == HIT_OK ? sEmerald : sSlate,
@@ -734,7 +734,7 @@ static void DrawTrainerCard(const ViewState *s)
 
             oy = Plate(AREA_X + AREA_W - CARD_FLIP_W, py, CARD_FLIP_W, fh, s->pressed == HIT_YES ? sEmerald : sSlate,
                        s->pressed == HIT_YES ? PLATE_STATE_PRESSED : PLATE_STATE_NORMAL);
-            TextIn(Ascii(CTR_TEXT("PASS", "PASE", "PASSE", "TESSERA", "PASSE", "KAMPFPASS", "PASS")), AREA_X + AREA_W - CARD_FLIP_W, oy,
+            TextIn(Ascii(CTR_TEXT("PASS", "PASE", "PASSE", "TESSERA", "PASSE", "KAMPFPASS", "パス")), AREA_X + AREA_W - CARD_FLIP_W, oy,
                    CARD_FLIP_W, fh, &sSmall, 'c', STYLE_WHITE, 4);
             AddHit(AREA_X + AREA_W - CARD_FLIP_W, py, CARD_FLIP_W, fh, HIT_YES);
         }

@@ -1,0 +1,74 @@
+Emerald 3DS changes to pret/pokeemerald 76463dac15cad36aca5e2b3f6366abf9e53f814f: the Frontier Pass on the top screen
+Applies after 0083-frontier-pass.patch; apply with tools/bootstrap.py.
+
+diff --git a/src/frontier_pass.c b/src/frontier_pass.c
+--- a/src/frontier_pass.c
++++ b/src/frontier_pass.c
+@@ -1776,3 +1776,67 @@
+     CopyBgTilemapBufferToVram(0);
+     PlaySE(SE_DEX_SCROLL);
+ }
++
++#ifdef PLATFORM_3DS
++#include "3ds_pass_view.h"
++
++STATIC_ASSERT((int)CTR_PASS_AREA_COUNT == (int)CURSOR_AREA_COUNT, ctrPassAreaCount);
++STATIC_ASSERT((int)CTR_PASS_AREA_SYMBOL_TOWER == (int)CURSOR_AREA_SYMBOL_TOWER, ctrPassAreaSymbol);
++STATIC_ASSERT(CTR_PASS_FACILITIES == NUM_FRONTIER_FACILITIES, ctrPassFacilities);
++
++static bool8 CtrPass_Shown(const struct Sprite *sprite)
++{
++    return sprite != NULL && sprite->inUse;
++}
++
++// What the top screen draws natively in the pass's place
++// (3ds_bottom_pass.inc). Only once its sprites are up: before that the
++// screen is still being set up behind the fade.
++bool8 CtrPass_GetView(struct CtrPassView *view)
++{
++    u8 i;
++
++    memset(view, 0, sizeof(*view));
++    if (sPassData == NULL)
++        return FALSE;
++    if (sMapData != NULL)
++    {
++        if (!CtrPass_Shown(sMapData->cursorSprite) || !CtrPass_Shown(sMapData->mapIndicatorSprite))
++            return FALSE;
++        view->view = CTR_PASS_MAP;
++        view->mapCursor = sMapData->cursorPos;
++        view->mapHand = sMapData->cursorSprite;
++        view->mapIndicator = sMapData->mapIndicatorSprite;
++        view->mapHead = CtrPass_Shown(sMapData->playerHeadSprite) ? sMapData->playerHeadSprite : NULL;
++        for (i = 0; i < NUM_FRONTIER_FACILITIES; i++)
++            view->names[i] = sMapLandmarks[i].name;
++        view->mapDescription = sMapLandmarks[sMapData->cursorPos % NUM_FRONTIER_FACILITIES].description;
++        return TRUE;
++    }
++    if (sPassGfx == NULL || !CtrPass_Shown(sPassGfx->cursorSprite))
++        return FALSE;
++    view->view = CTR_PASS_MAIN;
++    view->cursorArea = sPassData->cursorArea;
++    view->stars = sPassData->trainerStars;
++    view->hasRecord = sPassData->hasBattleRecord;
++    view->battlePoints = sPassData->battlePoints;
++    view->cursor = sPassGfx->cursorSprite;
++    view->medalTiles = GetSpriteTileStartByTag(TAG_MEDAL_SILVER);
++    for (i = 0; i < NUM_FRONTIER_FACILITIES; i++)
++    {
++        view->symbols[i] = sPassData->facilitySymbols[i];
++        view->symbolSprites[i] = CtrPass_Shown(sPassGfx->symbolSprites[i]) ? sPassGfx->symbolSprites[i] : NULL;
++    }
++    if (sPassData->areaToShow == CURSOR_AREA_MAP || sPassData->areaToShow == CURSOR_AREA_CARD)
++    {
++        view->zoomArea = sPassData->areaToShow;
++        view->zoomScale = sPassGfx->zooming && sPassGfx->scaleX != 0 ? MathUtil_Inv16(sPassGfx->scaleX) : Q_8_8(1);
++    }
++    // As PrintAreaDescription words it.
++    if (sPassData->cursorArea == CURSOR_AREA_RECORD && !sPassData->hasBattleRecord)
++        view->description = sPassAreaDescriptions[CURSOR_AREA_NOTHING];
++    else if (sPassData->cursorArea != CURSOR_AREA_NOTHING && sPassData->cursorArea < CURSOR_AREA_COUNT)
++        view->description = sPassAreaDescriptions[sPassData->cursorArea];
++    return TRUE;
++}
++#endif
