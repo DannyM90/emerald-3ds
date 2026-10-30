@@ -9,6 +9,11 @@ construction: there are still many faults, flat elements and other problems,
 which will be fixed in the coming versions. Everything keeps being built and
 improved.
 
+- Licence: the original Emerald 3DS code, tools and documentation move from
+  MIT to CC BY-NC-SA 4.0 (`LICENSE-PORT.md`). Forks and changes stay welcome,
+  with credit and under the same licence, but not for profit. Copies of
+  0.4.x and earlier keep the MIT licence they were published under.
+
 - Voxel world: most of Hoenn's interiors stand in 3D, by @Deunnis:
   Lilycove's contest stage, lobby and hall (pull request #125, issue #119),
   its Department Store from 1F to the rooftop with the elevator (pull
@@ -339,7 +344,13 @@ improved.
   game's Japanese glyphs, the naming screen has the Japanese keyboard and
   5-character names, battles draw names, levels and HP as the Japanese game
   does, the touch screen has Japanese labels and the Pokédex shows metres
-  and kilograms. See docs/JAPANESE.md for what is still in English. The
+  and kilograms. The scripts' and TV shows' texts the matcher has found no
+  Japanese for yet (about a hundred) show the port's own "(みほんやく)" (not
+  yet translated) instead of the English game's text, which the release
+  does not carry; the sound effects BPEJ has in another version (the
+  EXP gain, Sandstorm and eight more) and the slot machine's menu come from
+  your ROM (`tools/locale_research/japanese_extras.py`). See docs/JAPANESE.md
+  for what is still to do. The
   touch screen no longer crashes the Japanese game half a second after a
   save loads (wrapped text measured with the Japanese fonts' fixed width),
   by @luksgrin (pull request #200). Also by @luksgrin (pull request #201):
