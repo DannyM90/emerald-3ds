@@ -23,6 +23,8 @@
 static bool sActive;
 static const uint16_t *sCanvas;
 static bool sDirty, sShown;
+/* The 8x8 blocks to take in, columns tx0..tx1 and rows ty0..ty1 (included). */
+static int sTx0, sTy0, sTx1, sTy1;
 static uint16_t sFadeColour;
 static unsigned sFadeY;
 
@@ -30,11 +32,40 @@ static C3D_Tex sTex;
 static bool sTexAllocated, sTexFailLogged;
 static unsigned sTexRetry;
 
+static void Dirty(int tx0, int ty0, int tx1, int ty1)
+{
+    if (!sDirty)
+    {
+        sTx0 = tx0;
+        sTy0 = ty0;
+        sTx1 = tx1;
+        sTy1 = ty1;
+        sDirty = true;
+        return;
+    }
+    if (tx0 < sTx0) sTx0 = tx0;
+    if (ty0 < sTy0) sTy0 = ty0;
+    if (tx1 > sTx1) sTx1 = tx1;
+    if (ty1 > sTy1) sTy1 = ty1;
+}
+
 void CtrPassTop_Show(const uint16_t *canvas)
 {
     sActive = true;
     sCanvas = canvas;
-    sDirty = true;
+    Dirty(0, 0, CTR_PASS_TOP_WIDTH / 8 - 1, CTR_PASS_TOP_HEIGHT / 8 - 1);
+}
+
+void CtrPassTop_ShowRect(const uint16_t *canvas, int x0, int y0, int x1, int y1)
+{
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 > CTR_PASS_TOP_WIDTH) x1 = CTR_PASS_TOP_WIDTH;
+    if (y1 > CTR_PASS_TOP_HEIGHT) y1 = CTR_PASS_TOP_HEIGHT;
+    if (x1 <= x0 || y1 <= y0) return;
+    sActive = true;
+    sCanvas = canvas;
+    Dirty(x0 / 8, y0 / 8, (x1 - 1) / 8, (y1 - 1) / 8);
 }
 
 void CtrPassTop_SetFade(uint16_t colour, unsigned y)
@@ -72,7 +103,8 @@ static bool TextureReady(void)
     C3D_TexSetFilter(&sTex, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetWrap(&sTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
     sTexAllocated = true;
-    sDirty = true;
+    sDirty = false;
+    Dirty(0, 0, CTR_PASS_TOP_WIDTH / 8 - 1, CTR_PASS_TOP_HEIGHT / 8 - 1);
     return true;
 }
 
@@ -99,8 +131,8 @@ void CtrPassTop_Upload(void)
             ordered = true;
         }
         /* The canvas runs down each column from the bottom row up. */
-        for (unsigned ty = 0; ty < CTR_PASS_TOP_HEIGHT / 8; ++ty)
-            for (unsigned tx = 0; tx < CTR_PASS_TOP_WIDTH / 8; ++tx)
+        for (unsigned ty = sTy0; ty <= (unsigned)sTy1; ++ty)
+            for (unsigned tx = sTx0; tx <= (unsigned)sTx1; ++tx)
             {
                 uint16_t *block = texels + (ty * (TEX_W / 8) + tx) * 64;
 
@@ -108,7 +140,9 @@ void CtrPassTop_Upload(void)
                     block[m] = sCanvas[(tx * 8 + order[m][0]) * CTR_PASS_TOP_HEIGHT + CTR_PASS_TOP_HEIGHT - 1 - (ty * 8 + order[m][1])];
             }
     }
-    C3D_TexFlush(&sTex);
+    /* Only the rows of blocks written: each a run of the texture. */
+    GSPGPU_FlushDataCache((uint16_t *)sTex.data + sTy0 * (TEX_W / 8) * 64,
+                          (sTy1 - sTy0 + 1) * (TEX_W / 8) * 64 * sizeof(uint16_t));
     sDirty = false;
     sShown = true;
 }

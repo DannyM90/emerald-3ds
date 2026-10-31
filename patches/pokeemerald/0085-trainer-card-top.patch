@@ -1,0 +1,42 @@
+diff --git a/src/trainer_card.c b/src/trainer_card.c
+--- a/src/trainer_card.c
++++ b/src/trainer_card.c
+@@ -1936,12 +1936,16 @@
+ }
+ 
+ #ifdef PLATFORM_3DS
++#include "3ds_pass_view.h"
++
+ // The card opened from the field (the start menu's PLAYER, with the classic
+ // menus), not one seen in a link: the bottom screen shows it in its window
+-// and works it by touch.
++// and works it by touch. The card the Frontier Pass opens is drawn on the
++// top screen instead (CtrTrainerCard_TopView), the bottom screen's menu
++// staying as it is.
+ bool8 CtrTrainerCard_FieldOpen(void)
+ {
+-    return sData != NULL && !sData->isLink;
++    return sData != NULL && !sData->isLink && !CtrPass_Open();
+ }
+ 
+ // Which side of that card waits for a key: 0 its front, 1 its back, 2 none
+@@ -1956,4 +1960,19 @@
+         return 1;
+     return 2;
+ }
++
++// The card the Frontier Pass opened, for the top screen, once it is drawn:
++// which side, how far a flip has folded it, and the rows only the game's
++// card has.
++bool8 CtrTrainerCard_TopView(struct CtrCardTop *view)
++{
++    memset(view, 0, sizeof(*view));
++    if (sData == NULL || sData->isLink || !CtrPass_Open() || sData->mainState < 7)
++        return FALSE;
++    view->onBack = sData->onBack;
++    view->fold = sData->cardTop >= CARD_FLIP_Y ? 256 : sData->cardTop * 256 / CARD_FLIP_Y;
++    view->frontierBP = sData->trainerCard.frontierBP;
++    view->backTitle = sData->textPlayersCard;
++    return TRUE;
++}
+ #endif
