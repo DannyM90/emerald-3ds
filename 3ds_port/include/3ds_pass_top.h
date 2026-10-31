@@ -18,6 +18,9 @@
  * from the bottom row up), CTR_PASS_TOP_WIDTH columns of CTR_PASS_TOP_HEIGHT. Kept
  * by pointer until the next frame has taken it in. */
 void CtrPassTop_Show(const uint16_t *canvas);
+/* Only a piece of it changed: x0, y0 to x1, y1 (not included), from its top
+ * left. The pieces since the last frame are taken in together. */
+void CtrPassTop_ShowRect(const uint16_t *canvas, int x0, int y0, int x1, int y1);
 /* The game's fade over it: its colour (GBA BGR555) and how far, 0..16. */
 void CtrPassTop_SetFade(uint16_t colour, unsigned y);
 void CtrPassTop_Hide(void);

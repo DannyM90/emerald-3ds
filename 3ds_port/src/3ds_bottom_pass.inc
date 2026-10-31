@@ -27,6 +27,7 @@
 
 #include "3ds_pass_view.h"
 #include "3ds_pass_top.h"
+#include "3ds_pass_hand.h"
 #include <stddef.h>
 #include "gpu_regs.h"
 
@@ -60,13 +61,10 @@ STATIC_ASSERT(PASS_H == H, passTopHeight);
 #define PASS_THUMB_H 78
 /* The map's and the card's pictures on the game's layer 1 (tiles 16,3 and
  * 16,10, 12x7 each) and their size here: 4/3. */
-#define PASS_THUMB_GX 128
-#define PASS_THUMB_MAP_GY 24
-#define PASS_THUMB_CARD_GY 80
-#define PASS_THUMB_GW 96
-#define PASS_THUMB_GH 56
-#define PASS_THUMB_W 128
-#define PASS_THUMB_H_ART 75
+/* The Frontier map's picture on the map button: the map screen's art, the
+ * part frontier_pass.c shows (PASS_ART_*), made smaller. */
+#define PASS_MAP_PIC_W 136
+#define PASS_MAP_PIC_H 70
 
 /* The Frontier map: its picture on the game's layer 2 (in its frame), 1.5x
  * at (PASS_ART_X, PASS_ART_Y); the facilities' plates beside it. */
@@ -91,10 +89,15 @@ typedef struct
 } PassSprite;
 
 static u16 sPassCanvas[PASS_W * PASS_H] __attribute__((aligned(32)));
-/* The canvas without the cursor, and the backdrop it starts from. */
-static u16 *sPassBase, *sPassBackdrop;
-static u16 sPassThumbs[2][PASS_THUMB_GW * PASS_THUMB_GH];
-static u16 sPassArt[PASS_ART_GW * PASS_ART_GH];
+/* The canvas unlit, and lit without the hand (PassComposeStatic), and the
+ * backdrop it starts from. */
+static u16 *sPassStatic, *sPassBase, *sPassBackdrop;
+/* The map's picture decoded from the game's art, while the pass is open. */
+static u16 *sPassMapPic;
+/* A button's picture taken off the canvas to grow it as the game zooms. */
+static u16 sPassGrab[PASS_RIGHT_W * PASS_THUMB_H];
+/* The map's picture on its button, made smaller once (column by column). */
+static u16 *sPassMapSmall;
 
 /* ------------------------------------------------------------------------ */
 /* Where the game's areas are here                                          */
@@ -227,19 +230,74 @@ static void PassBlit(const u16 *src, int sw, int sh, int x, int y, int w, int h,
     }
 }
 
+/* An opaque picture enlarged pixel by pixel: the zoom, every frame of it. */
+static void PassBlitNearest(const u16 *src, int sw, int sh, int x, int y, int w, int h)
+{
+    for (int dx = 0; dx < w; ++dx)
+    {
+        int cx = x + dx + sOX;
+        const u16 *col = src + dx * sw / w;
+        u16 *dst;
+
+        if (cx < sClipX0 || cx >= sClipX1)
+            continue;
+        dst = sDst + cx * H;
+        for (int dy = 0; dy < h; ++dy)
+        {
+            int cy = y + dy;
+
+            if (cy >= sClipY0 && cy < sClipY1)
+                dst[H - 1 - cy] = PassColour(col[(dy * sh / h) * sw]);
+        }
+    }
+}
+
 static void PassSpriteAt(const PassSprite *s, int x, int y, int scale2, bool8 hflip)
 {
     if (s->w)
         PassBlit(s->px, s->w, s->h, x, y, s->w * scale2 / 2, s->h * scale2 / 2, hflip);
 }
 
-/* The cursor, doubled, its tip at (tx, ty): the game's points down and
- * left from 3, 13 of its 16x16 (frontier_pass.c takes x - 5, y + 5 of its
- * middle), mirrored on the map. */
-static void PassHand(const PassSprite *hand, int tx, int ty, bool8 hflip)
+/* Where the hand was last drawn, to put back what it covered. */
+static s16 sPassHandRect[4];
+
+/* The cursor: the port's own hand (3ds_pass_hand.h, scripts/gen_pass_hand.py)
+ * at the screen's resolution, its fingertip at (tx, ty), pointing left, or
+ * right on the map. */
+static void PassHand(int tx, int ty, bool8 hflip)
 {
-    if (hand->w)
-        PassSpriteAt(hand, tx - 2 * (hflip ? hand->w - 1 - 3 : 3), ty - 2 * 13, 4, hflip);
+    int x0 = tx - (hflip ? PASS_HAND_W - 1 - PASS_HAND_TIP_X : PASS_HAND_TIP_X), y0 = ty - PASS_HAND_TIP_Y;
+
+    for (int y = 0; y < PASS_HAND_H; ++y)
+    {
+        int cy = y0 + y;
+
+        if (cy < sClipY0 || cy >= sClipY1)
+            continue;
+        for (int x = 0; x < PASS_HAND_W; ++x)
+        {
+            int cx = x0 + (hflip ? PASS_HAND_W - 1 - x : x) + sOX, i = y * PASS_HAND_W + x;
+            int a = sPassHandAlpha[i];
+            u16 *dst;
+
+            if (!a || cx < sClipX0 || cx >= sClipX1)
+                continue;
+            dst = sDst + cx * H + (H - 1 - cy);
+            if (a >= 255)
+                *dst = sPassHandColour[i];
+            else
+            {
+                Rgb u = RgbOf(*dst), c = RgbOf(sPassHandColour[i]);
+
+                *dst = PackRgb(Div255(u.r * (255 - a) + c.r * a), Div255(u.g * (255 - a) + c.g * a),
+                               Div255(u.b * (255 - a) + c.b * a));
+            }
+        }
+    }
+    sPassHandRect[0] = x0;
+    sPassHandRect[1] = y0;
+    sPassHandRect[2] = x0 + PASS_HAND_W;
+    sPassHandRect[3] = y0 + PASS_HAND_H;
 }
 
 /* The header: the title on the light plate, as every bottom screen's. */
@@ -272,132 +330,360 @@ static const u8 *PassCancel(void)
     return Ascii(CTR_TEXT("CANCEL", "SALIR", "RETOUR", "ESCI", "SAIR", "ZURÜCK", "やめる"));
 }
 
+/* The trainer card as the bottom screen's card reads it (SnapshotCard,
+ * SnapshotCardBack), and what only the game's own card has. */
+typedef struct
+{
+    u8 name[PLAYER_NAME_LENGTH + 1];
+    u8 gender, hasDex, stars, badges, minutes, hofMinutes;
+    u16 id, dex, hours, hofHours, linkWins, linkLosses, trades, pokeblocks, contests;
+    u32 money;
+    struct CtrCardTop top;
+} PassCard;
+
 typedef struct
 {
     struct CtrPassView v;
     PassSprite symbols[CTR_PASS_FACILITIES], indicator, head;
     /* For a symbol not earned: its shape, from the sheet, drawn dim. */
     PassSprite empty[CTR_PASS_FACILITIES];
-    bool8 thumbs, art;
     s16 indicatorX, indicatorY, headX, headY;
-    /* The layers' pictures, told apart by their sums. */
-    u32 sums[2];
+    PassCard card;
     /* The cursor, last: everything before it is the base. */
     s16 handX, handY;
-    PassSprite hand;
 } PassScene;
 
-/* The pass: its plates where the game's areas are, the art on them. */
-static void PassDrawMain(const PassScene *sc)
+/* A piece of the canvas as a picture PassBlit takes (BGR555, opaque). */
+static void PassGrabRect(int x, int y, int w, int h, u16 *out)
+{
+    for (int dy = 0; dy < h; ++dy)
+        for (int dx = 0; dx < w; ++dx)
+        {
+            u16 c = sPassCanvas[(x + dx) * PASS_H + (PASS_H - 1 - (y + dy))];
+
+            out[dy * w + dx] = PASS_OPAQUE | (c >> 11) | (((c >> 6) & 31) << 5) | ((c & 31) << 10);
+        }
+}
+
+/* The map's picture on its button, filling it: as wide as the button, its
+ * top and bottom cut evenly to the button's height. */
+static void PassMapButton(int x, int y)
+{
+    int h = PASS_ART_GH * PASS_MAP_PIC_W / PASS_ART_GW, saved[4];
+
+    if (!sPassMapPic)
+        return;
+    /* Made smaller once a pass, then only copied: it is opaque. */
+    if (sPassMapSmall)
+    {
+        for (int dx = 0; dx < PASS_MAP_PIC_W; ++dx)
+            memcpy(sDst + (x + dx + sOX) * H + (H - y - PASS_MAP_PIC_H), sPassMapSmall + dx * PASS_MAP_PIC_H,
+                   PASS_MAP_PIC_H * sizeof(u16));
+        return;
+    }
+    ClipPush(saved, x, y, x + PASS_MAP_PIC_W, y + PASS_MAP_PIC_H);
+    PassBlit(sPassMapPic, PASS_ART_GW, PASS_ART_GH, x, y + (PASS_MAP_PIC_H - h) / 2, PASS_MAP_PIC_W, h, FALSE);
+    ClipPop(saved);
+    sPassMapSmall = malloc(PASS_MAP_PIC_W * PASS_MAP_PIC_H * sizeof(u16));
+    if (sPassMapSmall)
+        for (int dx = 0; dx < PASS_MAP_PIC_W; ++dx)
+            memcpy(sPassMapSmall + dx * PASS_MAP_PIC_H, sDst + (x + dx + sOX) * H + (H - y - PASS_MAP_PIC_H),
+                   PASS_MAP_PIC_H * sizeof(u16));
+}
+
+/* The card, small: its green and cream, the name and the ID on the cream,
+ * the trainer on the green. */
+static void PassMiniCard(const PassCard *c, int x, int y, int w, int h)
+{
+    int oy = PlateEx(x, y, w, h, sCardGreen, PLATE_STATE_NORMAL, w - 58, 18, PlateCut(h), 0);
+    int tw = w - 64;
+
+    TextIn(c->name, x, oy + 2, tw, 20, &sNormal, 'l', STYLE_INK, 6);
+    FillRgb(x + 6, oy + 24, tw - 6, 1, sRule);
+    TextIn(Ascii(CTR_TEXT("ID No.", "Nº ID", "No. ID", "N. ID", "Nº ID", "ID-Nr.", "IDNo.")), x, oy + 26, tw, 18,
+           &sSmall, 'l', STYLE_GRAY, 6);
+    TextIn(Number(c->id, 5, STR_CONV_MODE_LEADING_ZEROS), x, oy + 42, tw, 20, &sNormal, 'r', STYLE_INK, 6);
+    if (sRes.trainerPic[c->gender])
+    {
+        int saved[4];
+
+        ClipPush(saved, x, y, x + w, y + h);
+        DrawSprite(sRes.trainerPic[c->gender], 8, 8, x + w - 62, oy + (h - 64) / 2, sRes.trainerPicPal[c->gender].c);
+        ClipPop(saved);
+    }
+}
+
+/* The pass: its plates where the game's areas are, the art on them. It is
+ * drawn in two goes (PassCompose): everything unlit once, then over a copy
+ * of that the area the cursor is on lit, its description and the zoom. */
+static void PassDrawSymbols(const PassScene *sc, bool8 on, int cell)
 {
     const struct CtrPassView *v = &sc->v;
-    u8 area = v->cursorArea;
-    bool8 symbolsOn = area == CTR_PASS_AREA_EARNED_SYMBOLS || area >= CTR_PASS_AREA_SYMBOL_TOWER;
     int oy;
 
-    PassHeader(PassTitle(), PassCancel(), area == CTR_PASS_AREA_CANCEL);
-
-    /* The symbols: a plate with its name in a band on top, the seven cells
-     * on its face where the game has them, the ones not earned dim. */
-    oy = PlateEx(PASS_LEFT_X, PASS_SYMBOLS_Y, PASS_LEFT_W, PASS_SYMBOLS_H, symbolsOn ? sEmerald : sSlate,
-                 symbolsOn ? PLATE_STATE_FOCUS : PLATE_STATE_NORMAL, 0, 0, PlateCut(PASS_SYMBOLS_H), PASS_SYMBOLS_HEAD);
+    /* A plate with its name in a band on top, the seven cells on its face
+     * where the game has them, the ones not earned dim. */
+    oy = PlateEx(PASS_LEFT_X, PASS_SYMBOLS_Y, PASS_LEFT_W, PASS_SYMBOLS_H, on ? sEmerald : sSlate,
+                 on ? PLATE_STATE_FOCUS : PLATE_STATE_NORMAL, 0, 0, PlateCut(PASS_SYMBOLS_H), PASS_SYMBOLS_HEAD);
     TextIn(gText_SymbolsEarned, PASS_LEFT_X, oy, PASS_LEFT_W, PASS_SYMBOLS_HEAD, &sNormal, 'c', STYLE_WHITE, 6);
     for (int i = 0; i < CTR_PASS_FACILITIES; ++i)
     {
         int gx = sPassSymbolCells[i][0] + 8, gy = sPassSymbolCells[i][1] + 8;
         int cx = PassX(gx), cy = PassY(gx, gy) + (oy - PASS_SYMBOLS_Y);
 
-        if (area == CTR_PASS_AREA_SYMBOL_TOWER + i)
+        if (i == cell)
             Plate(cx - 15, cy - 15, 30, 30, sEmerald, PLATE_STATE_FOCUS);
         if (v->symbols[i] && sc->symbols[i].w)
             PassSpriteAt(&sc->symbols[i], cx - 12, cy - 12, 3, FALSE);
         else if (sc->empty[i].w)
             PassSpriteAt(&sc->empty[i], cx - 12, cy - 12, 3, FALSE);
     }
+}
 
-    /* The record: a button, grey and never lit without one to watch. */
-    {
-        bool8 on = area == CTR_PASS_AREA_RECORD && v->hasRecord;
+/* The record: a button, grey and never lit without one to watch. */
+static void PassDrawRecord(const PassScene *sc, bool8 on)
+{
+    int oy;
 
-        oy = Plate(PASS_LEFT_X, PASS_RECORD_Y, PASS_LEFT_W, PASS_RECORD_H,
-                   !v->hasRecord ? sOffGrey : on ? sEmerald : sSlate, on ? PLATE_STATE_FOCUS : PLATE_STATE_NORMAL);
-        TextIn(gText_BattleRecord, PASS_LEFT_X, oy, PASS_LEFT_W, PASS_RECORD_H, &sNormal, 'c', STYLE_WHITE, 6);
-    }
+    on = on && sc->v.hasRecord;
+    oy = Plate(PASS_LEFT_X, PASS_RECORD_Y, PASS_LEFT_W, PASS_RECORD_H,
+               !sc->v.hasRecord ? sOffGrey : on ? sEmerald : sSlate, on ? PLATE_STATE_FOCUS : PLATE_STATE_NORMAL);
+    TextIn(gText_BattleRecord, PASS_LEFT_X, oy, PASS_LEFT_W, PASS_RECORD_H, &sNormal, 'c', STYLE_WHITE, 6);
+}
 
-    /* The points: their name and the number, green, on cream. */
-    {
-        bool8 on = area == CTR_PASS_AREA_POINTS;
-
-        oy = PlateEx(PASS_LEFT_X, PASS_POINTS_Y, PASS_LEFT_W, PASS_POINTS_H, on ? sEmerald : sLight,
+/* The points: their name and the number, green, on cream. */
+static void PassDrawPoints(const PassScene *sc, bool8 on)
+{
+    int oy = PlateEx(PASS_LEFT_X, PASS_POINTS_Y, PASS_LEFT_W, PASS_POINTS_H, on ? sEmerald : sLight,
                      on ? PLATE_STATE_FOCUS : PLATE_STATE_NORMAL, PASS_LEFT_W - 10, 30, PlateCut(PASS_POINTS_H), 0);
-        TextIn(gText_BattlePoints, PASS_LEFT_X, oy, PASS_LEFT_W - 6, PASS_POINTS_H / 2, &sNormal, 'l', STYLE_INK, 8);
-        TextIn(Number(v->battlePoints, 5, STR_CONV_MODE_LEFT_ALIGN), PASS_LEFT_X, oy + PASS_POINTS_H / 2 - 2,
-               PASS_LEFT_W - 6, PASS_POINTS_H / 2, &sNormal, 'r', STYLE_GREEN, 10);
-    }
 
-    /* The map and the card: the game's pictures of them on their plates. */
-    for (int k = 0; k < 2; ++k)
-    {
-        bool8 on = area == (k ? CTR_PASS_AREA_CARD : CTR_PASS_AREA_MAP);
-        int y = k ? PASS_CARD_Y : PASS_MAP_Y;
+    TextIn(gText_BattlePoints, PASS_LEFT_X, oy, PASS_LEFT_W - 6, PASS_POINTS_H / 2, &sNormal, 'l', STYLE_INK, 8);
+    TextIn(Number(sc->v.battlePoints, 5, STR_CONV_MODE_LEFT_ALIGN), PASS_LEFT_X, oy + PASS_POINTS_H / 2 - 2,
+           PASS_LEFT_W - 6, PASS_POINTS_H / 2, &sNormal, 'r', STYLE_GREEN, 10);
+}
 
-        oy = Plate(PASS_RIGHT_X, y, PASS_RIGHT_W, PASS_THUMB_H, on ? sEmerald : sSlate,
+/* The map (k 0) or the card (k 1) on its button: the map's own picture,
+ * made smaller, or the card drawn small as the bottom screen draws it. */
+static void PassDrawButton(const PassScene *sc, int k, bool8 on)
+{
+    int y = k ? PASS_CARD_Y : PASS_MAP_Y;
+    int oy = Plate(PASS_RIGHT_X, y, PASS_RIGHT_W, PASS_THUMB_H, on ? sEmerald : sSlate,
                    on ? PLATE_STATE_FOCUS : PLATE_STATE_NORMAL);
-        if (sc->thumbs)
-            PassBlit(sPassThumbs[k], PASS_THUMB_GW, PASS_THUMB_GH, PASS_RIGHT_X + (PASS_RIGHT_W - PASS_THUMB_W) / 2,
-                     oy + (PASS_THUMB_H - PASS_THUMB_H_ART) / 2, PASS_THUMB_W, PASS_THUMB_H_ART, FALSE);
-    }
 
-    /* Into the map or the card: its picture grows over the screen, as the
-     * game's zooms, under the game's white fade. */
-    if (v->zoomArea && v->zoomScale > Q_8_8(1) && sc->thumbs)
+    if (k)
+        PassMiniCard(&sc->card, PASS_RIGHT_X + 6, oy + 4, PASS_RIGHT_W - 12, PASS_THUMB_H - 10);
+    else
+        PassMapButton(PASS_RIGHT_X + (PASS_RIGHT_W - PASS_MAP_PIC_W) / 2, oy + (PASS_THUMB_H - 2 - PASS_MAP_PIC_H) / 2);
+}
+
+static void PassCancelPlate(bool8 on)
+{
+    int oy = Plate(PASS_CANCEL_X, HEAD_Y, PASS_CANCEL_W, HEAD_H, on ? sEmerald : sCancelGrey,
+                   on ? PLATE_STATE_FOCUS : PLATE_STATE_NORMAL);
+
+    TextIn(PassCancel(), PASS_CANCEL_X, oy, PASS_CANCEL_W, HEAD_H, &sNormal, 'c', STYLE_WHITE, 6);
+}
+
+static void PassDrawMain(const PassScene *sc, bool8 lit)
+{
+    const struct CtrPassView *v = &sc->v;
+    u8 area = v->cursorArea;
+
+    if (!lit)
     {
-        int k = v->zoomArea == CTR_PASS_AREA_CARD, w = PASS_THUMB_W * v->zoomScale / 256,
-            h = PASS_THUMB_H_ART * v->zoomScale / 256;
-        int cx = PASS_RIGHT_X + PASS_RIGHT_W / 2, cy = (k ? PASS_CARD_Y : PASS_MAP_Y) + PASS_THUMB_H / 2;
+        PassHeader(PassTitle(), PassCancel(), FALSE);
+        PassDrawSymbols(sc, FALSE, -1);
+        PassDrawRecord(sc, FALSE);
+        PassDrawPoints(sc, FALSE);
+        PassDrawButton(sc, 0, FALSE);
+        PassDrawButton(sc, 1, FALSE);
+        return;
+    }
+    if (area == CTR_PASS_AREA_CANCEL)
+        PassCancelPlate(TRUE);
+    else if (area == CTR_PASS_AREA_EARNED_SYMBOLS || area >= CTR_PASS_AREA_SYMBOL_TOWER)
+        PassDrawSymbols(sc, TRUE, area >= CTR_PASS_AREA_SYMBOL_TOWER ? area - CTR_PASS_AREA_SYMBOL_TOWER : -1);
+    else if (area == CTR_PASS_AREA_RECORD)
+        PassDrawRecord(sc, TRUE);
+    else if (area == CTR_PASS_AREA_POINTS)
+        PassDrawPoints(sc, TRUE);
+    else if (area == CTR_PASS_AREA_MAP || area == CTR_PASS_AREA_CARD)
+        PassDrawButton(sc, area == CTR_PASS_AREA_CARD, TRUE);
 
-        PassBlit(sPassThumbs[k], PASS_THUMB_GW, PASS_THUMB_GH, cx - w / 2, cy - h / 2, w, h, FALSE);
+    /* Into the map or the card: its button grows over the screen, as the
+     * game's zooms, under the game's white fade. */
+    if (v->zoomArea && v->zoomScale > Q_8_8(1))
+    {
+        int k = v->zoomArea == CTR_PASS_AREA_CARD, y = k ? PASS_CARD_Y : PASS_MAP_Y;
+        int w = PASS_RIGHT_W * v->zoomScale / 256, h = PASS_THUMB_H * v->zoomScale / 256;
+        int cx = PASS_RIGHT_X + PASS_RIGHT_W / 2, cy = y + PASS_THUMB_H / 2;
+
+        PassGrabRect(PASS_RIGHT_X, y, PASS_RIGHT_W, PASS_THUMB_H, sPassGrab);
+        PassBlitNearest(sPassGrab, PASS_RIGHT_W, PASS_THUMB_H, cx - w / 2, cy - h / 2, w, h);
     }
     PassDescription(v->description);
 }
 
-/* The Frontier map: its picture, the facilities as plates, the description. */
-static void PassDrawMap(const PassScene *sc)
+/* The Frontier map: its picture, the facilities as plates, the description.
+ * Unlit: the header, the picture and every facility; lit, over that: the
+ * chosen one, the marker and the player's head on the picture. */
+static void PassDrawMap(const PassScene *sc, bool8 lit)
 {
     const struct CtrPassView *v = &sc->v;
-    u8 name[32];
+    /* The picture's top on its plate, as the unlit pass found it. */
+    static int ay = PASS_ART_Y;
     int oy;
 
-    GetMapName(name, MAPSEC_BATTLE_FRONTIER, 0);
-    PassHeader(name, PassCancel(), FALSE);
-    oy = Plate(PASS_ART_X - 6, PASS_ART_Y - 4, PASS_ART_GW * 3 / 2 + 12, PASS_ART_GH * 3 / 2 + 8, sSlate,
-               PLATE_STATE_NORMAL);
-    if (sc->art)
+    if (!lit)
     {
-        int saved[4];
+        u8 name[32];
 
-        PassBlit(sPassArt, PASS_ART_GW, PASS_ART_GH, PASS_ART_X, oy, PASS_ART_GW * 3 / 2, PASS_ART_GH * 3 / 2, FALSE);
-        /* The facility's marker and the player's head on it, clipped to it. */
-        ClipPush(saved, PASS_ART_X, oy, PASS_ART_X + PASS_ART_GW * 3 / 2, oy + PASS_ART_GH * 3 / 2);
-        if (sc->indicator.w)
-            PassSpriteAt(&sc->indicator, PASS_ART_X + (sc->indicatorX - PASS_ART_GX) * 3 / 2,
-                         oy + (sc->indicatorY - PASS_ART_GY) * 3 / 2, 3, FALSE);
-        if (v->mapHead && sc->head.w)
-            PassSpriteAt(&sc->head, PASS_ART_X + (sc->headX - PASS_ART_GX) * 3 / 2,
-                         oy + (sc->headY - PASS_ART_GY) * 3 / 2, 3, FALSE);
-        ClipPop(saved);
+        GetMapName(name, MAPSEC_BATTLE_FRONTIER, 0);
+        PassHeader(name, PassCancel(), FALSE);
+        ay = Plate(PASS_ART_X - 6, PASS_ART_Y - 4, PASS_ART_GW * 3 / 2 + 12, PASS_ART_GH * 3 / 2 + 8, sSlate,
+                   PLATE_STATE_NORMAL);
+        if (sPassMapPic)
+            PassBlit(sPassMapPic, PASS_ART_GW, PASS_ART_GH, PASS_ART_X, ay, PASS_ART_GW * 3 / 2, PASS_ART_GH * 3 / 2,
+                     FALSE);
     }
     for (int i = 0; i < CTR_PASS_FACILITIES; ++i)
     {
         bool8 on = i == v->mapCursor;
         int y = PASS_NAMES_Y + i * PASS_NAME_STEP;
 
+        if (lit != on)
+            continue;
         oy = Plate(PASS_NAMES_X, y, PASS_NAMES_W, PASS_NAME_H, on ? sEmerald : sSlate,
                    on ? PLATE_STATE_FOCUS : PLATE_STATE_NORMAL);
         if (v->names[i])
             TextIn(v->names[i], PASS_NAMES_X, oy, PASS_NAMES_W, PASS_NAME_H, &sNormal, 'l', STYLE_WHITE, 10);
     }
-    PassDescription(v->mapDescription);
+    if (lit && sPassMapPic)
+    {
+        int saved[4];
+
+        /* The facility's marker and the player's head on it, clipped to it. */
+        ClipPush(saved, PASS_ART_X, ay, PASS_ART_X + PASS_ART_GW * 3 / 2, ay + PASS_ART_GH * 3 / 2);
+        if (sc->indicator.w)
+            PassSpriteAt(&sc->indicator, PASS_ART_X + (sc->indicatorX - PASS_ART_GX) * 3 / 2,
+                         ay + (sc->indicatorY - PASS_ART_GY) * 3 / 2, 3, FALSE);
+        if (v->mapHead && sc->head.w)
+            PassSpriteAt(&sc->head, PASS_ART_X + (sc->headX - PASS_ART_GX) * 3 / 2,
+                         ay + (sc->headY - PASS_ART_GY) * 3 / 2, 3, FALSE);
+        ClipPop(saved);
+    }
+    if (lit)
+        PassDescription(v->mapDescription);
+}
+
+/* The trainer card over the whole screen: the bottom screen's card made
+ * wider and taller, with every row the game's own card has; its badges in
+ * the band below. A flip folds it towards its middle row as the game's. */
+#define PASS_CARD_X 14
+#define PASS_CARD_Y0 40
+#define PASS_CARD_W 372
+#define PASS_CARD_H 158
+#define PASS_CARD_ROW 25
+
+static void PassCardRow(int i, int oy, const u8 *label, const u8 *value)
+{
+    int ry = oy + 8 + i * PASS_CARD_ROW, w = PASS_CARD_W - 132;
+
+    if (i)
+        FillRgb(PASS_CARD_X + 10, ry - 2, w - 6, 1, sRule);
+    StyledStr(FitFont(&sSmall, label, w / 2), label, PASS_CARD_X + 14, TextY(ry, 22, &sSmall), STYLE_GRAY);
+    StyledRight(FitFont(&sNormal, value, w / 2), value, PASS_CARD_X + w, TextY(ry, 22, &sNormal), STYLE_INK);
+}
+
+/* The card's own rows squeezed to its middle by `fold` (256: on edge). */
+static void PassFold(int x, int y, int w, int h, u16 fold)
+{
+    int mid = y + h / 2, half = h / 2 * (256 - fold) / 256;
+    u16 column[PASS_H];
+
+    for (int cx = x; cx < x + w; ++cx)
+    {
+        u16 *col = sPassCanvas + cx * PASS_H;
+
+        for (int cy = y; cy < y + h; ++cy)
+            column[cy] = col[PASS_H - 1 - cy];
+        for (int cy = y; cy < y + h; ++cy)
+        {
+            int d = cy - mid;
+
+            if (half > 0 && d >= -half && d < half)
+                col[PASS_H - 1 - cy] = column[mid + d * (h / 2) / half];
+            else
+                col[PASS_H - 1 - cy] = sPassBackdrop ? sPassBackdrop[cx * PASS_H + (PASS_H - 1 - cy)]
+                                                     : PackRgb(146, 212, 172);
+        }
+    }
+}
+
+static void PassDrawCard(const PassScene *sc)
+{
+    const PassCard *c = &sc->card;
+    u8 text[32];
+    int oy, row = 0;
+
+    PassHeader(c->top.onBack && c->top.backTitle ? c->top.backTitle : SectionName(SCR_CARD), PassCancel(), FALSE);
+    oy = PlateEx(PASS_CARD_X, PASS_CARD_Y0, PASS_CARD_W, PASS_CARD_H, sCardGreen, PLATE_STATE_NORMAL,
+                 PASS_CARD_W - 118, 25, PlateCut(PASS_CARD_H), 0);
+    if (!c->top.onBack)
+    {
+        PassCardRow(row++, oy, Ascii(CTR_TEXT("NAME", "NOMBRE", "NOM", "NOME", "NOME", "NAME", "なまえ")), c->name);
+        PassCardRow(row++, oy, Ascii(CTR_TEXT("ID No.", "Nº ID", "No. ID", "N. ID", "Nº ID", "ID-Nr.", "IDNo.")),
+                    Number(c->id, 5, STR_CONV_MODE_LEADING_ZEROS));
+        text[0] = CHAR_CURRENCY;
+        StringCopy(text + 1, Number(c->money, 6, STR_CONV_MODE_LEFT_ALIGN));
+        PassCardRow(row++, oy, Ascii(CTR_TEXT("MONEY", "DINERO", "ARGENT", "SOLDI", "DINHEIRO", "GELD", "おこづかい")), text);
+        if (c->hasDex)
+            PassCardRow(row++, oy, gText_MenuPokedex, Number(c->dex, 3, STR_CONV_MODE_LEFT_ALIGN));
+        PassCardRow(row++, oy, Ascii(CTR_TEXT("TIME", "TIEMPO", "DURÉE", "TEMPO", "TEMPO", "ZEIT", "プレイじかん")),
+                    HoursMinutes(c->hours, c->minutes));
+    }
+    else
+    {
+        PassCardRow(row++, oy, gText_HallOfFameDebut,
+                    c->hofHours || c->hofMinutes ? HoursMinutes(c->hofHours, c->hofMinutes) : Ascii("---"));
+        StringCopy(StringCopy(StringCopy(text, Number(c->linkWins, 4, STR_CONV_MODE_LEFT_ALIGN)), Ascii("-")),
+                   Number(c->linkLosses, 4, STR_CONV_MODE_LEFT_ALIGN));
+        PassCardRow(row++, oy, gText_LinkBattles, text);
+        PassCardRow(row++, oy, gText_PokemonTrades, Number(c->trades, 5, STR_CONV_MODE_LEFT_ALIGN));
+        PassCardRow(row++, oy, gText_PokeblocksWithFriends, Number(c->pokeblocks, 5, STR_CONV_MODE_LEFT_ALIGN));
+        PassCardRow(row++, oy, gText_WonContestsWFriends, Number(c->contests, 3, STR_CONV_MODE_LEFT_ALIGN));
+        if (c->top.frontierBP)
+            PassCardRow(row++, oy, gText_BattlePtsWon, Number(c->top.frontierBP, 5, STR_CONV_MODE_LEFT_ALIGN));
+    }
+    /* The trainer, doubled, on the green; a star a feat above. */
+    if (sRes.trainerPic[c->gender])
+        DrawSpriteDouble(sRes.trainerPic[c->gender], 8, 8, PASS_CARD_X + PASS_CARD_W - 116, oy + 22,
+                         sRes.trainerPicPal[c->gender].c);
+    for (int k = 0; k < c->stars && k < 4; ++k)
+        IconCentred(sArtStar, 2, 2 * (PASS_CARD_X + PASS_CARD_W - 100 + k * 18) + 11, 2 * (oy + 8) + 11, sArtPal2.c,
+                    FALSE);
+    if (c->top.fold)
+        PassFold(PASS_CARD_X - 4, PASS_CARD_Y0 - 4, PASS_CARD_W + 8, PASS_CARD_H + 8, c->top.fold);
+
+    /* The badges in the band, the ones not won as dim shapes. */
+    oy = Plate(PASS_CARD_X, PASS_BAND_Y + 4, PASS_CARD_W, PASS_H - PASS_BAND_Y - 8, sLight, PLATE_STATE_NORMAL);
+    if (sRes.badgeTiles)
+    {
+        u16 dim[16];
+
+        for (int i = 0; i < 16; ++i)
+            dim[i] = i ? PackRgb(176, 196, 184) : 0;
+        for (int i = 0; i < NUM_BADGES; ++i)
+        {
+            const u16 *pal = (c->badges & (1 << i)) ? sRes.badgePal.c : dim;
+            int bx = PASS_CARD_X + 26 + i * 44, by = oy + (PASS_H - PASS_BAND_Y - 8 - 16) / 2 - 1;
+
+            DrawTile(sRes.badgeTiles + (2 * i) * 32, bx, by, pal, FALSE, FALSE);
+            DrawTile(sRes.badgeTiles + (2 * i + 1) * 32, bx + 8, by, pal, FALSE, FALSE);
+            DrawTile(sRes.badgeTiles + (2 * i + 16) * 32, bx, by + 8, pal, FALSE, FALSE);
+            DrawTile(sRes.badgeTiles + (2 * i + 17) * 32, bx + 8, by + 8, pal, FALSE, FALSE);
+        }
+    }
 }
 
 /* Draws into the pass's canvas instead of the bottom screen's (and back). */
@@ -427,8 +713,15 @@ static void PassTarget(bool8 on, int saved[5])
     }
 }
 
-/* Everything but the cursor, into sPassBase. */
-static void PassCompose(const PassScene *sc)
+/*
+ * The picture is kept in three steps, each made again only when what it
+ * shows changes: sPassStatic, everything unlit (the backdrop, the header,
+ * every plate with its art); sPassBase, that with the cursor's area lit, its
+ * description and a zoom over it; sPassCanvas, that with the hand. When only
+ * the hand moves, the piece it left is put back from sPassBase and the hand
+ * drawn again, and only those two pieces go to the texture.
+ */
+static void PassComposeStatic(const PassScene *sc)
 {
     int saved[5];
 
@@ -438,33 +731,88 @@ static void PassCompose(const PassScene *sc)
     else
         FillRect(0, 0, PASS_W, PASS_H, PackRgb(146, 212, 172));
     if (sc->v.view == CTR_PASS_MAP)
-        PassDrawMap(sc);
+        PassDrawMap(sc, FALSE);
+    else if (sc->v.view == CTR_PASS_CARD)
+        PassDrawCard(sc);
     else
-        PassDrawMain(sc);
+        PassDrawMain(sc, FALSE);
     PassTarget(FALSE, saved);
-    if (sPassBase)
-        memcpy(sPassBase, sPassCanvas, sizeof(sPassCanvas));
+    memcpy(sPassStatic, sPassCanvas, sizeof(sPassCanvas));
 }
 
-/* The cursor over a copy of the rest. */
-static void PassComposeCursor(const PassScene *sc)
+static void PassComposeLit(const PassScene *sc)
 {
     int saved[5];
 
-    if (sPassBase)
-        memcpy(sPassCanvas, sPassBase, sizeof(sPassCanvas));
+    memcpy(sPassCanvas, sPassStatic, sizeof(sPassCanvas));
     PassTarget(TRUE, saved);
+    if (sc->v.view == CTR_PASS_MAP)
+        PassDrawMap(sc, TRUE);
+    else if (sc->v.view == CTR_PASS_MAIN)
+        PassDrawMain(sc, TRUE);
+    PassTarget(FALSE, saved);
+    memcpy(sPassBase, sPassCanvas, sizeof(sPassCanvas));
+}
+
+/* Where the hand goes: the game's hand's tip, on this screen. */
+static void PassHandAt(const PassScene *sc, int *x, int *y, bool8 *hflip)
+{
     if (sc->v.view == CTR_PASS_MAP)
     {
         /* Beside the facility's plate, following the game's hand down the
          * list (it steps 16 a facility, here PASS_NAME_STEP). */
-        int y = PASS_NAMES_Y + PASS_NAME_H / 2 + (sc->handY - 8) * PASS_NAME_STEP / 16;
-
-        PassHand(&sc->hand, PASS_NAMES_X - 2, y + 4, TRUE);
+        *x = PASS_NAMES_X - 2;
+        *y = PASS_NAMES_Y + PASS_NAME_H / 2 + (sc->handY - 8) * PASS_NAME_STEP / 16;
+        *hflip = TRUE;
     }
     else
-        PassHand(&sc->hand, PassX(sc->handX - 5), PassY(sc->handX - 5, sc->handY + 5), FALSE);
-    PassTarget(FALSE, saved);
+    {
+        /* frontier_pass.c picks the area at x - 5, y + 5 of its sprite. */
+        *x = PassX(sc->handX - 5);
+        *y = PassY(sc->handX - 5, sc->handY + 5);
+        *hflip = FALSE;
+    }
+}
+
+/* The hand over sPassBase, all of it new (`whole`) or only where the hand
+ * was and is now; that much is handed to the texture. */
+static void PassComposeHand(const PassScene *sc, bool8 whole)
+{
+    int saved[5], r[4], x, y;
+    bool8 hflip;
+
+    r[0] = sPassHandRect[0];
+    r[1] = sPassHandRect[1];
+    r[2] = sPassHandRect[2];
+    r[3] = sPassHandRect[3];
+    if (whole)
+        memcpy(sPassCanvas, sPassBase, sizeof(sPassCanvas));
+    else
+    {
+        int x0 = r[0] < 0 ? 0 : r[0], x1 = r[2] > PASS_W ? PASS_W : r[2];
+        int y0 = r[1] < 0 ? 0 : r[1], y1 = r[3] > PASS_H ? PASS_H : r[3];
+
+        for (int cx = x0; cx < x1; ++cx)
+            memcpy(sPassCanvas + cx * PASS_H + (PASS_H - y1), sPassBase + cx * PASS_H + (PASS_H - y1),
+                   (y1 - y0) * sizeof(u16));
+    }
+    sPassHandRect[0] = sPassHandRect[2] = 0;
+    if (sc->v.view != CTR_PASS_CARD)
+    {
+        PassTarget(TRUE, saved);
+        PassHandAt(sc, &x, &y, &hflip);
+        PassHand(x, y, hflip);
+        PassTarget(FALSE, saved);
+    }
+    if (whole)
+        CtrPassTop_Show(sPassCanvas);
+    else
+    {
+        if (r[2] > r[0])
+            CtrPassTop_ShowRect(sPassCanvas, r[0], r[1], r[2], r[3]);
+        if (sPassHandRect[2] > sPassHandRect[0])
+            CtrPassTop_ShowRect(sPassCanvas, sPassHandRect[0], sPassHandRect[1], sPassHandRect[2], sPassHandRect[3]);
+    }
 }
 
 /* ------------------------------------------------------------------------ */
@@ -517,33 +865,6 @@ static u32 PassTakeSprite(PassSprite *out, const struct Sprite *s)
     return PassTakeTiles(out, s->oam.tileNum, s->oam.paletteNum, w, h, 0);
 }
 
-/* A part of a 4bpp text layer as it shows now, through its tilemap, in the
- * unfaded palettes; the backdrop's colour where the layer is clear. */
-static u32 PassTakeLayer(u8 bg, int gx, int gy, int w, int h, u16 *out)
-{
-    u16 control = GetGpuReg(REG_OFFSET_BG0CNT + bg * 2);
-    const u8 *chars = (const u8 *)VRAM_ + ((control >> 2) & 3) * BG_CHAR_SIZE;
-    const u16 *map = (const u16 *)((const u8 *)VRAM_ + ((control >> 8) & 31) * BG_SCREEN_SIZE);
-    u16 backdrop = (gPlttBufferUnfaded[0] & 0x7FFF) | PASS_OPAQUE;
-    u32 sum = 0;
-
-    if (control & 0x80)
-        return 0;
-    for (int y = 0; y < h; ++y)
-        for (int x = 0; x < w; ++x)
-        {
-            int px = (gx + x) & 255, py = (gy + y) & 255;
-            u16 e = map[(py / 8) * 32 + px / 8];
-            int sx = (e & 0x400) ? 7 - (px & 7) : px & 7, sy = (e & 0x800) ? 7 - (py & 7) : py & 7;
-            u8 b = chars[((e & 0x3FF) * 32 + sy * 4 + sx / 2) & 0xFFFF], c = (sx & 1) ? b >> 4 : b & 15;
-            u16 p = c ? (gPlttBufferUnfaded[(e >> 12) * 16 + c] & 0x7FFF) | PASS_OPAQUE : backdrop;
-
-            out[y * w + x] = p;
-            sum = sum * 31 + p;
-        }
-    return sum;
-}
-
 /*
  * The backdrop, romfs/bottom/pass_top.bin (scripts/gen_pass_top_art.py):
  * the bottom screen's (gen_menu_art.py) made 400 wide, in the same format.
@@ -585,50 +906,144 @@ static u16 *PassLoadBackdrop(void)
     return dst;
 }
 
-/* What was last composed. */
-static PassScene sPassScene, sPassShown;
+/* What was last composed, and that with what only the lit step and the
+ * hand show taken out. */
+static PassScene sPassScene, sPassShown, sPassKey, sPassShownKey;
 static bool8 sPassUp;
-static u8 sPassSettle;
-/* Frames to compose again after a change: the game's tilemaps and palettes
- * reach its VRAM a frame after the state that asked for them. */
-#define PASS_SETTLE_FRAMES 2
+
+/* What the unlit step shows: the scene without the cursor's area, the
+ * description, the zoom, the map's choice and its markers, and the hand. */
+static void PassStaticKey(const PassScene *sc, PassScene *key)
+{
+    memcpy(key, sc, sizeof(*key));
+    key->v.cursorArea = 0;
+    key->v.description = NULL;
+    key->v.zoomArea = 0;
+    key->v.zoomScale = 0;
+    key->v.mapCursor = 0;
+    key->v.mapDescription = NULL;
+    memset(&key->indicator, 0, sizeof(key->indicator));
+    memset(&key->head, 0, sizeof(key->head));
+    key->indicatorX = key->indicatorY = key->headX = key->headY = 0;
+    key->handX = key->handY = 0;
+}
+
+static void PassFreeAll(void)
+{
+    free(sPassStatic);
+    free(sPassBase);
+    free(sPassBackdrop);
+    sPassStatic = sPassBase = sPassBackdrop = NULL;
+}
+
+/* The Frontier map's picture from the game's art for the map screen: the
+ * part frontier_pass.c shows there, colour 0 its backdrop. */
+static void PassDecodeMap(const struct CtrPassView *v)
+{
+    const u8 *tiles;
+    const u16 *map, *pal;
+
+    if (sPassMapPic || !v->mapTiles)
+        return;
+    tiles = Unlz(v->mapTiles, NULL);
+    map = Unlz(v->mapTilemap, NULL);
+    pal = Port_ResolveAssetPointer(v->mapPalette);
+    sPassMapPic = (tiles && map && pal) ? malloc(PASS_ART_GW * PASS_ART_GH * sizeof(u16)) : NULL;
+    if (sPassMapPic)
+        for (int y = 0; y < PASS_ART_GH; ++y)
+            for (int x = 0; x < PASS_ART_GW; ++x)
+            {
+                int gx = PASS_ART_GX + x, gy = PASS_ART_GY + y;
+                u16 e = map[(gy / 8) * 32 + gx / 8];
+                int px = (e & 0x400) ? 7 - gx % 8 : gx % 8, py = (e & 0x800) ? 7 - gy % 8 : gy % 8;
+                u8 b = tiles[(e & 0x3FF) * 32 + py * 4 + px / 2];
+                int i = px & 1 ? b >> 4 : b & 15;
+                /* The pass's palettes are eight (frontier_pass.c, top). */
+                int bank = (e >> 12) < 8 ? e >> 12 : 0;
+
+                sPassMapPic[y * PASS_ART_GW + x] = PASS_OPAQUE | (pal[(i ? bank * 16 + i : 0)] & 0x7FFF);
+            }
+    free((void *)tiles);
+    free((void *)map);
+}
+
+/* The card as the bottom screen's reads it, and the game card's own. */
+static void PassSnapCard(PassCard *c, const struct CtrCardTop *top)
+{
+    static ViewState snap;
+
+    memset(&snap, 0, sizeof(snap));
+    SnapshotCard(&snap);
+    SnapshotCardBack(&snap);
+    memcpy(c->name, snap.name, sizeof(c->name));
+    c->gender = gSaveBlock2Ptr->playerGender ? FEMALE : MALE;
+    c->hasDex = snap.hasDex;
+    c->stars = snap.stars;
+    c->badges = snap.badges;
+    c->minutes = snap.minutes;
+    c->hofMinutes = snap.hofMinutes;
+    c->id = snap.id;
+    c->dex = snap.dex;
+    c->hours = snap.hours;
+    c->hofHours = snap.hofHours;
+    c->linkWins = snap.linkWins;
+    c->linkLosses = snap.linkLosses;
+    c->trades = snap.trades;
+    c->pokeblocks = snap.pokeblocks;
+    c->contests = snap.contests;
+    c->money = snap.money;
+    if (top)
+        c->top = *top;
+}
 
 static void PassTopFrame(void)
 {
     PassScene *sc = &sPassScene;
     struct CtrPassView v;
-    bool8 base, cursor;
+    struct CtrCardTop card;
+    bool8 changed, lit, hand;
 
     memset(&v, 0, sizeof(v));
-    if (!CtrPass_GetView(&v))
+    if (!CtrPass_GetView(&v) && CtrTrainerCard_TopView(&card))
+        v.view = CTR_PASS_CARD;
+    if (v.view == CTR_PASS_NONE)
     {
         if (sPassUp)
         {
             CtrPassTop_Hide();
-            free(sPassBase);
-            free(sPassBackdrop);
-            sPassBase = sPassBackdrop = NULL;
+            PassFreeAll();
             sPassUp = FALSE;
+        }
+        /* Kept between the pass and the map or the card it opens. */
+        if (!CtrPass_Open())
+        {
+            free(sPassMapPic);
+            free(sPassMapSmall);
+            sPassMapPic = sPassMapSmall = NULL;
         }
         return;
     }
     if (!sPassUp)
     {
         sPassBackdrop = PassLoadBackdrop();
+        sPassStatic = malloc(sizeof(sPassCanvas));
         sPassBase = malloc(sizeof(sPassCanvas));
-        if (!sPassBackdrop || !sPassBase)
+        if (!sPassBackdrop || !sPassStatic || !sPassBase)
         {
-            free(sPassBase);
-            free(sPassBackdrop);
-            sPassBase = sPassBackdrop = NULL;
+            PassFreeAll();
             return;
         }
     }
     memset(sc, 0, sizeof(*sc));
     memcpy(&sc->v, &v, sizeof(v));
+    /* The card does not change while the pass is up: read once a view. */
+    if (sPassUp && sPassShown.v.view == v.view)
+        sc->card = sPassShown.card;
+    else
+        PassSnapCard(&sc->card, NULL);
+    PassDecodeMap(&v);
     if (v.view == CTR_PASS_MAIN)
     {
-        PassTakeSprite(&sc->hand, v.cursor);
         sc->handX = v.cursor->x;
         sc->handY = v.cursor->y;
         for (int i = 0; i < CTR_PASS_FACILITIES; ++i)
@@ -638,13 +1053,11 @@ static void PassTopFrame(void)
             else if (v.medalTiles != 0xFFFF)
                 PassTakeTiles(&sc->empty[i], v.medalTiles + i * 4, 0, 16, 16, PASS_DIM_BGR);
         }
-        sc->sums[0] = PassTakeLayer(1, PASS_THUMB_GX, PASS_THUMB_MAP_GY, PASS_THUMB_GW, PASS_THUMB_GH, sPassThumbs[0]);
-        sc->sums[1] = PassTakeLayer(1, PASS_THUMB_GX, PASS_THUMB_CARD_GY, PASS_THUMB_GW, PASS_THUMB_GH, sPassThumbs[1]);
-        sc->thumbs = TRUE;
     }
+    else if (v.view == CTR_PASS_CARD)
+        sc->card.top = card;
     else
     {
-        PassTakeSprite(&sc->hand, v.mapHand);
         sc->handX = v.mapHand->x;
         sc->handY = v.mapHand->y;
         PassTakeSprite(&sc->indicator, v.mapIndicator);
@@ -656,30 +1069,28 @@ static void PassTopFrame(void)
             sc->headX = v.mapHead->x + v.mapHead->x2 + v.mapHead->centerToCornerVecX;
             sc->headY = v.mapHead->y + v.mapHead->y2 + v.mapHead->centerToCornerVecY;
         }
-        sc->sums[0] = PassTakeLayer(2, PASS_ART_GX, PASS_ART_GY, PASS_ART_GW, PASS_ART_GH, sPassArt);
-        sc->art = TRUE;
     }
     /* The sprites' own pointers say nothing their pictures do not. */
     sc->v.cursor = sc->v.mapHand = NULL;
     sc->v.mapIndicator = sc->v.mapHead = NULL;
     memset(sc->v.symbolSprites, 0, sizeof(sc->v.symbolSprites));
 
-    base = !sPassUp || memcmp(sc, &sPassShown, offsetof(PassScene, handX)) != 0;
-    if (base)
-        sPassSettle = PASS_SETTLE_FRAMES;
-    else if (sPassSettle)
+    /* The pictures taken from the game are part of the scene, so a tile or
+     * a palette reaching VRAM a frame late is a change like any other. */
+    PassStaticKey(sc, &sPassKey);
+    changed = !sPassUp || memcmp(&sPassKey, &sPassShownKey, sizeof(sPassKey)) != 0;
+    lit = changed || memcmp(sc, &sPassShown, offsetof(PassScene, handX)) != 0;
+    hand = lit || sc->handX != sPassShown.handX || sc->handY != sPassShown.handY;
+    if (changed)
     {
-        --sPassSettle;
-        base = TRUE;
+        PassComposeStatic(sc);
+        memcpy(&sPassShownKey, &sPassKey, sizeof(sPassKey));
     }
-    cursor = memcmp((const u8 *)sc + offsetof(PassScene, handX), (const u8 *)&sPassShown + offsetof(PassScene, handX),
-                    sizeof(PassScene) - offsetof(PassScene, handX)) != 0;
-    if (base)
-        PassCompose(sc);
-    if (base || cursor)
+    if (lit)
+        PassComposeLit(sc);
+    if (hand)
     {
-        PassComposeCursor(sc);
-        CtrPassTop_Show(sPassCanvas);
+        PassComposeHand(sc, lit);
         memcpy(&sPassShown, sc, sizeof(*sc));
     }
     CtrPassTop_SetFade(gPaletteFade.blendColor, gPaletteFade.y);
