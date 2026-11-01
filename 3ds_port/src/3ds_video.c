@@ -10661,6 +10661,9 @@ static float BattleScenerySway(unsigned reg)
 #define BATTLE_INTRO_BAR 22.0f      /* each cinema bar, closed */
 #define BATTLE_INTRO_BAR_EDGE 10.0f /* its soft edge */
 #define BATTLE_INTRO_STREAKS 12u
+/* Danny-Edition: the entrance without its zoom blur and speed lines; the
+ * flight, the vignette, the bars and the flash stay. */
+#define CTR_DANNY_CALM_INTRO 1
 
 /* One copy of the world magnified about the target (the screen's middle,
  * where the camera looks), see-through: a step of the zoom blur. */
@@ -10681,7 +10684,9 @@ static void BattleIntroBlur(const CtrVoxelBattleIntro *intro)
 {
     float s = intro->speed;
 
-    if (s < 0.04f || (Reg(0) & 128))
+    /* Danny-Edition: no zoom blur. Its two see-through, magnified copies of
+     * the world showed as light stripes over the scene on the console. */
+    if (CTR_DANNY_CALM_INTRO || s < 0.04f || (Reg(0) & 128))
         return;
     Blend(5, false, false);
     SurfaceFilter(GPU_LINEAR);
@@ -10696,7 +10701,8 @@ static void BattleIntroAtmosphere(const CtrVoxelBattleIntro *intro)
     const float w = CTR_GAME_WIDTH, bottom = BATTLE_INTRO_FLOOR;
     float shade = fmaxf(0.60f * intro->flight, 0.30f * intro->bars);
 
-    if (intro->speed > 0.04f)
+    /* Danny-Edition: no speed lines either (CTR_DANNY_CALM_INTRO). */
+    if (!CTR_DANNY_CALM_INTRO && intro->speed > 0.04f)
     {
         /* Streaks racing right to left, none across the middle band where
          * the battlers stand; each its own height, length and pace. */
