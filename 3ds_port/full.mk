@@ -141,8 +141,6 @@ ROMFS_SHADER_OUTS += romfs/stage/leaves.bin
 ROMFS_SHADER_OUTS += romfs/bottom/battle.bin
 # The bottom screen's menu backdrop: the port's own art (scripts/gen_menu_art.py).
 ROMFS_SHADER_OUTS += romfs/bottom/menu.bin
-# The Frontier Pass's backdrop on the top screen (scripts/gen_pass_top_art.py).
-ROMFS_SHADER_OUTS += romfs/bottom/pass_top.bin
 # The battle's info boxes and text box: the port's own art (scripts/gen_battle_hud.py).
 ROMFS_SHADER_OUTS += romfs/battle/hud.bin
 
@@ -189,7 +187,7 @@ $(CTR_GBA_STAGE_OBJS): compat/ctr_gba_stage.h $(ROOT)/include/gba/defines.h
 # (compat/ctr_gba_centred.h).
 CTR_GBA_CENTRED_SRCS := region_map field_region_map main_menu option_menu naming_screen wallclock \
 	pokemon_summary_screen starter_choose shop link berry_blender pokemon_jump dodrio_berry_picking \
-	contest contest_util slot_machine roulette frontier_pass
+	contest contest_util slot_machine roulette hall_of_fame battle_dome battle_factory_screen 	battle_pyramid_bag battle_records berry_crush berry_tag_screen clear_save_data_screen contest_painting 	diploma easy_chat frontier_pass mail move_relearner pokeblock pokeblock_feed reset_rtc_screen 	save_failed_screen union_room_chat use_pokeblock wireless_communication_status_screen
 CTR_GBA_CENTRED_OBJS := $(patsubst %,build/root/src/%.o,$(CTR_GBA_CENTRED_SRCS))
 $(CTR_GBA_CENTRED_OBJS): FULLCFLAGS += -DCTR_GBA_STAGE -include $(abspath compat/ctr_gba_centred.h)
 $(CTR_GBA_CENTRED_OBJS): compat/ctr_gba_centred.h $(ROOT)/include/gba/defines.h
@@ -213,8 +211,18 @@ $(CTR_GBA_CENTRED_OBJS): compat/ctr_gba_centred.h $(ROOT)/include/gba/defines.h
 # roulette.c: the Game Corner's roulette, the same: its wheel, grid and
 # sprites placed for 240x160 were drawn in the top left corner, over the
 # table's colour (the backdrop) on the whole screen.
-# frontier_pass.c: the Frontier Pass and its map, the same: drawn in the top
-# left corner of the wide screen, the rest of it the backdrop's colour.
+# hall_of_fame.c: the Hall of Fame and the PC's record of it, the same: the
+# team, the champion's card and the confetti (spawned across DISPLAY_WIDTH)
+# were drawn in the top left corner, black and confetti beside them.
+# The other screens laid out for the GBA screen, all drawn in its top left
+# corner, some with their layers wrapping into the rest: the Battle Dome's
+# tourney tree, the Battle Factory's rental and swap screens, the Battle
+# Pyramid's bag, Trainer Hill's records (battle_records.c), Berry Crush, a
+# berry's tag, the clear-save and reset-clock screens, the museum's
+# paintings, the diploma, Easy Chat, the Frontier Pass, mail, the move
+# relearner, the PokéBlock case, feeding a PokéBlock and the condition screen
+# (use_pokeblock.c), the save error screen, the Union Room chat and the
+# wireless status screen.
 # Which centred screen each of those is, for how its margins are filled.
 build/root/src/main_menu.o: FULLCFLAGS += -DCTR_CENTRED_MAIN_MENU
 build/root/src/naming_screen.o: FULLCFLAGS += -DCTR_CENTRED_NAMING
@@ -224,6 +232,8 @@ build/root/src/shop.o: FULLCFLAGS += -DCTR_CENTRED_SHOP
 build/root/src/berry_blender.o: FULLCFLAGS += -DCTR_CENTRED_BLENDER
 build/root/src/roulette.o: FULLCFLAGS += -DCTR_CENTRED_ROULETTE
 build/root/src/slot_machine.o: FULLCFLAGS += -DCTR_CENTRED_SLOTS
+build/root/src/hall_of_fame.o: FULLCFLAGS += -DCTR_CENTRED_HALL_OF_FAME
+build/root/src/battle_factory_screen.o: FULLCFLAGS += -DCTR_CENTRED_FACTORY
 # On the bottom screen, as the PC's boxes it is mostly opened from.
 build/root/src/pokemon_summary_screen.o: FULLCFLAGS += -DCTR_CENTRED_SUMMARY
 # The PokéNav: every screen of it laid out for the GBA screen, shown whole on
@@ -552,10 +562,6 @@ romfs/bottom/battle.bin: scripts/gen_battle_art.py
 romfs/bottom/menu.bin: scripts/gen_menu_art.py scripts/gen_battle_art.py
 	@mkdir -p $(@D)
 	"$(PYTHON)" scripts/gen_menu_art.py --output $@
-
-romfs/bottom/pass_top.bin: scripts/gen_pass_top_art.py scripts/gen_menu_art.py scripts/gen_battle_art.py
-	@mkdir -p $(@D)
-	"$(PYTHON)" scripts/gen_pass_top_art.py --output $@
 
 romfs/battle/hud.bin: scripts/gen_battle_hud.py
 	@mkdir -p $(@D)
