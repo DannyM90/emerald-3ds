@@ -259,6 +259,9 @@ const CtrExtra gCtrExtras[] =
      * draws them, in a window of the bottom screen, instead of the bottom
      * screen's own (3ds_bottom_game.inc). */
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("CLASSIC MENUS", "MENÚS CLÁSICOS", "MENUS CLASSIQ.", "MENU CLASSICI", "MENUS CLÁSSICOS", "KLASS. MENÜS", "むかしの メニュー"), "classic_menus", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    /* The arrow and the darkened top while the bottom screen has the player's
+     * attention (3ds_video.c, DrawLookDown). */
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("DOWN ARROW", "FLECHA ABAJO", "FLÈCHE BAS", "FRECCIA GIÙ", "SETA P/ BAIXO", "PFEIL UNTEN", "したむき やじるし"), "look_down", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("FOLLOWER", "ACOMPAÑANTE", "COMPAGNON", "COMPAGNO", "COMPANHEIRO", "BEGLEITER", "つれあるき"), "follower", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
 #include "3ds_nuzlocke_extras.inc"
 #include "3ds_randomizer_extras.inc"

@@ -12217,7 +12217,10 @@ static void DrawSpeedBadge(C3D_RenderTarget *target, int halves)
 static bool sLookDown, sTopDark;
 static unsigned sHeldFrames;
 
-void CtrVideo_LookDown(bool on) { sLookDown = on; }
+/* OPTIONS > INTERFACE > DOWN ARROW: off, the top is left as it is. */
+static bool LookDownShown(void) { return CtrSettings_GetInt("look_down", 0) != 0; }
+
+void CtrVideo_LookDown(bool on) { sLookDown = on && LookDownShown(); }
 
 static void DrawLookDown(C3D_RenderTarget *target)
 {
@@ -12506,10 +12509,11 @@ void CtrVideo_Present(void)
         /* The Pokédex gone with the top still held: its frame back, once,
          * darkened if it was not yet; or darkened once the hold has lasted.
          * The frame stays in the top's buffer, so it is drawn over once. */
-        if ((putBack || (!sTopDark && sHeldFrames >= LOOK_DOWN_AFTER)) && C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
+        bool darken = !sTopDark && LookDownShown();
+        if ((putBack || (darken && sHeldFrames >= LOOK_DOWN_AFTER)) && C3D_FrameBegin(C3D_FRAME_SYNCDRAW))
         {
             if (putBack) HeldTopPutBack();
-            if (!sTopDark)
+            if (!sTopDark && LookDownShown())
             {
                 sSceneOn = NULL;   /* the buffer read back afresh, not from the colour cache */
                 DrawLookDown(sTop);
