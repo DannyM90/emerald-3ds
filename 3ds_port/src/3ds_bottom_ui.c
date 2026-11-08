@@ -111,6 +111,7 @@
 
 #include "3ds_audio.h"
 #include "3ds_data.h"
+#include "3ds_assets.h"
 #include "3ds_bottom.h"
 #include "3ds_extras.h"
 #include "3ds_bottom_art.h"
@@ -427,7 +428,7 @@ static void *UnlzFile(const char *path, u32 *outSize)
     {
         memcpy(plain, path, n - 3);
         plain[n - 3] = '\0';
-        Port_TransformAsset(plain, data, size);
+        CtrAssets_TransformAsset(plain, data, size);
     }
     if (outSize != NULL)
         *outSize = size;
@@ -2101,7 +2102,6 @@ static int SmoothInkWidth(const Font *font, const u8 *str, int k)
 
 /* Text colours from the message box palette. */
 #define TXT(i) (sRes.text.c[(i)])
-#define TXT_WHITE TXT(TEXT_COLOR_WHITE)
 #define TXT_DARK TXT(TEXT_COLOR_DARK_GRAY)
 #define TXT_LIGHT TXT(TEXT_COLOR_LIGHT_GRAY)
 #define TXT_RED TXT(TEXT_COLOR_RED)
