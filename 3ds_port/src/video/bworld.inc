@@ -120,6 +120,15 @@ static float BattleScenerySway(unsigned reg)
 #define BATTLE_INTRO_BAR_EDGE 10.0f /* its soft edge */
 #define BATTLE_INTRO_STREAKS 12u
 
+/* OPTIONS > SCENE > SPEED EFFECTS (3ds_extras.c): the zoom blur and the speed
+ * lines of the entrance, on unless turned off. The flight, the vignette, the
+ * bars and the flash stay either way. */
+static bool BattleIntroSpeedEffects(void)
+{
+    /* Danny-Edition: off unless turned on (their light stripes on the console). */
+    return CtrSettings_GetInt("battle_speed_fx", 0) != 0;
+}
+
 /* One copy of the world magnified about the target (the screen's middle,
  * where the camera looks), see-through: a step of the zoom blur. */
 static void BattleIntroZoomTap(float scale, float alpha)
@@ -132,15 +141,6 @@ static void BattleIntroZoomTap(float scale, float alpha)
     C2D_AlphaImageTint(&tint, alpha);
     C2D_DrawImageAt((C2D_Image){&sSurface, &region}, cx + (1.0f - cx) * scale, cy - cy * scale, 0,
                     &tint, scale, scale);
-}
-
-/* OPTIONS > SCENE > SPEED EFFECTS (3ds_extras.c): the zoom blur and the speed
- * lines of the entrance, on unless turned off. The flight, the vignette, the
- * bars and the flash stay either way. */
-static bool BattleIntroSpeedEffects(void)
-{
-    /* Danny-Edition: off unless turned on (their light stripes on the console). */
-    return CtrSettings_GetInt("battle_speed_fx", 0) != 0;
 }
 
 /* Before the bloom is added: the zoom blur, from the world surface itself. */
