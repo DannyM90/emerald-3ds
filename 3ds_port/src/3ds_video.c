@@ -17,7 +17,6 @@
 #include "3ds_tile_banks.h"
 #include "3ds_field_terrain.h"
 #include "3ds_dex_top.h"
-#include "3ds_pass_top.h"
 #include "3ds_corner_art.h"
 #include "3ds_data.h"
 #include "3ds_bottom.h"

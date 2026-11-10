@@ -3922,7 +3922,6 @@ static bool8 Prefetch(const ViewState *s)
 #include "3ds_bottom_field.inc"
 #include "3ds_bottom_options.inc"
 #include "3ds_bottom_game.inc"
-#include "3ds_bottom_pass.inc"
 
 /* ------------------------------------------------------------------------ */
 /* Drawing: battle                                                          */
@@ -7822,8 +7821,6 @@ void CtrBottom_Frame(void)
 
     if (!sRes.ready)
         return;
-    /* The Frontier Pass, while it is open, on the top screen. */
-    PassTopFrame();
     /* Back from HOME or sleep: the input was cleared with no touch let go,
      * so a touch held across it is forgotten here (the game's bag, Pokédex
      * or shop told it is cancelled), and the screen is drawn again. */

@@ -9,33 +9,6 @@
  * then drawn per eye with the 2D program and no depth test, as the FPS
  * counter is.
  */
-static void RenderDexTop(bool stereo, float slider);
-
-/*
- * The Frontier Pass drawn natively over the whole top screen
- * (3ds_pass_top.c) in the game picture's place, flat in both eyes, with the
- * 2D program and no depth test as the FPS counter is.
- */
-static void RenderPassTop(bool stereo)
-{
-    C2D_Prepare();
-    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
-    BlendForget();
-    CtrPassTop_Upload();
-    SceneOn(sTop);
-    C2D_ViewReset();
-    Blend(5, false, false);
-    CtrPassTop_Draw();
-    if (stereo)
-    {
-        SceneOn(sTopRight);
-        C2D_ViewReset();
-        CtrPassTop_Draw();
-    }
-    C2D_Flush();
-    BlendForget();
-}
-
 static void RenderDexTop(bool stereo, float slider)
 {
     C2D_Prepare();
@@ -806,15 +779,9 @@ VIDEO_PIECE void FrameOverlays(const PresentFrame *f)
             }
         }
     }
-    if (!CtrPassTop_Active())
-        CtrPassTop_Idle();
-    else if (!f->down && !f->blank)
-        RenderPassTop(f->stereo);
-    /* The top drawn afresh, or kept as it was (down): darkened on it once.
-     * Not over the Frontier Pass drawn natively on the top screen: there the
-     * top is the screen in use, not the one the player looks away from. */
+    /* The top drawn afresh, or kept as it was (down): darkened on it once. */
     if (!f->down) sTopDark = false;
-    if (sLookDown && !sTopDark && !CtrPassTop_Active())
+    if (sLookDown && !sTopDark)
     {
         sSceneOn = NULL;
         DrawLookDown(sTop);

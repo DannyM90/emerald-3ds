@@ -2797,6 +2797,11 @@ static void LoadPlainProgram(void)
     const DVLE_s *full = &sDvlb->DVLE[0];
     shaderInstance_s *vs;
 
+    /* Danny Edition: the full program has the grass's wind and the water's
+     * waves (voxel.v.pica), which the plain one does not; every Draw keeps it. */
+    CtrLog_Write(CTR_LOG_VIDEO, "VOXEL init: plain vertex program off (wind and waves)");
+    (void)plain; (void)full; (void)vs;
+    return;
     if (sDvlb->numDVLE < 3)
     {
         CtrLog_Write(CTR_LOG_ERROR, "VOXEL: voxel.shbin has no plain program, the full one is used");
