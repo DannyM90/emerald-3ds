@@ -181,6 +181,8 @@ u8 CtrTrainerCard_Side(void);
 /* frontier_pass.c: the game's pass with the classic menus; the bottom
  * screen's own pass with the new ones (3ds_bottom_field.inc). */
 bool8 CtrFrontierPass_FieldOpen(void);
+/* Danny Edition: the pass on the top screen chosen (3ds_pass_top.c). */
+unsigned char CtrPassTop_Wanted(void);
 u8 CtrFrontierPass_Waiting(void);
 void CtrFrontierPass_Tap(int x, int y);
 const u8 *CtrFrontierPass_Facility(u8 id, const u8 **description, s16 *x, s16 *y, bool8 *square);
@@ -3922,6 +3924,7 @@ static bool8 Prefetch(const ViewState *s)
 #include "3ds_bottom_field.inc"
 #include "3ds_bottom_options.inc"
 #include "3ds_bottom_game.inc"
+#include "3ds_bottom_pass.inc"
 
 /* ------------------------------------------------------------------------ */
 /* Drawing: battle                                                          */
@@ -6792,6 +6795,18 @@ static void Activate(u8 id, u8 mode)
             sCardBack = !sCardBack;
             PlaySE(SE_SELECT);
         }
+        /* Danny Edition, the pass on the top screen chosen (PASS STYLE):
+         * PASS opens the game's pass as PLAYER opens it, drawn up there
+         * (3ds_bottom_pass.inc). */
+        else if (id == HIT_YES && sShown.hasPass && sShown.cardView == CARD_VIEW_CARD && CtrPassTop_Wanted())
+        {
+            if (FieldIdle() && CtrStartMenu_Available())
+            {
+                PlaySE(SE_SELECT);
+                StartPlan(PLAN_START, START_PLAYER);
+                BeginSession(FALSE);
+            }
+        }
         /* PASS: the Frontier Pass, drawn here. */
         else if (id == HIT_YES && sShown.hasPass && sShown.cardView == CARD_VIEW_CARD)
             OpenPass();
@@ -7821,6 +7836,8 @@ void CtrBottom_Frame(void)
 
     if (!sRes.ready)
         return;
+    /* The Frontier Pass, while it is open, on the top screen. */
+    PassTopFrame();
     /* Back from HOME or sleep: the input was cleared with no touch let go,
      * so a touch held across it is forgotten here (the game's bag, Pokédex
      * or shop told it is cancelled), and the screen is drawn again. */

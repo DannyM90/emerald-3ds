@@ -57,6 +57,7 @@ ENGINE_PATTERNS = [
     "voxel/trees.rgba5551",
     "bottom/battle.bin",
     "bottom/menu.bin",
+    "bottom/pass_top.bin",
     "battle/hud.bin",
 ]
 OPTIONAL_PATTERNS = [

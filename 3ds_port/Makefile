@@ -62,6 +62,8 @@ SOURCES += src/3ds_memcpy.c
 SOURCES += src/3ds_corner_art.c
 # The Pokédex on the top screen (include/3ds_dex_top.h).
 SOURCES += src/3ds_dex_top.c
+# The Frontier Pass on the top screen (include/3ds_pass_top.h).
+SOURCES += src/3ds_pass_top.c
 # Local wireless play (include/3ds_local.h).
 SOURCES += src/3ds_local.c
 SOURCES += src/3ds_daynight.c

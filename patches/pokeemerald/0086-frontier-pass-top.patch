@@ -1,0 +1,103 @@
+Emerald 3DS changes to pret/pokeemerald 76463dac15cad36aca5e2b3f6366abf9e53f814f: the Frontier Pass on the top screen
+Applies after 0085-japanese-level-up-numbers.patch; apply with tools/bootstrap.py.
+
+diff --git a/src/frontier_pass.c b/src/frontier_pass.c
+--- a/src/frontier_pass.c
++++ b/src/frontier_pass.c
+@@ -1799,8 +1799,15 @@
+ // The pass opened from the field (PLAYER, with the classic menus): the bottom
+ // screen shows it in its window, its map and the card it opens too, and works
+ // it by touch.
++bool8 CtrPassTop_Wanted(void);
++
+ bool8 CtrFrontierPass_FieldOpen(void)
+ {
++    // Danny Edition: with the pass drawn on the top screen chosen
++    // (3ds_pass_top.c), the game's pass runs there as before, not in the
++    // bottom screen's window.
++    if (CtrPassTop_Wanted())
++        return FALSE;
+     return sPassData != NULL && sPassData->callback == CB2_ReturnToFieldWithOpenMenu;
+ }
+ 
+@@ -2008,3 +2015,80 @@
+     CreateTask(Task_CtrPlayRecord, 0);
+ }
+ #endif
++
++#ifdef PLATFORM_3DS
++#include "3ds_pass_view.h"
++
++STATIC_ASSERT((int)CTR_PASS_AREA_COUNT == (int)CURSOR_AREA_COUNT, ctrPassAreaCount);
++STATIC_ASSERT((int)CTR_PASS_AREA_SYMBOL_TOWER == (int)CURSOR_AREA_SYMBOL_TOWER, ctrPassAreaSymbol);
++STATIC_ASSERT(CTR_PASS_FACILITIES == NUM_FRONTIER_FACILITIES, ctrPassFacilities);
++
++static bool8 CtrPass_Shown(const struct Sprite *sprite)
++{
++    return sprite != NULL && sprite->inUse;
++}
++
++// Only with the pass on the top screen chosen (CtrPassTop_Wanted): else
++// the developer's pass is used, and nothing of this one runs.
++bool8 CtrPass_Open(void)
++{
++    return sPassData != NULL && CtrPassTop_Wanted();
++}
++
++// What the top screen draws natively in the pass's place
++// (3ds_bottom_pass.inc). Only once its sprites are up: before that the
++// screen is still being set up behind the fade.
++bool8 CtrPass_GetView(struct CtrPassView *view)
++{
++    u8 i;
++
++    memset(view, 0, sizeof(*view));
++    if (!CtrPass_Open())
++        return FALSE;
++    if (sMapData != NULL)
++    {
++        if (!CtrPass_Shown(sMapData->cursorSprite) || !CtrPass_Shown(sMapData->mapIndicatorSprite))
++            return FALSE;
++        view->view = CTR_PASS_MAP;
++        view->mapCursor = sMapData->cursorPos;
++        view->mapHand = sMapData->cursorSprite;
++        view->mapIndicator = sMapData->mapIndicatorSprite;
++        view->mapHead = CtrPass_Shown(sMapData->playerHeadSprite) ? sMapData->playerHeadSprite : NULL;
++        for (i = 0; i < NUM_FRONTIER_FACILITIES; i++)
++            view->names[i] = sMapLandmarks[i].name;
++        view->mapDescription = sMapLandmarks[sMapData->cursorPos % NUM_FRONTIER_FACILITIES].description;
++        view->mapTiles = sMapScreen_Gfx;
++        view->mapTilemap = sMapScreen_Tilemap;
++        view->mapPalette = gFrontierPassBg_Pal;
++        return TRUE;
++    }
++    if (sPassGfx == NULL || !CtrPass_Shown(sPassGfx->cursorSprite))
++        return FALSE;
++    view->view = CTR_PASS_MAIN;
++    view->cursorArea = sPassData->cursorArea;
++    view->stars = sPassData->trainerStars;
++    view->hasRecord = sPassData->hasBattleRecord;
++    view->battlePoints = sPassData->battlePoints;
++    view->cursor = sPassGfx->cursorSprite;
++    view->medalTiles = GetSpriteTileStartByTag(TAG_MEDAL_SILVER);
++    view->mapTiles = sMapScreen_Gfx;
++    view->mapTilemap = sMapScreen_Tilemap;
++    view->mapPalette = gFrontierPassBg_Pal;
++    for (i = 0; i < NUM_FRONTIER_FACILITIES; i++)
++    {
++        view->symbols[i] = sPassData->facilitySymbols[i];
++        view->symbolSprites[i] = CtrPass_Shown(sPassGfx->symbolSprites[i]) ? sPassGfx->symbolSprites[i] : NULL;
++    }
++    if (sPassData->areaToShow == CURSOR_AREA_MAP || sPassData->areaToShow == CURSOR_AREA_CARD)
++    {
++        view->zoomArea = sPassData->areaToShow;
++        view->zoomScale = sPassGfx->zooming && sPassGfx->scaleX != 0 ? MathUtil_Inv16(sPassGfx->scaleX) : Q_8_8(1);
++    }
++    // As PrintAreaDescription words it.
++    if (sPassData->cursorArea == CURSOR_AREA_RECORD && !sPassData->hasBattleRecord)
++        view->description = sPassAreaDescriptions[CURSOR_AREA_NOTHING];
++    else if (sPassData->cursorArea != CURSOR_AREA_NOTHING && sPassData->cursorArea < CURSOR_AREA_COUNT)
++        view->description = sPassAreaDescriptions[sPassData->cursorArea];
++    return TRUE;
++}
++#endif
