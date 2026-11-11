@@ -167,3 +167,26 @@ The 128 KiB flash image is mirrored in RAM and written range by range to
 `sdmc:/3ds/emerald3ds/port.log` (the previous session is kept as
 `port-prev.log`) from a background thread, because SD writes on the render
 thread cost 50–500 ms on hardware.
+
+## ROM profiles and other games
+
+`builder/emerald3ds_builder/rom.py` keeps verified input identities in
+`SUPPORTED_PROFILES`: game, cartridge code, fingerprint, name, region and
+original language. The validator's `ROM_PROFILES` fingerprint mapping and
+web release metadata use these records. `KNOWN_CODES` also names unsupported
+games for error messages; a recognised header alone never enables a build.
+`UNSUPPORTED_PROFILES` separately records the verified English Ruby/Sapphire
+revisions 0, 1 and 2 from pret/pokeruby's checksum files at
+[`5784633`](https://github.com/pret/pokeruby/tree/5784633ce4ef7ade1a7f2d2d0c288e3d5e6cdd7f).
+These fingerprints produce a "recognised but not supported" error for ROM
+input and release recipes. They never enter the build allowlist, even if passed
+explicitly to the validator. The English GBA FireRed/LeafGreen revisions 0 and 1 are also recorded, from
+[`pret/pokefirered ce6406d`](https://github.com/pret/pokefirered/tree/ce6406d8c2eaf46d543c8a2606de0c3cb1951982).
+Their ROM and recipe errors say the same "not supported", as does regional
+FRLG header recognition. Other regions remain header-only recognition.
+Web payload publication also rejects an unregistered recipe fingerprint.
+Translations can keep one input profile while choosing another output language.
+
+Emerald 3DS is an Emerald-only port: these profiles only exist so the error
+names the game the player gave, and a recognised profile never makes another
+game buildable.
