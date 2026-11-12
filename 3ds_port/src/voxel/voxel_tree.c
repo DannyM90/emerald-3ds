@@ -344,7 +344,11 @@ const VoxelTreeCard *VoxelTree_NotedCards(void)
 void VoxelTree_EmitNotedCards(VoxelBuilder *builder)
 {
     float lift = builder->lift, shift = builder->shift, base = builder->base;
+    const bool slope = builder->slope;
 
+    /* a crown stands upright: noted at the lift and base it stood at, moved
+     * north with the ground under it (VoxelBuilder_StretchZ), never leant */
+    builder->slope = false;
     for (unsigned k = 0; sNoted != NULL && k < sCardCount; ++k)
     {
         const VoxelTreeCard *card = &sNoted[k];
@@ -359,6 +363,7 @@ void VoxelTree_EmitNotedCards(VoxelBuilder *builder)
     builder->lift = lift;
     builder->shift = shift;
     builder->base = base;
+    builder->slope = slope;
 }
 
 /* A crown card, a b c d: noted (and emitted later, VoxelTree_EmitNotedCards)
