@@ -606,7 +606,17 @@ static void PassDrawCard(const PassScene *sc)
     u8 text[32];
     int oy, row = 0;
 
-    PassHeader(c->top.onBack && c->top.backTitle ? c->top.backTitle : SectionName(SCR_CARD), PassCancel(), FALSE);
+    if (c->top.title)
+    {
+        /* Danny Edition: where the saved game goes on, and CONTINUE lit */
+        const struct MapHeader *map = Overworld_GetMapHeaderByGroupAndId(gSaveBlock1Ptr->location.mapGroup,
+                                                                         gSaveBlock1Ptr->location.mapNum);
+
+        GetMapName(text, map->regionMapSectionId, 0);
+        PassHeader(text, gText_MainMenuContinue, TRUE);
+    }
+    else
+        PassHeader(c->top.onBack && c->top.backTitle ? c->top.backTitle : SectionName(SCR_CARD), PassCancel(), FALSE);
     oy = PlateEx(PASS_CARD_X, PASS_CARD_Y0, PASS_CARD_W, PASS_CARD_H, sCardGreen, PLATE_STATE_NORMAL,
                  PASS_CARD_W - 118, 25, PlateCut(PASS_CARD_H), 0);
     if (!c->top.onBack)
@@ -1024,6 +1034,13 @@ static void PassTopFrame(void)
     memset(&v, 0, sizeof(v));
     if (!CtrPass_GetView(&v) && CtrTrainerCard_TopView(&card))
         v.view = CTR_PASS_CARD;
+    /* Danny Edition: the main menu's saved game as its trainer card. */
+    else if (v.view == CTR_PASS_NONE && CtrMainMenu_CardUp())
+    {
+        memset(&card, 0, sizeof(card));
+        card.title = TRUE;
+        v.view = CTR_PASS_CARD;
+    }
     if (v.view == CTR_PASS_NONE)
     {
         /* Between the pass and the card or the map it opens, the game has

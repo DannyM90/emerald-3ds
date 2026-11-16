@@ -84,9 +84,15 @@ struct CtrCardTop
     u16 fold;
     u16 frontierBP;
     const u8 *backTitle;    /* "<name>'s TRAINER CARD" as the game words it */
+    /* Danny Edition: the card of the saved game the main menu continues. */
+    bool8 title;
 };
 
 /* The player's own card, once it is drawn; FALSE for none or a link one. */
 bool8 CtrTrainerCard_TopView(struct CtrCardTop *view);
+
+/* Danny Edition: the main menu is up with a saved game to continue
+ * (main_menu.c, 0096-main-menu-top-card.patch). */
+bool8 CtrMainMenu_CardUp(void);
 
 #endif
