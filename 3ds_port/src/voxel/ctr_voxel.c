@@ -1291,6 +1291,8 @@ static bool sBuildingsDropped, sBuildingsChanged;
 static unsigned sSpriteVertices;
 static unsigned sReflectionVertices;
 static unsigned sLampVertices, sLampGroundVertices;
+/* Danny Edition: the last of sLampVertices, the Centers' neon and the Marts' */
+static unsigned sNeonVertices[2];
 static bool sLampReady;
 static VoxelVertex *sLampScratch;     /* builder output, VOXEL_LAMP_VERTICES */
 static VoxelGpuVertex *sLampGpu;      /* linear, VOXEL_LAMP_VERTICES */
@@ -8651,6 +8653,68 @@ static bool LampsTake(void)
 }
 
 /* The lamps on screen and the light they cast, rebuilt when the view moves. */
+/* Danny Edition: the neon of the Pokemon Centers (centre) or the Marts at
+ * night: each sign board in the window tinted, and a tube round its edge
+ * (emitted twice, so it shows stronger under the same alpha). */
+/* The Center and the Mart are one drawing (voxel_building_specs.py
+ * center_or_mart, 64 x 64 from a cell left of the door and three above): its
+ * front wall stands on the door's south edge, drawing row r at 63 - r pixels
+ * up, and the sign board is x 39-55, rows 46-55 of it. */
+#define NEON_DOOR_CENTRE 0x061
+#define NEON_DOOR_MART 0x041
+
+static void NeonRect(VoxelBuilder *b, float left, float right, float bottom, float top, float z)
+{
+    VoxelBuilder_Quad(b,
+        &(VoxelVertex){left, bottom, z, 0.0f, 0.0f, 1.0f},
+        &(VoxelVertex){right, bottom, z, 0.0f, 0.0f, 1.0f},
+        &(VoxelVertex){right, top, z, 0.0f, 0.0f, 1.0f},
+        &(VoxelVertex){left, top, z, 0.0f, 0.0f, 1.0f});
+}
+
+static void EmitNeon(VoxelBuilder *glass, const VoxelMapInstance *inst,
+                        int x0, int y0, int x1, int y1, bool centre)
+{
+    int door = centre ? NEON_DOOR_CENTRE : NEON_DOOR_MART;
+
+    if (glass == NULL || inst == NULL || inst->indoor)
+        return;
+    int firstX = x0 - inst->originX, lastX = x1 - inst->originX;
+    int firstY = y0 - inst->originY, lastY = y1 - inst->originY;
+    if (firstX < 0)
+        firstX = 0;
+    if (firstY < 0)
+        firstY = 0;
+    if (lastX > inst->width)
+        lastX = inst->width;
+    if (lastY > inst->height)
+        lastY = inst->height;
+    for (int y = firstY; y < lastY; ++y)
+        for (int x = firstX; x < lastX; ++x)
+        {
+            int wx = inst->originX + x, wz = inst->originY + y;
+            if (VoxelWorld_GetMetatileId(wx, wz) != door || VoxelWorld_GetInstanceAt(wx, wz) != inst)
+                continue;
+            /* the board and its tube: 5 quads, the tube twice */
+            if (glass->capacity - glass->count < 9u * 6u)
+                return;
+            glass->base = VoxelRelief_Base(inst);
+            glass->lift = VoxelRelief_CellLift(inst, wx, wz);
+            glass->shift = VoxelRelief_CellShift(inst, wx, wz);
+            float left = wx - 1 + 39 / 16.0f, right = wx - 1 + 56 / 16.0f;
+            float bottom = 8 / 16.0f, top = 18 / 16.0f, px = 1 / 16.0f;
+            float z = wz + 1 + 1 / 64.0f;
+            NeonRect(glass, left, right, bottom, top, z);
+            for (unsigned twice = 0; twice < 2; ++twice)
+            {
+                NeonRect(glass, left, right, top - px, top, z);
+                NeonRect(glass, left, right, bottom, bottom + px, z);
+                NeonRect(glass, left, left + px, bottom + px, top - px, z);
+                NeonRect(glass, right - px, right, bottom + px, top - px, z);
+            }
+        }
+}
+
 static void UpdateNightLamps(void)
 {
     if (!sMeasureLamps || !CtrGame_IsOutdoor() || CtrDayNight_Get()->glow < VOXEL_GLOW_MIN)
@@ -8692,6 +8756,18 @@ static void UpdateNightLamps(void)
         if (pad == 3 || (glass.capacity - glass.count >= 64u && ground.capacity - ground.count >= 64u))
             break;
         pad = 3;
+    }
+    /* Danny Edition: the Centers' neon, then the Marts', after the lamps */
+    for (unsigned kind = 0; kind < 2; ++kind)
+    {
+        unsigned before = glass.count;
+
+        for (unsigned index = 0; index < VoxelWorld_InstanceCount(); ++index)
+            EmitNeon(&glass, VoxelWorld_Instance(index),
+                     sLampView[0], sLampView[1] - DrawnRows(VoxelWorld_Instance(index)),
+                     sLampView[2], sLampView[3] - DrawnRows(VoxelWorld_Instance(index)),
+                     kind == 0);
+        sNeonVertices[kind] = glass.count - before;
     }
     sLampVertices = glass.count;
     sLampGroundVertices = ground.count;
@@ -13358,6 +13434,14 @@ static void LampTexEnv(float strength, bool ground)
                    GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ZERO, GPU_ONE);
 }
 
+/* Danny Edition: the neon over the Centers' and the Marts' signs at night,
+ * rose-red and blue, laid over the board's own light. */
+static void NeonTexEnv(float strength, bool centre)
+{
+    C3D_TexEnvColor(C3D_GetTexEnv(0), ((uint32_t)(strength * 150.0f + 0.5f) << 24)
+                    | (centre ? 0x00823CFFu : 0x00FF8B2Eu));
+}
+
 static void HazeTexEnv(uint32_t colour, int stage)
 {
     C3D_TexEnv *env = C3D_GetTexEnv(stage);
@@ -15802,8 +15886,19 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
         }
         if (sLampVertices != 0)
         {
+            unsigned neon = sNeonVertices[0] + sNeonVertices[1];
+            unsigned lamps = neon <= sLampVertices ? sLampVertices - neon : sLampVertices;
+
             LampTexEnv(strength, false);
-            C3D_DrawArrays(GPU_TRIANGLES, 0, sLampVertices);
+            if (lamps != 0)
+                C3D_DrawArrays(GPU_TRIANGLES, 0, lamps);
+            if (neon <= sLampVertices)
+                for (unsigned kind = 0, first = lamps; kind < 2; first += sNeonVertices[kind++])
+                    if (sNeonVertices[kind] != 0)
+                    {
+                        NeonTexEnv(strength, kind == 0);
+                        C3D_DrawArrays(GPU_TRIANGLES, first, sNeonVertices[kind]);
+                    }
         }
         SetModelView(sDynamicX, sDynamicZ);
         BindVertices(sDynamic);
