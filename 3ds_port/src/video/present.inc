@@ -56,6 +56,31 @@ static void RenderDexTop(bool stereo, float slider)
     BlendForget();
 }
 
+/*
+ * The bottom screen's panel over the whole top screen (3ds_top_panel.c),
+ * flat, on both eyes: its texture filled now that FrameBegin has waited for
+ * the GPU.
+ */
+static void RenderTopPanel(bool stereo)
+{
+    C2D_Prepare();
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
+    BlendForget();
+    CtrTopPanel_Upload();
+    Blend(5, false, false);
+    SceneOn(sTop);
+    C2D_ViewReset();
+    CtrTopPanel_Draw();
+    if (stereo)
+    {
+        SceneOn(sTopRight);
+        C2D_ViewReset();
+        CtrTopPanel_Draw();
+    }
+    C2D_Flush();
+    BlendForget();
+}
+
 /* What a piece of CtrVideo_Present decides and a later one reads. */
 typedef struct
 {
@@ -202,7 +227,8 @@ VIDEO_PIECE void FrameView(void)
 {
     sStage = sStageRequested;
     sStageFaded = sStage && sStageFadedRequested;
-    sStageZoomed = sStage && sStageZoomedRequested;
+    sStageCovered = sStage && sStageCoveredRequested;
+    sStageZoomed = sStage && (sStageZoomedRequested || sStageCoveredRequested);
     sCentred = sCentredRequested != CTR_CENTRED_NONE && !sStage;
     sCentredScreen = sCentred ? sCentredRequested : CTR_CENTRED_NONE;
     sBattle = sBattleRequested && !sStage && !sCentred;
@@ -908,6 +934,10 @@ VIDEO_PIECE void FrameOverlays(const PresentFrame *f)
         CtrPassTop_Idle();
     else if (!f->down && !f->blank)
         RenderPassTop(f->stereo);
+    /* The bottom screen's panel over the game's picture (the Rental Pokemon). */
+    if (!f->down && CtrTopPanel_Active()) RenderTopPanel(f->stereo);
+    else if (!CtrTopPanel_Active()) CtrTopPanel_Idle();
+    CtrTopPanel_Tick();
     /* The top drawn afresh, or kept as it was (down): darkened on it once.
      * Not over the Frontier Pass drawn natively on the top screen: there the
      * top is the screen in use, not the one the player looks away from. */
