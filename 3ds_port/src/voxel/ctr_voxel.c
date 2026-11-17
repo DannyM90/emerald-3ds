@@ -8654,30 +8654,72 @@ static bool LampsTake(void)
 
 /* The lamps on screen and the light they cast, rebuilt when the view moves. */
 /* Danny Edition: the neon of the Pokemon Centers (centre) or the Marts at
- * night: each sign board in the window tinted, and a tube round its edge
- * (emitted twice, so it shows stronger under the same alpha). */
-/* The Center and the Mart are one drawing (voxel_building_specs.py
+ * night: the letters of each sign in the window, in the sign's colour
+ * (NeonTexEnv), the board itself left dark (voxel_night.NIGHT_SIGNS).
+ *
+ * The Center and the Mart are one drawing (voxel_building_specs.py
  * center_or_mart, 64 x 64 from a cell left of the door and three above): its
  * front wall stands on the door's south edge, drawing row r at 63 - r pixels
- * up, and the sign board is x 39-55, rows 46-55 of it. */
+ * up. The sign is x 39-55, rows 46-55 of it, its letters the pixels inside
+ * its frame that are not the board's white. They are read from the map's own
+ * tiles as the game has them in VRAM, so they are the language's letters. */
 #define NEON_DOOR_CENTRE 0x061
 #define NEON_DOOR_MART 0x041
+#define NEON_X0 40
+#define NEON_X1 56
+#define NEON_Y0 47
+#define NEON_Y1 55
+/* fieldmap.h's: metatiles and palettes of a primary tileset, metatiles in all */
+#define NEON_PRIMARY_METATILES 512
+#define NEON_METATILES 1024
+#define NEON_PRIMARY_PALS 6
 
-static void NeonRect(VoxelBuilder *b, float left, float right, float bottom, float top, float z)
+/* The colour (BGR555) of drawing pixel (x, y) of the cells from (cellX, cellY)
+ * up, as the game draws the metatiles; 0x8000 when it cannot be read. */
+static uint16_t NeonPixel(const VoxelMapInstance *inst, const uint8_t *vram, int cellX, int cellY, int x, int y)
 {
-    VoxelBuilder_Quad(b,
-        &(VoxelVertex){left, bottom, z, 0.0f, 0.0f, 1.0f},
-        &(VoxelVertex){right, bottom, z, 0.0f, 0.0f, 1.0f},
-        &(VoxelVertex){right, top, z, 0.0f, 0.0f, 1.0f},
-        &(VoxelVertex){left, top, z, 0.0f, 0.0f, 1.0f});
+    int metatile = VoxelWorld_GetMetatileId(cellX + x / 16, cellY + y / 16);
+    const uint16_t *metatiles, *palettes;
+    unsigned px = (unsigned)x & 15, py = (unsigned)y & 15, colour = 0x8000;
+
+    if (metatile < 0 || metatile >= NEON_METATILES)
+        return 0x8000;
+    metatiles = metatile < NEON_PRIMARY_METATILES ? Voxel_ResolveMetatiles(inst->primaryTileset)
+                                                    : Voxel_ResolveMetatiles(inst->secondaryTileset);
+    if (metatiles == NULL)
+        return 0x8000;
+    metatiles += (metatile % NEON_PRIMARY_METATILES) * 8;
+    for (unsigned layer = 0; layer < 2; ++layer)
+    {
+        uint16_t entry = metatiles[layer * 4 + (py / 8) * 2 + px / 8];
+        unsigned tile = entry & 0x3FF, pal = (entry >> 12) & 15;
+        unsigned tx = px & 7, ty = py & 7, value;
+
+        if ((entry >> 10) & 1)
+            tx = 7 - tx;
+        if ((entry >> 11) & 1)
+            ty = 7 - ty;
+        value = (vram[tile * 32u + ty * 4u + tx / 2u] >> ((tx & 1u) * 4u)) & 15u;
+        if (value == 0 && layer == 1)
+            continue;
+        palettes = Voxel_ResolvePalettes(pal < NEON_PRIMARY_PALS ? inst->primaryTileset : inst->secondaryTileset);
+        if (palettes == NULL)
+            return 0x8000;
+        colour = palettes[pal * 16 + value] & 0x7FFF;
+    }
+    return (uint16_t)colour;
 }
 
 static void EmitNeon(VoxelBuilder *glass, const VoxelMapInstance *inst,
-                        int x0, int y0, int x1, int y1, bool centre)
+                     int x0, int y0, int x1, int y1, bool centre)
 {
     int door = centre ? NEON_DOOR_CENTRE : NEON_DOOR_MART;
+    const uint8_t *vram = CtrVideo_GetBgVram();
+    const VoxelMapInstance *live = VoxelWorld_Instance(0);
 
-    if (glass == NULL || inst == NULL || inst->indoor)
+    /* the tiles in VRAM are the live map's: the general tileset every town shares */
+    if (glass == NULL || inst == NULL || inst->indoor || vram == NULL || live == NULL
+     || inst->primaryTileset != live->primaryTileset)
         return;
     int firstX = x0 - inst->originX, lastX = x1 - inst->originX;
     int firstY = y0 - inst->originY, lastY = y1 - inst->originY;
@@ -8695,22 +8737,43 @@ static void EmitNeon(VoxelBuilder *glass, const VoxelMapInstance *inst,
             int wx = inst->originX + x, wz = inst->originY + y;
             if (VoxelWorld_GetMetatileId(wx, wz) != door || VoxelWorld_GetInstanceAt(wx, wz) != inst)
                 continue;
-            /* the board and its tube: 5 quads, the tube twice */
-            if (glass->capacity - glass->count < 9u * 6u)
-                return;
             glass->base = VoxelRelief_Base(inst);
             glass->lift = VoxelRelief_CellLift(inst, wx, wz);
             glass->shift = VoxelRelief_CellShift(inst, wx, wz);
-            float left = wx - 1 + 39 / 16.0f, right = wx - 1 + 56 / 16.0f;
-            float bottom = 8 / 16.0f, top = 18 / 16.0f, px = 1 / 16.0f;
             float z = wz + 1 + 1 / 64.0f;
-            NeonRect(glass, left, right, bottom, top, z);
-            for (unsigned twice = 0; twice < 2; ++twice)
+            for (int row = NEON_Y0; row < NEON_Y1; ++row)
             {
-                NeonRect(glass, left, right, top - px, top, z);
-                NeonRect(glass, left, right, bottom, bottom + px, z);
-                NeonRect(glass, left, left + px, bottom + px, top - px, z);
-                NeonRect(glass, right - px, right, bottom + px, top - px, z);
+                float bottom = (63 - row) / 16.0f, top = bottom + 1 / 16.0f;
+
+                for (int col = NEON_X0; col < NEON_X1;)
+                {
+                    int end = col;
+
+                    /* a run of letter pixels: neither the board's white nor unreadable */
+                    while (end < NEON_X1)
+                    {
+                        uint16_t c = NeonPixel(inst, vram, wx - 1, wz - 3, end, row);
+                        unsigned r = c & 31, g = (c >> 5) & 31, b = (c >> 10) & 31;
+
+                        if (c & 0x8000 || (r > 24 && g > 24 && b > 24))
+                            break;
+                        ++end;
+                    }
+                    if (end == col)
+                    {
+                        ++col;
+                        continue;
+                    }
+                    if (glass->capacity - glass->count < 6u)
+                        return;
+                    float left = wx - 1 + col / 16.0f, right = wx - 1 + end / 16.0f;
+                    VoxelBuilder_Quad(glass,
+                        &(VoxelVertex){left, bottom, z, 0.0f, 0.0f, 1.0f},
+                        &(VoxelVertex){right, bottom, z, 0.0f, 0.0f, 1.0f},
+                        &(VoxelVertex){right, top, z, 0.0f, 0.0f, 1.0f},
+                        &(VoxelVertex){left, top, z, 0.0f, 0.0f, 1.0f});
+                    col = end;
+                }
             }
         }
 }
@@ -13434,11 +13497,11 @@ static void LampTexEnv(float strength, bool ground)
                    GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_ZERO, GPU_ONE);
 }
 
-/* Danny Edition: the neon over the Centers' and the Marts' signs at night,
- * rose-red and blue, laid over the board's own light. */
+/* Danny Edition: the neon of the Centers' and the Marts' sign letters at
+ * night, rose-red and blue. */
 static void NeonTexEnv(float strength, bool centre)
 {
-    C3D_TexEnvColor(C3D_GetTexEnv(0), ((uint32_t)(strength * 150.0f + 0.5f) << 24)
+    C3D_TexEnvColor(C3D_GetTexEnv(0), ((uint32_t)(strength * 235.0f + 0.5f) << 24)
                     | (centre ? 0x00823CFFu : 0x00FF8B2Eu));
 }
 

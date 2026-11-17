@@ -79,13 +79,13 @@ NIGHT_WINDOWS = {
                                  for xpos in (10, 18, 26, 34, 42, 114, 122, 130, 138, 146)),
 }
 
-# The lit signs (after Danny's own hack): the Pokémon Center's and the Mart's
-# sign board and the white of the Poké Ball over the door glow at night like
-# a lightbox, the letters staying dark on it. Only the drawing's near-white
-# pixels in each rectangle light.
+# The lit signs (after Danny's own hack): the white of the Poké Ball over the
+# door of the Pokémon Center and the Mart glows at night. Their sign boards
+# stay dark: their letters light as neon (ctr_voxel.c EmitNeon). Only the
+# drawing's near-white pixels in each rectangle light.
 NIGHT_SIGNS = {
-    "pokemon_center": ((40, 46, 56, 56, 235), (26, 24, 39, 33, 190)),
-    "poke_mart": ((40, 46, 56, 56, 235), (26, 24, 39, 33, 190)),
+    "pokemon_center": ((26, 24, 39, 33, 190),),
+    "poke_mart": ((26, 24, 39, 33, 190),),
 }
 
 
