@@ -42,15 +42,21 @@ static void RenderDexTop(bool stereo, float slider)
     C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_COLOR);
     BlendForget();
     CtrDexTop_Upload();
+    /* Danny Edition: the bottom screen's HD panel of the Pokédex
+     * (3ds_bottom_dex_hd.inc) over the device, flat, once it is in. */
+    CtrTopPanel_Upload();
+    bool panel = CtrTopPanel_Active();
     Blend(5, false, false);
     SceneOn(sTop);
     C2D_ViewReset();
-    CtrDexTop_DrawEye(stereo ? 1.0f : 0.0f, slider);
+    if (panel) CtrTopPanel_Draw();
+    else CtrDexTop_DrawEye(stereo ? 1.0f : 0.0f, slider);
     if (stereo)
     {
         SceneOn(sTopRight);
         C2D_ViewReset();
-        CtrDexTop_DrawEye(-1.0f, slider);
+        if (panel) CtrTopPanel_Draw();
+        else CtrDexTop_DrawEye(-1.0f, slider);
     }
     C2D_Flush();
     BlendForget();

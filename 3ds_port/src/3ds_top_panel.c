@@ -36,6 +36,12 @@ void CtrTopPanel_Keep(void)
     if (sHas) sKeep = KEEP_FRAMES;
 }
 
+void CtrTopPanel_Drop(void)
+{
+    sHas = false;
+    sKeep = 0;
+}
+
 bool CtrTopPanel_Active(void) { return sHas && sKeep != 0; }
 
 /* Once a frame, by the video side: the panel goes when no longer asked for. */

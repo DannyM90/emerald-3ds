@@ -4213,6 +4213,7 @@ static bool8 Prefetch(const ViewState *s)
 #include "3ds_bottom_easychat.inc"
 #include "3ds_bottom_factory.inc"
 #include "3ds_bottom_factory_top.inc"
+#include "3ds_bottom_dex_hd.inc"
 
 /* ------------------------------------------------------------------------ */
 /* Drawing: battle                                                          */
@@ -8456,6 +8457,8 @@ void CtrBottom_Frame(void)
         sIconsReady = sIconsIn = TRUE;
     /* The Rental Pokemon's panel on the top screen. */
     FactoryTopFrame(&sState);
+    /* Danny Edition: the Pokédex's top screen in HD. */
+    DexHdFrame();
 
     ticks[2] = CtrPlatform_Ticks();
     if (sAreaRedraw)

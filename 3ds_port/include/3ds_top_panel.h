@@ -20,6 +20,8 @@
 
 void CtrTopPanel_Show(const uint16_t *canvas);
 void CtrTopPanel_Keep(void);
+/* Danny Edition: gone at once, not after its few frames (the Pokédex's HD panel). */
+void CtrTopPanel_Drop(void);
 
 /* The video side, inside the frame. */
 bool CtrTopPanel_Active(void);

@@ -82,6 +82,16 @@ void CtrDexTop_Show(uint16_t national, const uint16_t *picture, unsigned frames,
      * when this Pokémon's terrain is not the last one's. */
 }
 
+uint16_t CtrDexTop_National(void)
+{
+    return sActive ? sNational : 0;
+}
+
+const uint16_t *CtrDexTop_BackdropPixels(void)
+{
+    return sBackdropRows == BACKDROP_H ? &sBackdrop[0][0] : NULL;
+}
+
 bool CtrDexTop_BackdropComplete(void)
 {
     return sBackdropRows == BACKDROP_H;

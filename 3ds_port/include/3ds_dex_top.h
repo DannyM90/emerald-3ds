@@ -49,6 +49,11 @@ bool CtrDexTop_BackdropComplete(void);
 /* The Pokédex is closed. */
 void CtrDexTop_Hide(void);
 bool CtrDexTop_Active(void);
+/* Danny Edition: what the device shows, for the HD panel drawn over it
+ * (3ds_bottom_dex_hd.inc): its Pokémon (0 none), and its backdrop rows top
+ * to bottom (RGBA5551), NULL until they are all in. */
+uint16_t CtrDexTop_National(void);
+const uint16_t *CtrDexTop_BackdropPixels(void);
 
 /*
  * Inside the frame (3ds_video.c): Upload once, after C3D_FrameBegin has
