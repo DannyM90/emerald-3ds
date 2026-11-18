@@ -1292,7 +1292,7 @@ static unsigned sSpriteVertices;
 static unsigned sReflectionVertices;
 static unsigned sLampVertices, sLampGroundVertices;
 /* Danny Edition: the last of sLampVertices, the Centers' neon and the Marts' */
-static unsigned sNeonVertices[2];
+static unsigned sNeonVertices[2], sNeonGround[2];
 static bool sLampReady;
 static VoxelVertex *sLampScratch;     /* builder output, VOXEL_LAMP_VERTICES */
 static VoxelGpuVertex *sLampGpu;      /* linear, VOXEL_LAMP_VERTICES */
@@ -8710,7 +8710,7 @@ static uint16_t NeonPixel(const VoxelMapInstance *inst, const uint8_t *vram, int
     return (uint16_t)colour;
 }
 
-static void EmitNeon(VoxelBuilder *glass, const VoxelMapInstance *inst,
+static void EmitNeon(VoxelBuilder *glass, VoxelBuilder *ground, const VoxelMapInstance *inst,
                      int x0, int y0, int x1, int y1, bool centre)
 {
     int door = centre ? NEON_DOOR_CENTRE : NEON_DOOR_MART;
@@ -8741,6 +8741,24 @@ static void EmitNeon(VoxelBuilder *glass, const VoxelMapInstance *inst,
             glass->lift = VoxelRelief_CellLift(inst, wx, wz);
             glass->shift = VoxelRelief_CellShift(inst, wx, wz);
             float z = wz + 1 + 1 / 64.0f;
+            /* The light it throws: a glow on the wall round the sign and a
+             * pool on the ground before it, in its colour (NeonGroundTexEnv). */
+            if (ground != NULL && ground->capacity - ground->count >= 6u)
+            {
+                float cx = wx - 1 + (NEON_X0 + NEON_X1) / 32.0f;
+                float cy = (63 - (NEON_Y0 + NEON_Y1) / 2) / 16.0f;
+                float hw = 1.1f, hh = 0.75f, wallZ = wz + 1 + 1 / 128.0f;
+
+                ground->base = glass->base;
+                ground->lift = glass->lift;
+                ground->shift = glass->shift;
+                VoxelBuilder_Quad(ground,
+                    &(VoxelVertex){cx - hw, cy - hh, wallZ, 0.0f, 0.0f, 1.0f},
+                    &(VoxelVertex){cx + hw, cy - hh, wallZ, 1.0f, 0.0f, 1.0f},
+                    &(VoxelVertex){cx + hw, cy + hh, wallZ, 1.0f, 1.0f, 1.0f},
+                    &(VoxelVertex){cx - hw, cy + hh, wallZ, 0.0f, 1.0f, 1.0f});
+                VoxelSign_NeonPool(ground, inst, cx - 1.5f, cx + 1.5f, (float)(wz + 1), 2.75f);
+            }
             for (int row = NEON_Y0; row < NEON_Y1; ++row)
             {
                 float bottom = (63 - row) / 16.0f, top = bottom + 1 / 16.0f;
@@ -8823,14 +8841,15 @@ static void UpdateNightLamps(void)
     /* Danny Edition: the Centers' neon, then the Marts', after the lamps */
     for (unsigned kind = 0; kind < 2; ++kind)
     {
-        unsigned before = glass.count;
+        unsigned before = glass.count, groundBefore = ground.count;
 
         for (unsigned index = 0; index < VoxelWorld_InstanceCount(); ++index)
-            EmitNeon(&glass, VoxelWorld_Instance(index),
+            EmitNeon(&glass, &ground, VoxelWorld_Instance(index),
                      sLampView[0], sLampView[1] - DrawnRows(VoxelWorld_Instance(index)),
                      sLampView[2], sLampView[3] - DrawnRows(VoxelWorld_Instance(index)),
                      kind == 0);
         sNeonVertices[kind] = glass.count - before;
+        sNeonGround[kind] = ground.count - groundBefore;
     }
     sLampVertices = glass.count;
     sLampGroundVertices = ground.count;
@@ -13501,8 +13520,27 @@ static void LampTexEnv(float strength, bool ground)
  * night, rose-red and blue. */
 static void NeonTexEnv(float strength, bool centre)
 {
-    C3D_TexEnvColor(C3D_GetTexEnv(0), ((uint32_t)(strength * 235.0f + 0.5f) << 24)
-                    | (centre ? 0x00823CFFu : 0x00FF8B2Eu));
+    /* Added to what is under it, as a lit tube is: bright on the dark board. */
+    C3D_TexEnvColor(C3D_GetTexEnv(0), ((uint32_t)(strength * 255.0f + 0.5f) << 24)
+                    | (centre ? 0x00A050FFu : 0x00FFA040u));
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE, GPU_ZERO, GPU_ONE);
+}
+
+/* The light the neon throws on its wall and the ground (the lamp pool's
+ * texture, its falloff), in the sign's colour. */
+static void NeonGroundTexEnv(float strength, bool centre)
+{
+    C3D_TexEnv *env = C3D_GetTexEnv(0);
+    float k = strength * VOXEL_LAMP_POOL_GAIN * 2.0f;
+    uint32_t c = centre ? 0x00823CFFu : 0x00FF8B2Eu, out = 0xFF000000u;
+
+    for (unsigned shift = 0; shift < 24; shift += 8)
+    {
+        float v = ((c >> shift) & 0xFFu) * k;
+
+        out |= (uint32_t)(v > 255.0f ? 255.0f : v + 0.5f) << shift;
+    }
+    C3D_TexEnvColor(env, out);
 }
 
 static void HazeTexEnv(uint32_t colour, int stage)
@@ -15943,9 +15981,23 @@ void CtrVoxel_Draw(C3D_RenderTarget *target, int eye)
         if (sLampGroundVertices != 0 && sLampPoolTex.data != NULL)
         {
             /* the sprites, shadows and reflections bind their atlas again */
+            unsigned neonGround = sNeonGround[0] + sNeonGround[1];
+            unsigned pools = neonGround <= sLampGroundVertices ? sLampGroundVertices - neonGround
+                                                               : sLampGroundVertices;
+
             C3D_TexBind(0, &sLampPoolTex);
             LampTexEnv(strength, true);
-            C3D_DrawArrays(GPU_TRIANGLES, VOXEL_LAMP_GROUND_FIRST, sLampGroundVertices);
+            if (pools != 0)
+                C3D_DrawArrays(GPU_TRIANGLES, VOXEL_LAMP_GROUND_FIRST, pools);
+            /* Danny Edition: the neon's light, in each sign's colour */
+            if (neonGround <= sLampGroundVertices)
+                for (unsigned kind = 0, first = VOXEL_LAMP_GROUND_FIRST + pools; kind < 2;
+                     first += sNeonGround[kind++])
+                    if (sNeonGround[kind] != 0)
+                    {
+                        NeonGroundTexEnv(strength, kind == 0);
+                        C3D_DrawArrays(GPU_TRIANGLES, first, sNeonGround[kind]);
+                    }
         }
         if (sLampVertices != 0)
         {

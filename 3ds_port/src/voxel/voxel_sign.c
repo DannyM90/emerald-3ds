@@ -293,6 +293,21 @@ static void WindowPool(VoxelBuilder *b, const VoxelMapInstance *inst, const Wind
         }
 }
 
+void VoxelSign_NeonPool(VoxelBuilder *ground, const VoxelMapInstance *inst,
+                        float left, float right, float wall, float depth)
+{
+    WindowLight w;
+
+    if (ground == NULL || inst == NULL)
+        return;
+    memset(&w, 0, sizeof(w));
+    w.x0 = (int16_t)((left - inst->originX) * 16.0f);
+    w.x1 = (int16_t)((right - inst->originX) * 16.0f);
+    w.z = (int16_t)((wall - inst->originY) * 16.0f);
+    w.depth = (uint8_t)(depth * 16.0f);
+    WindowPool(ground, inst, &w);
+}
+
 static void EmitWindowLights(VoxelBuilder *ground, const VoxelMapInstance *inst,
                              int x0, int y0, int x1, int y1)
 {

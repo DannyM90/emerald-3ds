@@ -73,5 +73,10 @@ void VoxelSign_Shutdown(void);
 bool VoxelSign_IsLantern(const uint16_t head[16]);
 void VoxelSign_EmitNight(VoxelBuilder *glass, VoxelBuilder *ground,
                        const VoxelMapInstance *inst, int x0, int y0, int x1, int y1);
+/* Danny Edition: the light a sign's neon throws on the ground in front of its
+ * wall, a window's pool from `left` to `right` (world cells) at the wall's z,
+ * reaching `depth` cells out. */
+void VoxelSign_NeonPool(VoxelBuilder *ground, const VoxelMapInstance *inst,
+                        float left, float right, float wall, float depth);
 
 #endif
