@@ -281,6 +281,8 @@ static void Render(const ViewState *s)
             DrawBattleMoves(s);
         else if (s->mode == MODE_BATTLE_TARGET)
             DrawBattleTarget(s);
+        else if (s->mode == MODE_BATTLE_YESNO)
+            DrawBattleYesNo(s);
         phase[2] = CtrPlatform_Ticks();
     }
     else if (s->mode == MODE_PAD)

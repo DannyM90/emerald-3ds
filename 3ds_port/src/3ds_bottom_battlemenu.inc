@@ -80,6 +80,19 @@ static u8 TakeBattleTap(u8 kind)
     return tap;
 }
 
+/*
+ * A YES/NO box of the battle script's (battle_script_commands.c, every frame
+ * it waits): YES and NO are the bottom screen's buttons, and a tap off them
+ * is nothing, so tapping on through the text never answers YES. 0 YES, 1 NO,
+ * -1 no tap; the game moves its cursor there and takes it as A.
+ */
+s8 CtrBattleMenu_YesNoInput(void)
+{
+    u8 tap = TakeBattleTap(ASK_YESNO);
+
+    return tap == HIT_YES ? 0 : tap == HIT_NO ? 1 : -1;
+}
+
 void CtrBattleMenu_ActionInput(u8 *cursor, bool8 safari)
 {
     u8 tap = TakeBattleTap(ASK_ACTION), next = *cursor;

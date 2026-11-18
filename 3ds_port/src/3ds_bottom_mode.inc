@@ -97,7 +97,7 @@ static u16 EnabledScreens(void)
  * every frame they run (CtrBattleMenu_*Input); last frame's call is what the
  * bottom screen shows.
  */
-enum { ASK_NONE, ASK_ACTION, ASK_MOVE, ASK_TARGET };
+enum { ASK_NONE, ASK_ACTION, ASK_MOVE, ASK_TARGET, ASK_YESNO };
 
 typedef struct
 {
@@ -207,6 +207,7 @@ static u8 CurrentMode(void)
             if (sAsked.kind == ASK_ACTION) return MODE_BATTLE_ACTION;
             if (sAsked.kind == ASK_MOVE) return MODE_BATTLE_MOVE;
             if (sAsked.kind == ASK_TARGET) return MODE_BATTLE_TARGET;
+            if (sAsked.kind == ASK_YESNO) return MODE_BATTLE_YESNO;
         }
         return MODE_BATTLE_INFO;
     }

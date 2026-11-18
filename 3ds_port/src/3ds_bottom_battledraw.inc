@@ -297,3 +297,25 @@ static void DrawBattleTarget(const ViewState *s)
     DrawCached(CP_CANCEL, PlateState(s, HIT_CANCEL, FALSE), 5, 84, 192, BTA_CANCEL, 152, 26, HIT_CANCEL, CancelBody,
                s, 0);
 }
+
+/* A YES/NO box of the battle's: YES and NO side by side, the size of two
+ * moves, where the move menu has its middle row. */
+#define YESNO_Y 63
+
+static void DrawBattleYesNo(const ViewState *s)
+{
+    for (int i = 0; i < 2; ++i)
+    {
+        int x = i ? 164 : 6, oy;
+        u8 hit = i ? HIT_NO : HIT_YES;
+        Rgb colour = i ? sHueRun : sHueMon, dark = PLATE_DARK(colour), shadow = PLATE_SHADOW(colour);
+        const u8 *label = i ? gText_No : gText_Yes;
+
+        oy = DrawBattlePlate(BTA_MOVE, x, YESNO_Y, MOVE_W, MOVE_H, colour, PlateState(s, hit, s->cursor == i),
+                             s->blink, hit);
+        if (PlateOutsideClip(x, YESNO_Y, MOVE_W, MOVE_H))
+            continue;
+        DrawSmoothStr(&sNormal, label, x + MOVE_W / 2 - SmoothInkWidth(&sNormal, label, 8) / 2,
+                      oy + MOVE_H / 2 - 18, 8, sCream, dark, &shadow);
+    }
+}

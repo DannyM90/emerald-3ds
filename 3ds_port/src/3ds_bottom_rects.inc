@@ -85,6 +85,8 @@ static u8 BattleCursorHit(const ViewState *s, u8 cursor)
         return cursor == 4 ? HIT_QUICK_BALL : HIT_ACTION + cursor;
     if (s->mode == MODE_BATTLE_MOVE)
         return cursor == MAX_MON_MOVES ? HIT_CANCEL : HIT_MOVE + cursor;
+    if (s->mode == MODE_BATTLE_YESNO)
+        return cursor ? HIT_NO : HIT_YES;
     return HIT_TARGET + cursor;
 }
 

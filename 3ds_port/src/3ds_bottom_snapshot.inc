@@ -884,6 +884,11 @@ static void Snapshot(ViewState *s, u8 mode, u8 pressed)
     case MODE_BATTLE_INFO:
         SnapshotBattle(s);
         break;
+    case MODE_BATTLE_YESNO:
+        SnapshotBattle(s);
+        /* the box's cursor (battle_script_commands.c's CURSOR_POSITION) */
+        s->cursor = gBattleCommunication[1] != 0;
+        break;
     }
 }
 
