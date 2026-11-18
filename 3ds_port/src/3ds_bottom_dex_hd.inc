@@ -18,6 +18,9 @@
 #define DHD_RIGHT_X 200
 #define DHD_RIGHT_W (FTOP_W - DHD_RIGHT_X - 6)
 
+/* Every icon in this frame (defined with the battle's plates, further down). */
+static bool8 sIconsReady;
+
 static struct
 {
     u16 national;
