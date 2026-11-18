@@ -361,6 +361,8 @@ enum
     MODE_BATTLE_ACTION,
     MODE_BATTLE_MOVE,
     MODE_BATTLE_TARGET,
+    /* A YES/NO box of the battle's (switch Pokémon? give a nickname? learn the move?). */
+    MODE_BATTLE_YESNO,
 };
 
 typedef struct

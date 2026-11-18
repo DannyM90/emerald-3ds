@@ -1,0 +1,75 @@
+Emerald 3DS changes to pret/pokeemerald 76463dac15cad36aca5e2b3f6366abf9e53f814f: a battle's YES/NO box answered on the bottom screen
+Applies after 0092-touch-message-ack.patch; apply with tools/bootstrap.py.
+
+diff --git a/src/battle_script_commands.c b/src/battle_script_commands.c
+--- a/src/battle_script_commands.c
++++ b/src/battle_script_commands.c
+@@ -5543,6 +5543,28 @@
+     }
+ }
+ 
++#ifdef PLATFORM_3DS
++// 3ds_bottom_ui.c: YES or NO tapped on the bottom screen (0, 1), -1 for none.
++s8 CtrBattleMenu_YesNoInput(void);
++
++// A YES/NO box waiting: the bottom screen offers its two answers and says
++// which was tapped; the cursor goes there and A takes it, as pressed.
++static void CtrBattle_YesNoTap(void)
++{
++    s8 tap = CtrBattleMenu_YesNoInput();
++
++    if (tap < 0)
++        return;
++    if (gBattleCommunication[CURSOR_POSITION] != tap)
++    {
++        BattleDestroyYesNoCursorAt(gBattleCommunication[CURSOR_POSITION]);
++        gBattleCommunication[CURSOR_POSITION] = tap;
++        BattleCreateYesNoCursorAt(tap);
++    }
++    gMain.newKeys |= A_BUTTON;
++}
++#endif
++
+ static void Cmd_yesnoboxlearnmove(void)
+ {
+     gActiveBattler = 0;
+@@ -5557,6 +5579,9 @@
+         BattleCreateYesNoCursorAt(0);
+         break;
+     case 1:
++#ifdef PLATFORM_3DS
++        CtrBattle_YesNoTap();
++#endif
+         if (JOY_NEW(DPAD_UP) && gBattleCommunication[CURSOR_POSITION] != 0)
+         {
+             PlaySE(SE_SELECT);
+@@ -5674,6 +5699,9 @@
+         BattleCreateYesNoCursorAt(0);
+         break;
+     case 1:
++#ifdef PLATFORM_3DS
++        CtrBattle_YesNoTap();
++#endif
+         if (JOY_NEW(DPAD_UP) && gBattleCommunication[CURSOR_POSITION] != 0)
+         {
+             PlaySE(SE_SELECT);
+@@ -5970,6 +5998,9 @@
+         BattleCreateYesNoCursorAt(0);
+         break;
+     case 1:
++#ifdef PLATFORM_3DS
++        CtrBattle_YesNoTap();
++#endif
+         if (JOY_NEW(DPAD_UP) && gBattleCommunication[CURSOR_POSITION] != 0)
+         {
+             PlaySE(SE_SELECT);
+@@ -10419,6 +10450,9 @@
+         BattleCreateYesNoCursorAt(0);
+         break;
+     case 1:
++#ifdef PLATFORM_3DS
++        CtrBattle_YesNoTap();
++#endif
+         if (JOY_NEW(DPAD_UP) && gBattleCommunication[CURSOR_POSITION] != 0)
+         {
+             PlaySE(SE_SELECT);
