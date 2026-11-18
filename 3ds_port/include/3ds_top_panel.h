@@ -26,6 +26,8 @@ uint16_t *CtrTopPanel_Canvas(void);
 void CtrTopPanel_Show(void);
 /* dark: 0..16, how far towards black the panel is (the game's fade); 16 is fully black. */
 void CtrTopPanel_Keep(unsigned dark);
+/* Gone at once, not after its few frames (the Pokédex's HD page as it closes). */
+void CtrTopPanel_Drop(void);
 
 /* The video side, inside the frame. */
 bool CtrTopPanel_Active(void);

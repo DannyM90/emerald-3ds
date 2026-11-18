@@ -42,6 +42,12 @@ void CtrTopPanel_Keep(unsigned dark)
     sDark = dark > 16 ? 16 : dark;
 }
 
+void CtrTopPanel_Drop(void)
+{
+    sHas = false;
+    sKeep = 0;
+}
+
 bool CtrTopPanel_Active(void) { return sHas && sKeep != 0; }
 
 /* Once a frame, by the video side: the panel goes when no longer asked for. */

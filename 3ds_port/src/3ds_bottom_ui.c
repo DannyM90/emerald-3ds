@@ -746,6 +746,7 @@ static u8 HitTest(int x, int y)
 #include "3ds_bottom_easychat.inc"
 #include "3ds_bottom_factory.inc"
 #include "3ds_bottom_factory_top.inc"
+#include "3ds_bottom_dex_hd.inc"
 #include "3ds_bottom_battleplate.inc"
 #include "3ds_bottom_battledraw.inc"
 #include "3ds_bottom_battlewarm.inc"
@@ -1246,6 +1247,8 @@ void CtrBottom_Frame(void)
         sIconsReady = sIconsIn = TRUE;
     /* The Rental Pokemon's panel on the top screen. */
     FactoryTopFrame(&sState);
+    /* The Pokédex's top screen as a page of the bottom screen's (POKéDEX TOP). */
+    DexHdFrame();
 
     ticks[2] = CtrPlatform_Ticks();
     if (sAreaRedraw)

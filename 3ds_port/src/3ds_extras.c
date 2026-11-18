@@ -54,6 +54,8 @@ static const char *const sShinyOdds[] = {"1/8192", "1/4096", "1/1024", "1/256", 
  * only with the voxel overworld on: a build without it has no cells for
  * them, and with it off they are greyed (CtrExtras_NeedsVoxel). */
 static const char *const sVoxelStereo[] = {CTR_TEXT("AUTO", "AUTO", "AUTO", "AUTO", "AUTO", "AUTO", "オート"), CTR_TEXT("ON", "SÍ", "OUI", "SÌ", "SIM", "AN", "オン"), CTR_TEXT("OFF", "NO", "NON", "NO", "NENHUM", "AUS", "オフ")};
+/* POKéDEX TOP: the device (3ds_dex_top.c) or the bottom screen's page of it in HD (3ds_bottom_dex_hd.inc). */
+static const char *const sDexTop[] = {CTR_TEXT("DEVICE", "APARATO", "APPAREIL", "APPARECCHIO", "APARELHO", "GERÄT", "きかい"), "HD"};
 static const char *const sVoxelDepths[] = {"25%", "50%", "75%", "100%", "125%", "150%", "200%"};
 /*
  * SHADOW QUALITY: the voxel world's shadows as they always were (LOW), or cut
@@ -287,6 +289,9 @@ const CtrExtra gCtrExtras[] =
      * draws them, in a window of the bottom screen, instead of the bottom
      * screen's own (3ds_bottom_game.inc). */
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("CLASSIC MENUS", "MENÚS CLÁSICOS", "MENUS CLASSIQ.", "MENU CLASSICI", "MENUS CLÁSSICOS", "KLASS. MENÜS", "むかしの メニュー"), "classic_menus", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    /* The Pokédex's top screen: the device, or a page in the bottom screen's
+     * style (3ds_bottom_dex_hd.inc). */
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("POKéDEX TOP", "POKéDEX ARRIBA", "POKéDEX HAUT", "POKéDEX SOPRA", "POKéDEX EM CIMA", "POKéDEX OBEN", "ずかん うえ"), "dex_top", 2, 0, sDexTop, NULL, NULL, NULL},
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("FOLLOWER", "ACOMPAÑANTE", "COMPAGNON", "COMPAGNO", "COMPANHEIRO", "BEGLEITER", "つれあるき"), "follower", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     /* Fly soars across the open sky between the climb into the cloud and
      * the descent, with the region's flying Pokémon (3ds_fly_sky.c); off,
