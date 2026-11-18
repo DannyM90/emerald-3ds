@@ -18,7 +18,6 @@
 #define DHD_RIGHT_X 200
 #define DHD_RIGHT_W (FTOP_W - DHD_RIGHT_X - 6)
 
-static u16 *sDexHd;
 static struct
 {
     u16 national;
@@ -44,7 +43,7 @@ static void DexHdRow(const u8 *label, const u8 *value, int y)
     TextIn(value, DHD_RIGHT_X + 86, y, DHD_RIGHT_W - 96, 16, &sNormal, 'r', STYLE_INK, 0);
 }
 
-/* The panel, into sDexHd. FALSE while the picture is not in yet. */
+/* The panel, into the panel's canvas. FALSE while the picture is not in yet. */
 static bool8 DrawDexHd(u16 national, const u16 *backdrop)
 {
     u16 species = national ? NationalPokedexNumToSpecies(national) : SPECIES_NONE;
@@ -54,7 +53,7 @@ static bool8 DrawDexHd(u16 national, const u16 *backdrop)
     u16 number = !national || IsNationalPokedexEnabled() ? national : NationalToHoennOrder(national);
     u8 text[32];
 
-    memcpy(sDst, sFacTopBack, sizeof(u16) * FTOP_W * FTOP_H);
+    FacTopPaint(sDst);
     /* The title bar, the number in a dark pill at its right. */
     oy = Plate(6, FTOP_BAR_Y, FTOP_W - 12, FTOP_BAR_H, sEmerald, PLATE_STATE_NORMAL);
     TextIn(gText_MenuPokedex, 14, oy, 200, 20, &sNormal, 'l', STYLE_WHITE, 0);
@@ -142,20 +141,17 @@ static void DexHdFrame(void)
     {
         if (sDexHdShown.up)
             CtrTopPanel_Drop();
-        free(sDexHd);
-        sDexHd = NULL;
         sDexHdShown.up = FALSE;
         return;
     }
-    FacTopBackdrop();
-    if (!sFacTopBack)
-        return;
-    if (!sDexHd && !(sDexHd = malloc(sizeof(u16) * FTOP_W * FTOP_H)))
-        return;
+    /* The panel went (or another took it): drawn and handed over again. */
+    if (sDexHdShown.up && !CtrTopPanel_Active())
+        sDexHdShown.up = FALSE;
     if (!sDexHdShown.up || !sDexHdShown.ready || sDexHdShown.national != national
      || sDexHdShown.backdrop != (backdrop != NULL))
     {
-        sDst = sDexHd;
+        FactoryTopWarm();
+        sDst = CtrTopPanel_Canvas();
         sOX = 0;
         sClipX0 = sClipY0 = 0;
         sClipX1 = FTOP_W;
@@ -170,7 +166,9 @@ static void DexHdFrame(void)
         sDexHdShown.national = national;
         sDexHdShown.backdrop = backdrop != NULL;
         sDexHdShown.up = TRUE;
-        CtrTopPanel_Show(sDexHd);
+        CtrTopPanel_Show();
     }
-    CtrTopPanel_Keep();
+    /* It follows the game's fade to black as the Pokédex comes and goes. */
+    CtrTopPanel_Keep(gPaletteFade.mode == 0 && gPaletteFade.blendColor == RGB_BLACK
+                     ? (gPaletteFade.y > 16 ? 16 : gPaletteFade.y) : 0);
 }
