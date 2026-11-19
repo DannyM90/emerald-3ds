@@ -57,6 +57,8 @@ static const char *const sShinyOdds[] = {"1/8192", "1/4096", "1/1024", "1/256", 
 static const char *const sVoxelStereo[] = {CTR_TEXT("AUTO", "AUTO", "AUTO", "AUTO", "AUTO", "AUTO", "オート"), CTR_TEXT("ON", "SÍ", "OUI", "SÌ", "SIM", "AN", "オン"), CTR_TEXT("OFF", "NO", "NON", "NO", "NENHUM", "AUS", "オフ")};
 /* Danny Edition: whose Frontier Pass (3ds_pass_top.c). */
 static const char *const sPassStyle[] = {CTR_TEXT("BOTTOM", "ABAJO", "EN BAS", "SOTTO", "EMBAIXO", "UNTEN", "した"), CTR_TEXT("TOP HD", "ARRIBA HD", "EN HAUT HD", "SOPRA HD", "EM CIMA HD", "OBEN HD", "うえ HD")};
+/* Danny Edition: POKéDEX TOP, the device (3ds_dex_top.c) or the HD page (3ds_bottom_dex_hd.inc); HD by default here. */
+static const char *const sDexTop[] = {CTR_TEXT("DEVICE", "APARATO", "APPAREIL", "APPARECCHIO", "APARELHO", "GERÄT", "きかい"), "HD"};
 static const char *const sVoxelDepths[] = {"25%", "50%", "75%", "100%", "125%", "150%", "200%"};
 /*
  * SHADOW QUALITY: the voxel world's shadows as they always were (LOW), or cut
@@ -296,6 +298,7 @@ const CtrExtra gCtrExtras[] =
      * attention (3ds_video.c, DrawLookDown). */
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("DOWN ARROW", "FLECHA ABAJO", "FLÈCHE BAS", "FRECCIA GIÙ", "SETA P/ BAIXO", "PFEIL UNTEN", "したむき やじるし"), "look_down", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("PASS STYLE", "ESTILO PASE", "STYLE PASSE", "STILE TESSERA", "ESTILO PASSE", "PASS-STIL", "パスの スタイル"), "pass_style", 2, 0, sPassStyle, NULL, NULL, NULL},
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("POKéDEX TOP", "POKéDEX ARRIBA", "POKéDEX HAUT", "POKéDEX SOPRA", "POKéDEX EM CIMA", "POKéDEX OBEN", "ずかん うえ"), "dex_top", 2, 1, sDexTop, NULL, NULL, NULL},
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("FOLLOWER", "ACOMPAÑANTE", "COMPAGNON", "COMPAGNO", "COMPANHEIRO", "BEGLEITER", "つれあるき"), "follower", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     /* Fly soars across the open sky between the climb into the cloud and
      * the descent, with the region's flying Pokémon (3ds_fly_sky.c); off,

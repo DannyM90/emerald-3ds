@@ -140,7 +140,8 @@ static void DexHdFrame(void)
     u16 *dst = sDst;
     int ox = sOX, cx0 = sClipX0, cy0 = sClipY0, cx1 = sClipX1, cy1 = sClipY1;
 
-    if (!CtrDexTop_Active())
+    /* POKéDEX TOP: 0 the device, 1 this page. */
+    if (!CtrDexTop_Active() || CtrExtras_Get("dex_top") != 1)
     {
         if (sDexHdShown.up)
             CtrTopPanel_Drop();
