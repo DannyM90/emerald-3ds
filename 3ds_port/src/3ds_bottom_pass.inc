@@ -1006,12 +1006,13 @@ static void PassSnapCard(PassCard *c, const struct CtrCardTop *top)
     memcpy(c->name, snap.name, sizeof(c->name));
     c->gender = gSaveBlock2Ptr->playerGender ? FEMALE : MALE;
     c->hasDex = snap.hasDex;
-    c->stars = snap.stars;
+    /* Read once a view: counted afresh, not the field card's cache. */
+    c->stars = CardStars();
     c->badges = snap.badges;
     c->minutes = snap.minutes;
     c->hofMinutes = snap.hofMinutes;
     c->id = snap.id;
-    c->dex = snap.dex;
+    c->dex = CardDexCount(snap.hasDex);
     c->hours = snap.hours;
     c->hofHours = snap.hofHours;
     c->linkWins = snap.linkWins;
