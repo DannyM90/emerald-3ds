@@ -28,6 +28,8 @@ void CtrTopPanel_Show(void);
 void CtrTopPanel_Keep(unsigned dark);
 /* Danny Edition: gone at once, not after its few frames (the Pokédex's HD panel). */
 void CtrTopPanel_Drop(void);
+/* As CtrTopPanel_Keep, towards white instead: light 0..16, 16 fully white (the game's fade to white). */
+void CtrTopPanel_KeepWhite(unsigned light);
 
 /* The video side, inside the frame. */
 bool CtrTopPanel_Active(void);

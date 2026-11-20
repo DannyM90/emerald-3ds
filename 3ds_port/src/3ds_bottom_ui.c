@@ -719,7 +719,8 @@ enum
 #define HIT_OPTION_BACK 16
 
 typedef struct { s16 x, y, w, h; u8 id; } Hit;
-static Hit sHits[64];
+/* The widest naming keyboard can register 80 keys plus name cells, tabs and buttons. */
+static Hit sHits[128];
 static u8 sHitCount;
 
 static void AddHit(int x, int y, int w, int h, u8 id)
@@ -753,6 +754,7 @@ static u8 HitTest(int x, int y)
 #include "3ds_bottom_easychat.inc"
 #include "3ds_bottom_factory.inc"
 #include "3ds_bottom_factory_top.inc"
+#include "3ds_bottom_title_top.inc"
 #include "3ds_bottom_dex_hd.inc"
 #include "3ds_bottom_battleplate.inc"
 #include "3ds_bottom_battledraw.inc"
@@ -1258,6 +1260,9 @@ void CtrBottom_Frame(void)
     FactoryTopFrame(&sState);
     /* Danny Edition: the Pokédex's top screen in HD. */
     DexHdFrame();
+    /* Danny Edition: the main menu's card is the HD pass's (PassTopFrame), not
+     * the developer's TitleTopFrame. */
+    (void)TitleTopFrame;
 
     ticks[2] = CtrPlatform_Ticks();
     if (sAreaRedraw)
