@@ -50,6 +50,11 @@ static const OptRowDef sRowsUi[] = {
     EXTRA_ROW("classic_menus"),
     EXTRA_ROW("look_down"),
 };
+/* Opt-in browsers use a separate tab, leaving six-row groups intact. */
+static const OptRowDef sRowsLive[] = {
+    EXTRA_ROW("live_party"),
+    EXTRA_ROW("live_bag"),
+};
 static const OptRowDef sRowsSystem[] = {
     EXTRA_ROW("speed"),
     EXTRA_ROW("audio_clock"),
@@ -143,6 +148,7 @@ static const OptRowDef sRowsGraphics[] = {
 static const OptGroupDef sGroupsGeneral[] = {
     GROUP(CTR_TEXT("INTERFACE", "INTERFAZ", "INTERFACE", "INTERFACCIA", "INTERFACE", "OBERFLÄCHE", "がめん"), sRowsUi),
     GROUP(CTR_TEXT("SYSTEM", "SISTEMA", "SYSTÈME", "SISTEMA", "SISTEMA", "SYSTEM", "システム"), sRowsSystem),
+    GROUP(CTR_TEXT("LIVE", "EN VIVO", "DIRECT", "LIVE", "AO VIVO", "LIVE", "ライブ"), sRowsLive),
     GROUP(CTR_TEXT("GRAPHICS", "GRÁFICOS", "GRAPHISMES", "GRAFICA", "GRÁFICOS", "GRAFIK", "グラフィック"), sRowsGraphics),
 };
 static const OptGroupDef sGroupsWorld[] = {

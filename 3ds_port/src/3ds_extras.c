@@ -299,6 +299,10 @@ const CtrExtra gCtrExtras[] =
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("DOWN ARROW", "FLECHA ABAJO", "FLÈCHE BAS", "FRECCIA GIÙ", "SETA P/ BAIXO", "PFEIL UNTEN", "したむき やじるし"), "look_down", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("PASS STYLE", "ESTILO PASE", "STYLE PASSE", "STILE TESSERA", "ESTILO PASSE", "PASS-STIL", "パスの スタイル"), "pass_style", 2, 0, sPassStyle, NULL, NULL, NULL},
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("POKéDEX TOP", "POKéDEX ARRIBA", "POKéDEX HAUT", "POKéDEX SOPRA", "POKéDEX EM CIMA", "POKéDEX OBEN", "ずかん うえ"), "dex_top", 2, 1, sDexTop, NULL, NULL, NULL},
+    /* #202: browse the party on the lower screen while the field keeps running.
+     * Only ACTIONS hands off to the original party menu. Disabled by default. */
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("LIVE PARTY", "EQUIPO EN VIVO", "ÉQUIPE DIRECT", "SQUADRA LIVE", "EQUIPE AO VIVO", "TEAM LIVE", "ライブてもち"), "live_party", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
+    {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("LIVE BAG", "MOCHILA LIVE", "SAC EN DIRECT", "BORSA LIVE", "BOLSA AO VIVO", "BEUTEL LIVE", "ライブバッグ"), "live_bag", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     {CTR_EXTRAS_SCREEN(CTR_EXTRAS_ENHANCEMENTS, 1), CTR_TEXT("FOLLOWER", "ACOMPAÑANTE", "COMPAGNON", "COMPAGNO", "COMPANHEIRO", "BEGLEITER", "つれあるき"), "follower", 2, 0, gCtrExtrasOffOn, NULL, NULL, NULL},
     /* Fly soars across the open sky between the climb into the cloud and
      * the descent, with the region's flying Pokémon (3ds_fly_sky.c); off,
