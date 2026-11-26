@@ -91,6 +91,15 @@ void VoxelWorld_BuildInstances(void);
  * those alone. True if it built.
  */
 bool VoxelWorld_UpdateInstances(void);
+/* Are the instances the ones a build now would make (nothing they were read
+ * from has changed since)? Reads only. */
+bool VoxelWorld_InstancesAreCurrent(void);
+/* The current map's grid copied for the chunk build's worker, which reads
+ * the copy (voxel_who.h): taken by the render thread as it hands a job over. */
+void VoxelWorld_SnapshotLive(void);
+/* Has the worker met the game's maps changed under it since the last
+ * snapshot? Its job is then to be dropped, not uploaded. */
+bool VoxelWorld_WorkerMissed(void);
 /* Builds so far: moves with every build of the instances, for whatever is
  * worked out from them to tell it is still theirs. */
 unsigned VoxelWorld_InstanceBuilds(void);
@@ -185,8 +194,13 @@ float VoxelWorld_FogDensity(void);
  * game only shades. Thin - a wood, not a fog bank.
  */
 float VoxelWorld_Mist(void);
-/* A cave, tunnel or other map under the ground (MAP_TYPE_UNDERGROUND). */
+/* A cave, tunnel or other map under the ground (MAP_TYPE_UNDERGROUND), but
+ * for one under the open sky (relief_fixes.json "open_air",
+ * VoxelRelief_OpenAir): what the cave look keys on. */
 bool VoxelWorld_Underground(void);
+/* The map is one of the game's dark caves (flashLevel above 0): the field
+ * draws its circle of light round the player (VoxelFlashLight). */
+bool VoxelWorld_FlashDark(void);
 /* The palette fade on the backgrounds as a blend towards rgb (0-1) by amount,
  * false when there is none (voxel_world.c). */
 bool VoxelWorld_ScreenFade(float *amount, float rgb[3]);

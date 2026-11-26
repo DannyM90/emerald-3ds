@@ -48,12 +48,23 @@ void VoxelLighting_Reset(void);
 /* True if the sun changed: every ray is cast again from then on, while the
  * casters and the contact AO, which no sun moves, are kept. */
 bool VoxelLighting_SetSun(float dx, float dz, float strength, uint32_t key);
+/* The calling thread's caches told the world and the sun as they stand now
+ * (the chunk build's worker, as a run of its job begins; voxel_who.h). */
+void VoxelLighting_Latch(void);
+/* Is that the sun as it stands (VoxelLighting_SetSun would change nothing)? */
+bool VoxelLighting_SunIs(float dx, float dz, float strength, uint32_t key);
 uint32_t VoxelLighting_Hash(int x0, int z0, int x1, int z1);
 float VoxelLighting_Sample(float x, float y, float z);
 /* The same answer for a point lit on its own, every frame (a sprite's card):
  * without the blocks' bound, which pays for itself over a build's rays but
  * classifies some four hundred cells the first time a lone ray needs it. */
 float VoxelLighting_SampleAlone(float x, float y, float z);
+/* Whether the sun reaches a point, lit on its own as SampleAlone does:
+ * 1, or the ambient where it does not - without the contact shading, which
+ * is the point's surroundings, not the sun's. For a sprite's cast shadow on
+ * LOW (voxel_entities.c): is the ground it falls on in the scenery's shadow?
+ * On HIGH always 1 (its samples cast no ray: the shadow map shades). */
+float VoxelLighting_LitAlone(float x, float y, float z);
 /* Ahead of the ground of cells x0..x1, z0..z1: the casters' bounds its rays
  * will read, `budget` new ones a call from `*cursor` (0 to begin). True once
  * all are read. The same shadows either way; it only spreads their cost. */

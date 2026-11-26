@@ -314,10 +314,10 @@ index 8ce0cc9e5052d5979de9d640b38571c2c02f1805..a539ff329a4b5a8a151d0aa784ec512e
  
  #endif // GUARD_WEATHER_H
 diff --git a/include/fieldmap.h b/include/fieldmap.h
-index 212dfb65a6868042e59f140df99fba7c8d134729..af451cd0f372cafa7bbd87a962444d63a9211cb2 100644
+index 212dfb65a6868042e59f140df99fba7c8d134729..712d3e6ebbc0ce6f45b4be98893da4087e064e83 100644
 --- a/include/fieldmap.h
 +++ b/include/fieldmap.h
-@@ -19,11 +19,35 @@
+@@ -19,11 +19,40 @@
  #define MAP_OFFSET_W (MAP_OFFSET * 2 + 1)
  #define MAP_OFFSET_H (MAP_OFFSET * 2)
  
@@ -343,6 +343,11 @@ index 212dfb65a6868042e59f140df99fba7c8d134729..af451cd0f372cafa7bbd87a962444d63
 +u32 MapGridGetMetatileIdForCameraAt(int x, int y);
 +const u16 *MapGridGetCameraBorderAt(int x, int y, u8 *index);
 +const u16 *MapGridGetCameraBorderOf(u16 id, int x, int y, u8 *index);
++#ifdef PLATFORM_3DS
++bool8 MapGridCameraMapsCurrent(void);
++const u16 *MapGridPeekCameraBorderAt(int x, int y, u8 *index);
++const u16 *MapGridPeekCameraBorderOf(u16 id, int x, int y, u8 *index);
++#endif
 +#ifdef PLATFORM_3DS
 +// The bank (3ds_tile_banks.h) of the tileset the camera draws x, y with
 +// (backup-layout coordinates), and that map's layout: 0 for the current
@@ -4513,7 +4518,7 @@ index 7cb260757c4267c4d9b1c1cf6cd460f5b99c2526..c66b4e9c9d17cb246ace0f2f42b119c1
      {
          return FALSE;
 diff --git a/src/event_object_movement.c b/src/event_object_movement.c
-index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e7f4ddbc3 100644
+index 6997f0b40aa0c43fd576454fa588fc68502f9fad..d922f37678bc035c89b40f909d98ce468e2588a0 100644
 --- a/src/event_object_movement.c
 +++ b/src/event_object_movement.c
 @@ -22,6 +22,9 @@
@@ -4554,7 +4559,7 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
      const struct ObjectEventGraphicsInfo *graphicsInfo;
      const struct SubspriteTable *subspriteTables = NULL;
  
-@@ -1642,6 +1648,236 @@ u8 CreateVirtualObject(u8 graphicsId, u8 virtualObjId, s16 x, s16 y, u8 elevatio
+@@ -1642,6 +1648,293 @@ u8 CreateVirtualObject(u8 graphicsId, u8 virtualObjId, s16 x, s16 y, u8 elevatio
      return spriteId;
  }
  
@@ -4687,6 +4692,62 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
 +    return TRUE;
 +}
 +
++// The people of the maps joined to this one. The game makes a map's people
++// when the player enters it, which the GBA's screen never showed: nobody
++// stands within its five rows of a border. The wide and the voxel views reach
++// some twenty squares past it, and those people appeared in plain sight on
++// the step that crossed. Here they are made from the neighbour's own
++// templates as soon as they come into the window, at where the neighbour
++// lies on this map's grid, as its own (its map, their local ids): the
++// crossing shifts every object's coordinates and finds them already there
++// (GetObjectEventIdByLocalIdAndMap), as it does the people of the map left
++// behind. Only into free rooms: this map's people never give theirs up.
++static void TrySpawnConnectedObjectEvents(s16 left, s16 right, s16 top, s16 bottom, s16 cameraX, s16 cameraY)
++{
++    const struct MapConnections *connections = gMapHeader.connections;
++    s32 c;
++
++    if (connections == NULL || connections->connections == NULL || gMapHeader.mapLayout == NULL)
++        return;
++    for (c = 0; c < connections->count; c++)
++    {
++        const struct MapConnection *connection = &connections->connections[c];
++        const struct MapHeader *header;
++        s32 shiftX, shiftY;
++        u8 i;
++
++        if (connection->direction != CONNECTION_NORTH && connection->direction != CONNECTION_SOUTH
++         && connection->direction != CONNECTION_WEST && connection->direction != CONNECTION_EAST)
++            continue;
++        header = GetMapHeaderFromConnection(connection);
++        if (header == NULL || header->events == NULL || header->mapLayout == NULL)
++            continue;
++        switch (connection->direction)
++        {
++        case CONNECTION_NORTH: shiftX = connection->offset; shiftY = -header->mapLayout->height; break;
++        case CONNECTION_SOUTH: shiftX = connection->offset; shiftY = gMapHeader.mapLayout->height; break;
++        case CONNECTION_WEST:  shiftX = -header->mapLayout->width; shiftY = connection->offset; break;
++        default:               shiftX = gMapHeader.mapLayout->width; shiftY = connection->offset; break;
++        }
++        for (i = 0; i < header->events->objectEventCount; i++)
++        {
++            struct ObjectEventTemplate template = header->events->objectEvents[i];
++            s32 x = template.x + shiftX, y = template.y + shiftY;
++
++            if (template.kind != OBJ_KIND_NORMAL
++             || !IsInObjectEventWindow(x + MAP_OFFSET, y + MAP_OFFSET, left, right, top, bottom)
++             || FlagGet(template.flagId)
++             || GetObjectEventIdByLocalIdAndMap(template.localId, connection->mapNum, connection->mapGroup) != OBJECT_EVENTS_COUNT)
++                continue;
++            if (!HasFreeObjectEventSlot())
++                return;
++            template.x = x;
++            template.y = y;
++            TrySpawnObjectEventTemplate(&template, connection->mapNum, connection->mapGroup, cameraX, cameraY);
++        }
++    }
++}
++
 +void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
 +{
 +    u8 i, j, objectCount, waiting = 0;
@@ -4733,6 +4794,7 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
 +            break;
 +        TrySpawnObjectEventTemplate(&gSaveBlock1Ptr->objectEventTemplates[order[i]], mapNum, mapGroup, cameraX, cameraY);
 +    }
++    TrySpawnConnectedObjectEvents(left, right, top, bottom, cameraX, cameraY);
 +}
 +
 +// Room for an object made at the player's side (the follower, follower_mon.c):
@@ -4791,7 +4853,7 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
  void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
  {
      u8 i;
-@@ -1649,10 +1885,10 @@ void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
+@@ -1649,10 +1942,10 @@ void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
  
      if (gMapHeader.events != NULL)
      {
@@ -4806,7 +4868,7 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
  
          if (CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE)
              objectCount = GetNumBattlePyramidObjectEvents();
-@@ -1698,10 +1934,12 @@ void RemoveObjectEventsOutsideView(void)
+@@ -1698,10 +1991,12 @@ void RemoveObjectEventsOutsideView(void)
  
  static void RemoveObjectEventIfOutsideView(struct ObjectEvent *objectEvent)
  {
@@ -4823,7 +4885,7 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
  
      if (objectEvent->currentCoords.x >= left && objectEvent->currentCoords.x <= right
       && objectEvent->currentCoords.y >= top && objectEvent->currentCoords.y <= bottom)
-@@ -1711,6 +1949,7 @@ static void RemoveObjectEventIfOutsideView(struct ObjectEvent *objectEvent)
+@@ -1711,6 +2006,7 @@ static void RemoveObjectEventIfOutsideView(struct ObjectEvent *objectEvent)
          return;
      RemoveObjectEvent(objectEvent);
  }
@@ -4831,7 +4893,7 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
  
  void SpawnObjectEventsOnReturnToField(s16 x, s16 y)
  {
-@@ -1732,7 +1971,7 @@ static void SpawnObjectEventOnReturnToField(u8 objectEventId, s16 x, s16 y)
+@@ -1732,7 +2028,7 @@ static void SpawnObjectEventOnReturnToField(u8 objectEventId, s16 x, s16 y)
      struct Sprite *sprite;
      struct ObjectEvent *objectEvent;
      struct SpriteTemplate spriteTemplate;
@@ -4840,7 +4902,7 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
      const struct SubspriteTable *subspriteTables;
      const struct ObjectEventGraphicsInfo *graphicsInfo;
  
-@@ -2217,8 +2456,14 @@ static bool8 ObjectEventDoesElevationMatch(struct ObjectEvent *objectEvent, u8 e
+@@ -2217,8 +2513,14 @@ static bool8 ObjectEventDoesElevationMatch(struct ObjectEvent *objectEvent, u8 e
  void UpdateObjectEventsForCameraUpdate(s16 x, s16 y)
  {
      UpdateObjectEventCoordsForCameraUpdate();
@@ -4855,7 +4917,7 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
  }
  
  // The "CameraObject" functions below are responsible for an invisible sprite
-@@ -5024,6 +5269,13 @@ static u32 GetCopyDirection(u8 copyInitDir, u32 playerInitDir, u32 playerMoveDir
+@@ -5024,6 +5326,13 @@ static u32 GetCopyDirection(u8 copyInitDir, u32 playerInitDir, u32 playerMoveDir
  
  static void ObjectEventExecHeldMovementAction(struct ObjectEvent *objectEvent, struct Sprite *sprite)
  {
@@ -4869,7 +4931,7 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
      if (gMovementActionFuncs[objectEvent->movementActionId][sprite->sActionFuncId](objectEvent, sprite))
          objectEvent->heldMovementFinished = TRUE;
  }
-@@ -7372,10 +7624,14 @@ static void UpdateObjectEventOffscreen(struct ObjectEvent *objectEvent, struct S
+@@ -7372,10 +7681,14 @@ static void UpdateObjectEventOffscreen(struct ObjectEvent *objectEvent, struct S
      y2 = y;
      y2 += graphicsInfo->height;
  
@@ -4886,7 +4948,7 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
          objectEvent->offScreen = TRUE;
  }
  
-@@ -8580,9 +8836,11 @@ void UpdateObjectEventSpriteInvisibility(struct Sprite *sprite, bool8 invisible)
+@@ -8580,9 +8893,11 @@ void UpdateObjectEventSpriteInvisibility(struct Sprite *sprite, bool8 invisible)
      x2 = x - (sprite->centerToCornerVecX >> 1);
      y2 = y - (sprite->centerToCornerVecY >> 1);
  
@@ -4900,7 +4962,7 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
          sprite->invisible = TRUE;
  }
  
-@@ -8771,6 +9029,13 @@ static void DoShadowFieldEffect(struct ObjectEvent *objectEvent)
+@@ -8771,6 +9086,13 @@ static void DoShadowFieldEffect(struct ObjectEvent *objectEvent)
  {
      if (!objectEvent->hasShadow)
      {
@@ -4915,7 +4977,7 @@ index 6997f0b40aa0c43fd576454fa588fc68502f9fad..f5ed92048efe5871234e6f1d5204df9e
          StartFieldEffectForObjectEvent(FLDEFF_SHADOW, objectEvent);
      }
 diff --git a/src/evolution_scene.c b/src/evolution_scene.c
-index f09425720ab4ceb002215d1d01c27b5f3d365369..32e5800a8c110aa2b0d251548cc6e7a5f7ccfb4d 100644
+index f09425720ab4ceb002215d1d01c27b5f3d365369..16d891b2b9f6c9359cf180aeabcdcb6365e11831 100644
 --- a/src/evolution_scene.c
 +++ b/src/evolution_scene.c
 @@ -33,6 +33,9 @@
@@ -5009,7 +5071,7 @@ index f09425720ab4ceb002215d1d01c27b5f3d365369..32e5800a8c110aa2b0d251548cc6e7a5
          break;
      case EVOSTATE_TRY_LEARN_MOVE:
          if (!IsTextPrinterActive(0))
-@@ -1581,12 +1612,21 @@ static void Task_AnimateBg(u8 taskId)
+@@ -1581,16 +1612,69 @@ static void Task_AnimateBg(u8 taskId)
  static void InitMovingBgPalette(u16 *palette)
  {
      s32 i, j;
@@ -5030,6 +5092,78 @@ index f09425720ab4ceb002215d1d01c27b5f3d365369..32e5800a8c110aa2b0d251548cc6e7a5
 +#endif
          }
      }
+ }
+ 
++#ifdef PLATFORM_3DS
++/*
++ * The rays are a 32x20 tile picture on a 32x32 map. The GBA's 240x160 screen
++ * holds all but its last rows and columns; the 3DS's wide one also shows what
++ * the maps hold past that, which is blank rows and, wrapped round, the picture
++ * again with a seam, and BG1 (32 columns) was drawn in the GBA's 240x160 only,
++ * so the margins held BG2 alone, unblended and brighter. Both layers are made
++ * 64 columns wide (the 3DS draws those across the whole screen) and what lies
++ * beyond the picture is its own mirror image, tiles flipped: the rays carry on
++ * past each edge without a seam. Rows 20-27 mirror rows 19-12 and rows 28-31
++ * rows 3-0, which is what shows below and above the picture at the furthest
++ * the rays' wobble moves it.
++ */
++#define TILE_FLIP_H_BIT 0x400
++#define TILE_FLIP_V_BIT 0x800
++
++static void CtrMirrorRayMap(u8 bgId)
++{
++    u16 *map;
++    u32 row, col;
++
++    /* Both buffers hold 0x1000 bytes (two screenblocks): CopyBgTilemapBufferToVram
++     * reads that much for BG1 (32x64) and BG2 (64x32) alike. */
++    SetBgAttribute(bgId, BG_ATTR_SCREENSIZE, 1);
++    map = GetBgTilemapBuffer(bgId);
++    if (map == NULL)
++        return;
++
++    for (row = 0; row < 32; row++)
++    {
++        u32 srcRow = row < 20 ? row : row < 28 ? 39 - row : 31 - row;
++        u16 flipV = row < 20 ? 0 : TILE_FLIP_V_BIT;
++
++        for (col = 0; col < 32; col++)
++        {
++            u16 entry = map[srcRow * 32 + col];
++
++            map[row * 32 + col] = entry ^ flipV;
++            map[32 * 32 + row * 32 + (31 - col)] = entry ^ flipV ^ TILE_FLIP_H_BIT;
++        }
++    }
++}
++#endif
++
+ static void StartBgAnimation(bool8 isLink)
+ {
+     u8 innerBgId, outerBgId;
+@@ -1608,6 +1692,13 @@ static void StartBgAnimation(bool8 isLink)
+     DecompressAndLoadBgGfxUsingHeap(1, sBgAnim_Gfx, FALSE, 0, 0);
+     CopyToBgTilemapBuffer(innerBgId, sBgAnim_Inner_Tilemap, 0, 0);
+     CopyToBgTilemapBuffer(outerBgId, sBgAnim_Outer_Tilemap, 0, 0);
++#ifdef PLATFORM_3DS
++    if (!isLink)
++    {
++        CtrMirrorRayMap(innerBgId);
++        CtrMirrorRayMap(outerBgId);
++    }
++#endif
+     CopyBgTilemapBufferToVram(innerBgId);
+     CopyBgTilemapBufferToVram(outerBgId);
+ 
+@@ -1667,6 +1758,9 @@ static void RestoreBgAfterAnim(void)
+     gBattle_BG2_X = 0;
+     SetBgAttribute(1, BG_ATTR_PRIORITY, GetBattleBgTemplateData(1, 5));
+     SetBgAttribute(2, BG_ATTR_PRIORITY, GetBattleBgTemplateData(2, 5));
++#ifdef PLATFORM_3DS
++    SetBgAttribute(1, BG_ATTR_SCREENSIZE, GetBattleBgTemplateData(1, 3));
++#endif
+     SetGpuReg(REG_OFFSET_DISPCNT, DISPCNT_OBJ_ON | DISPCNT_BG3_ON | DISPCNT_BG0_ON | DISPCNT_OBJ_1D_MAP);
+     Free(sBgAnimPal);
  }
 diff --git a/src/field_camera.c b/src/field_camera.c
 index e76ba3d855cd6ce38aa5e73006701a17f10ddfe4..ae97f4cab64e4b7f036d64749495d4af7c57d715 100644
@@ -7033,7 +7167,7 @@ index 10ce1bc37a9bdbd78c1601ca857fe67bf6fbac69..821dc7edce6e0b0262b8c72ac8f20a0e
 +}
 +#endif
 diff --git a/src/fieldmap.c b/src/fieldmap.c
-index 97db758caac9fefa27d6c2809df48086dc4ef4e1..c0c4ca3447cf4fe53ff0e142e148e5186f918a8c 100644
+index 97db758caac9fefa27d6c2809df48086dc4ef4e1..3798b7952eb4345ae4ecd2373d8e13381f217eda 100644
 --- a/src/fieldmap.c
 +++ b/src/fieldmap.c
 @@ -6,6 +6,7 @@
@@ -7187,7 +7321,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..c0c4ca3447cf4fe53ff0e142e148e518
      dest = &gBackupMapLayout.map[gBackupMapLayout.width * y + x];
  
      for (i = 0; i < height; i++)
-@@ -362,9 +456,553 @@ u8 MapGridGetCollisionAt(int x, int y)
+@@ -362,9 +456,603 @@ u8 MapGridGetCollisionAt(int x, int y)
      return UNPACK_COLLISION(block);
  }
  
@@ -7262,7 +7396,9 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..c0c4ca3447cf4fe53ff0e142e148e518
 +
 +static void PlaceCameraMap(const struct MapHeader *header, u16 id, int x, int y, bool8 near)
 +{
-+    struct CameraMap *map = &sCameraMaps[sCameraMapCount++];
++    // (counted once filled: the voxel build's worker reads them beside this
++    // thread, MapGridPeekCameraBorderAt)
++    struct CameraMap *map = &sCameraMaps[sCameraMapCount];
 +
 +    map->header = header;
 +    map->id = id;
@@ -7273,6 +7409,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..c0c4ca3447cf4fe53ff0e142e148e518
 +#ifdef PLATFORM_3DS
 +    map->bank = 0;
 +#endif
++    sCameraMapCount++;
 +}
 +
 +// The maps across the side connections of sCameraMaps[from]. The current map's
@@ -7392,13 +7529,55 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..c0c4ca3447cf4fe53ff0e142e148e518
 +// of a crossing. The 2x2 is phased on that map's own origin, as
 +// GetBorderBlockAt phases it when that map is the current one (or on the map
 +// that shares its block, above).
++static const u16 *CameraBorderAt(int x, int y, u8 *index);
++static const u16 *CameraBorderOf(u16 id, int x, int y, u8 *index);
++
 +const u16 *MapGridGetCameraBorderAt(int x, int y, u8 *index)
++{
++    UpdateCameraMaps();
++    return CameraBorderAt(x, y, index);
++}
++
++#ifdef PLATFORM_3DS
++// Are the maps placed the current map's (nothing UpdateCameraMaps would
++// place again)? Reads only.
++bool8 MapGridCameraMapsCurrent(void);
++static bool8 CameraMapsCurrent(void)
++{
++    u16 id = (gSaveBlock1Ptr->location.mapGroup << 8) | gSaveBlock1Ptr->location.mapNum;
++
++    return sCameraMapCount != 0 && sCameraMapsLayout == gMapHeader.mapLayout
++        && sCameraMapsConnections == gMapHeader.connections && sCameraMapsId == id;
++}
++
++// The same two answers for a thread that is not the game's (the voxel chunk
++// build's worker): never placing the maps, and NULL while they are not the
++// current map's. One read while the game's thread places them again is of
++// maps half placed - each a map that was or is there - and its job is dropped.
++bool8 MapGridCameraMapsCurrent(void)
++{
++    return CameraMapsCurrent();
++}
++
++const u16 *MapGridPeekCameraBorderAt(int x, int y, u8 *index)
++{
++    *index = 0;
++    return CameraMapsCurrent() ? CameraBorderAt(x, y, index) : NULL;
++}
++
++const u16 *MapGridPeekCameraBorderOf(u16 id, int x, int y, u8 *index)
++{
++    *index = 0;
++    return CameraMapsCurrent() ? CameraBorderOf(id, x, y, index) : NULL;
++}
++#endif
++
++static const u16 *CameraBorderAt(int x, int y, u8 *index)
 +{
 +    const struct CameraMap *best = NULL;
 +    u32 bestDistance = 0;
 +    int i;
 +
-+    UpdateCameraMaps();
 +    for (i = 0; i < sCameraMapCount; i++)
 +    {
 +        const struct CameraMap *map = &sCameraMaps[i];
@@ -7439,9 +7618,14 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..c0c4ca3447cf4fe53ff0e142e148e518
 +// not draw its border.
 +const u16 *MapGridGetCameraBorderOf(u16 id, int x, int y, u8 *index)
 +{
++    UpdateCameraMaps();
++    return CameraBorderOf(id, x, y, index);
++}
++
++static const u16 *CameraBorderOf(u16 id, int x, int y, u8 *index)
++{
 +    int i;
 +
-+    UpdateCameraMaps();
 +    for (i = 0; i < sCameraMapCount; i++)
 +    {
 +        const struct CameraMap *map = &sCameraMaps[i];
@@ -7741,7 +7925,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..c0c4ca3447cf4fe53ff0e142e148e518
  
      if (block == MAPGRID_UNDEFINED)
          return UNPACK_METATILE(GetBorderBlockAt(x, y));
-@@ -375,6 +1013,9 @@ u32 MapGridGetMetatileIdAt(int x, int y)
+@@ -375,6 +1063,9 @@ u32 MapGridGetMetatileIdAt(int x, int y)
  u32 MapGridGetMetatileBehaviorAt(int x, int y)
  {
      u16 metatile = MapGridGetMetatileIdAt(x, y);
@@ -7751,7 +7935,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..c0c4ca3447cf4fe53ff0e142e148e518
      return UNPACK_BEHAVIOR(GetMetatileAttributesById(metatile));
  }
  
-@@ -412,11 +1053,47 @@ u16 GetMetatileAttributesById(u16 metatile)
+@@ -412,11 +1103,47 @@ u16 GetMetatileAttributesById(u16 metatile)
      if (metatile < NUM_METATILES_IN_PRIMARY)
      {
          attributes = gMapHeader.mapLayout->primaryTileset->metatileAttributes;
@@ -7799,7 +7983,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..c0c4ca3447cf4fe53ff0e142e148e518
          return attributes[metatile - NUM_METATILES_IN_PRIMARY];
      }
      else
-@@ -660,19 +1337,32 @@ bool8 CameraMove(int x, int y)
+@@ -660,19 +1387,32 @@ bool8 CameraMove(int x, int y)
      }
      else
      {
@@ -7832,7 +8016,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..c0c4ca3447cf4fe53ff0e142e148e518
      }
      return gCamera.active;
  }
-@@ -854,10 +1544,22 @@ static void CopyTilesetToVramUsingHeap(struct Tileset const *tileset, u16 numTil
+@@ -854,10 +1594,22 @@ static void CopyTilesetToVramUsingHeap(struct Tileset const *tileset, u16 numTil
  {
      if (tileset)
      {
@@ -7855,7 +8039,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..c0c4ca3447cf4fe53ff0e142e148e518
      }
  }
  
-@@ -878,20 +1580,53 @@ static void LoadTilesetPalette(struct Tileset const *tileset, u16 destOffset, u1
+@@ -878,20 +1630,53 @@ static void LoadTilesetPalette(struct Tileset const *tileset, u16 destOffset, u1
  
      if (tileset)
      {
@@ -7912,7 +8096,7 @@ index 97db758caac9fefa27d6c2809df48086dc4ef4e1..c0c4ca3447cf4fe53ff0e142e148e518
              ApplyGlobalTintToPaletteEntries(destOffset, size >> 1);
          }
      }
-@@ -926,8 +1661,20 @@ void CopyMapTilesetsToVram(struct MapLayout const *mapLayout)
+@@ -926,8 +1711,20 @@ void CopyMapTilesetsToVram(struct MapLayout const *mapLayout)
  {
      if (mapLayout)
      {
@@ -8770,7 +8954,7 @@ index 169ef002a665712e92f6fec36a86ee7888067a17..a154bacf5122bbebb940f2bc4240811e
 diff --git a/src/item_menu.c b/src/item_menu.c
 old mode 100755
 new mode 100644
-index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf16723afd9c3a
+index 09bc25c90b99e98c0097771871daa4384159047c..4fe02411adae5ab09a38839566941168a416f8ae
 --- a/src/item_menu.c
 +++ b/src/item_menu.c
 @@ -24,6 +24,7 @@
@@ -8809,7 +8993,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
  static u8 AddItemMessageWindow(u8);
  static void RemoveItemMessageWindow(u8);
  static void ReturnToItemList(u8);
-@@ -209,6 +224,34 @@ static void ConfirmToss(u8);
+@@ -209,6 +224,35 @@ static void ConfirmToss(u8);
  static void CancelToss(u8);
  static void ConfirmSell(u8);
  static void CancelSell(u8);
@@ -8829,6 +9013,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
 +static bool8 CtrBag_ListTouch(u8 taskId, s32 *listPosition);
 +static bool8 CtrBag_SwapTouch(u8 taskId);
 +static bool8 CtrBag_ContextTouch(s8 *selection);
++s8 CtrMenu_Choose(s8 entry, bool8 sound);
 +static u8 CtrBag_QuantityTouch(s16 *count, u16 max, u8 windowType);
 +static void CtrBag_StopTouch(void);
 +static void CtrBag_Prefetch(void);
@@ -8844,7 +9029,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
  
  static const struct BgTemplate sBgTemplates_ItemMenu[] =
  {
-@@ -577,7 +620,7 @@ void CB2_ChooseBerry(void)
+@@ -577,7 +621,7 @@ void CB2_ChooseBerry(void)
  }
  
  // Choosing berry for Berry Blender or Berry Crush
@@ -8853,7 +9038,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
  {
      GoToBagMenu(ITEMMENULOCATION_BERRY_BLENDER_CRUSH, BERRIES_POCKET, exitCallback);
  }
-@@ -611,7 +654,7 @@ void QuizLadyOpenBagMenu(void)
+@@ -611,7 +655,7 @@ void QuizLadyOpenBagMenu(void)
      gSpecialVar_Result = FALSE;
  }
  
@@ -8862,7 +9047,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
  {
      gBagMenu = AllocZeroed(sizeof(*gBagMenu));
      if (gBagMenu == NULL)
-@@ -636,12 +679,18 @@ void GoToBagMenu(u8 location, u8 pocket, MainCallback exitCallback)
+@@ -636,12 +680,18 @@ void GoToBagMenu(u8 location, u8 pocket, MainCallback exitCallback)
          gBagMenu->pocketSwitchArrowsTask = TASK_NONE;
          memset(gBagMenu->spriteIds, SPRITE_NONE, sizeof(gBagMenu->spriteIds));
          memset(gBagMenu->windowIds, WINDOW_NONE, sizeof(gBagMenu->windowIds));
@@ -8881,7 +9066,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      RunTasks();
      AnimateSprites();
      BuildOamBuffer();
-@@ -1089,7 +1138,7 @@ static void Task_CloseBagMenu(u8 taskId)
+@@ -1089,7 +1139,7 @@ static void Task_CloseBagMenu(u8 taskId)
          if (gBagMenu->newScreenCallback != NULL)
              SetMainCallback2(gBagMenu->newScreenCallback);
          else
@@ -8890,7 +9075,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
  
          BagDestroyPocketScrollArrowPair();
          ResetSpriteData();
-@@ -1159,11 +1208,14 @@ u8 GetItemListPosition(u8 pocketId)
+@@ -1159,11 +1209,14 @@ u8 GetItemListPosition(u8 pocketId)
      return gBagPosition.scrollPosition[pocketId] + gBagPosition.cursorPosition[pocketId];
  }
  
@@ -8906,7 +9091,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      FillWindowPixelBuffer(tMsgWindowId, PIXEL_FILL(1));
      DisplayMessageAndContinueTask(taskId, tMsgWindowId, 10, 13, fontId, GetPlayerTextSpeedDelay(), str, callback);
      ScheduleBgCopyTilemapToVram(1);
-@@ -1242,6 +1294,10 @@ static void Task_BagMenu_HandleInput(u8 taskId)
+@@ -1242,6 +1295,10 @@ static void Task_BagMenu_HandleInput(u8 taskId)
          }
  
          listPosition = ListMenu_ProcessInput(tListTaskId);
@@ -8917,7 +9102,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
          ListMenuGetScrollAndRow(tListTaskId, scrollPos, cursorPos);
          switch (listPosition)
          {
-@@ -1315,6 +1371,9 @@ static void SwitchBagPocket(u8 taskId, s16 deltaBagPocketId, bool16 skipEraseLis
+@@ -1315,6 +1372,9 @@ static void SwitchBagPocket(u8 taskId, s16 deltaBagPocketId, bool16 skipEraseLis
      s16 *data = gTasks[taskId].data;
      u8 newPocket;
  
@@ -8927,7 +9112,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      tPocketSwitchState = 0;
      tPocketSwitchTimer = 0;
      tPocketSwitchDir = deltaBagPocketId;
-@@ -1456,6 +1515,11 @@ static void Task_HandleSwappingItemsInput(u8 taskId)
+@@ -1456,6 +1516,11 @@ static void Task_HandleSwappingItemsInput(u8 taskId)
              ListMenuGetScrollAndRow(tListTaskId, &gBagPosition.scrollPosition[gBagPosition.pocket], &gBagPosition.cursorPosition[gBagPosition.pocket]);
              DoItemSwap(taskId);
          }
@@ -8939,7 +9124,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
          else
          {
              s32 input = ListMenu_ProcessInput(tListTaskId);
-@@ -1528,6 +1592,9 @@ static void CancelItemSwap(u8 taskId)
+@@ -1528,6 +1593,9 @@ static void CancelItemSwap(u8 taskId)
  
  static void OpenContextMenu(u8 taskId)
  {
@@ -8949,7 +9134,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      switch (gBagPosition.location)
      {
      case ITEMMENULOCATION_BATTLE:
-@@ -1693,6 +1760,10 @@ static void Task_ItemContext_SingleRow(u8 taskId)
+@@ -1693,6 +1761,10 @@ static void Task_ItemContext_SingleRow(u8 taskId)
      if (MenuHelpers_ShouldWaitForLinkRecv() != TRUE)
      {
          s8 selection = Menu_ProcessInputNoWrap();
@@ -8960,7 +9145,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
          switch (selection)
          {
          case MENU_NOTHING_CHOSEN:
-@@ -1714,6 +1785,19 @@ static void Task_ItemContext_MultipleRows(u8 taskId)
+@@ -1714,6 +1786,19 @@ static void Task_ItemContext_MultipleRows(u8 taskId)
      if (MenuHelpers_ShouldWaitForLinkRecv() != TRUE)
      {
          s8 cursorPos = Menu_GetCursorPos();
@@ -8980,7 +9165,60 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
          if (JOY_NEW(DPAD_UP))
          {
              if (cursorPos > 0 && IsValidContextMenuPos(cursorPos - 2))
-@@ -1848,18 +1932,21 @@ static void CancelToss(u8 taskId)
+@@ -1730,6 +1815,35 @@ static void Task_ItemContext_MultipleRows(u8 taskId)
+                 ChangeMenuGridCursorPosition(MENU_CURSOR_DELTA_NONE, MENU_CURSOR_DELTA_DOWN);
+             }
+         }
++#ifdef PLATFORM_3DS
++        // The bottom screen lays the entries out in one row, in order: LEFT
++        // and RIGHT walk that row, from the end of one grid row to the start
++        // of the next.
++        else if (JOY_NEW(DPAD_LEFT) || GetLRKeysPressed() == MENU_L_PRESSED)
++        {
++            s8 to = cursorPos - 1;
++
++            while (to >= 0 && !IsValidContextMenuPos(to))
++                to--;
++            if (to >= 0)
++            {
++                PlaySE(SE_SELECT);
++                CtrMenu_Choose(to, FALSE);
++            }
++        }
++        else if (JOY_NEW(DPAD_RIGHT) || GetLRKeysPressed() == MENU_R_PRESSED)
++        {
++            s8 to = cursorPos + 1;
++
++            while (to < gBagMenu->contextMenuNumItems && !IsValidContextMenuPos(to))
++                to++;
++            if (to < gBagMenu->contextMenuNumItems)
++            {
++                PlaySE(SE_SELECT);
++                CtrMenu_Choose(to, FALSE);
++            }
++        }
++#else
+         else if (JOY_NEW(DPAD_LEFT) || GetLRKeysPressed() == MENU_L_PRESSED)
+         {
+             if ((cursorPos & 1) && IsValidContextMenuPos(cursorPos - 1))
+@@ -1746,6 +1860,7 @@ static void Task_ItemContext_MultipleRows(u8 taskId)
+                 ChangeMenuGridCursorPosition(MENU_CURSOR_DELTA_RIGHT, MENU_CURSOR_DELTA_NONE);
+             }
+         }
++#endif
+         else if (JOY_NEW(A_BUTTON))
+         {
+             PlaySE(SE_SELECT);
+@@ -1763,7 +1878,7 @@ static bool8 IsValidContextMenuPos(s8 cursorPos)
+ {
+     if (cursorPos < 0)
+         return FALSE;
+-    if (cursorPos > gBagMenu->contextMenuNumItems)
++    if (cursorPos >= gBagMenu->contextMenuNumItems)
+         return FALSE;
+     if (gBagMenu->contextMenuItemsPtr[cursorPos] == ACTION_DUMMY)
+         return FALSE;
+@@ -1848,18 +1963,21 @@ static void CancelToss(u8 taskId)
  static void Task_ChooseHowManyToToss(u8 taskId)
  {
      s16 *data = gTasks[taskId].data;
@@ -9005,7 +9243,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      {
          PlaySE(SE_SELECT);
          BagMenu_RemoveWindow(ITEMWIN_QUANTITY);
-@@ -1887,7 +1974,7 @@ static void Task_RemoveItemFromBag(u8 taskId)
+@@ -1887,7 +2005,7 @@ static void Task_RemoveItemFromBag(u8 taskId)
      u16 *scrollPos = &gBagPosition.scrollPosition[gBagPosition.pocket];
      u16 *cursorPos = &gBagPosition.cursorPosition[gBagPosition.pocket];
  
@@ -9014,7 +9252,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      {
          PlaySE(SE_SELECT);
          RemoveBagItem(gSpecialVar_ItemId, tItemCount);
-@@ -1957,7 +2044,7 @@ static void PrintItemCantBeHeld(u8 taskId)
+@@ -1957,7 +2075,7 @@ static void PrintItemCantBeHeld(u8 taskId)
  
  static void HandleErrorMessage(u8 taskId)
  {
@@ -9023,7 +9261,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      {
          PlaySE(SE_SELECT);
          CloseItemMessage(taskId);
-@@ -2127,18 +2214,21 @@ static void InitSellHowManyInput(u8 taskId)
+@@ -2127,18 +2245,21 @@ static void InitSellHowManyInput(u8 taskId)
  static void Task_ChooseHowManyToSell(u8 taskId)
  {
      s16 *data = gTasks[taskId].data;
@@ -9048,7 +9286,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      {
          PlaySE(SE_SELECT);
          BagMenu_PrintCursor(tListTaskId, COLORID_NORMAL);
-@@ -2180,7 +2270,7 @@ static void SellItem(u8 taskId)
+@@ -2180,7 +2301,7 @@ static void SellItem(u8 taskId)
  
  static void WaitAfterItemSell(u8 taskId)
  {
@@ -9057,7 +9295,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      {
          PlaySE(SE_SELECT);
          RemoveMoneyWindow();
-@@ -2211,18 +2301,21 @@ static void Task_ItemContext_Deposit(u8 taskId)
+@@ -2211,18 +2332,21 @@ static void Task_ItemContext_Deposit(u8 taskId)
  static void Task_ChooseHowManyToDeposit(u8 taskId)
  {
      s16 *data = gTasks[taskId].data;
@@ -9082,7 +9320,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      {
          PlaySE(SE_SELECT);
          PrintItemDescription(tListPosition);
-@@ -2264,7 +2357,7 @@ static void WaitDepositErrorMessage(u8 taskId)
+@@ -2264,7 +2388,7 @@ static void WaitDepositErrorMessage(u8 taskId)
  {
      s16 *data = gTasks[taskId].data;
  
@@ -9091,7 +9329,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      {
          PlaySE(SE_SELECT);
          PrintItemDescription(tListPosition);
-@@ -2462,6 +2555,10 @@ static void LoadBagMenuTextWindows(void)
+@@ -2462,6 +2586,10 @@ static void LoadBagMenuTextWindows(void)
  
  static void BagMenu_Print(u8 windowId, u8 fontId, const u8 *str, u8 left, u8 top, u8 letterSpacing, u8 lineSpacing, u8 speed, u8 colorIndex)
  {
@@ -9102,7 +9340,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      AddTextPrinterParameterized4(windowId, fontId, left, top, letterSpacing, lineSpacing, sFontColorTable[colorIndex], speed, str);
  }
  
-@@ -2473,6 +2570,11 @@ static u8 UNUSED BagMenu_GetWindowId(u8 windowType)
+@@ -2473,6 +2601,11 @@ static u8 UNUSED BagMenu_GetWindowId(u8 windowType)
  static u8 BagMenu_AddWindow(u8 windowType)
  {
      u8 *windowId = &gBagMenu->windowIds[windowType];
@@ -9114,7 +9352,7 @@ index 09bc25c90b99e98c0097771871daa4384159047c..ecab82d0f2b231ef29a470ac3abf1672
      if (*windowId == WINDOW_NONE)
      {
          *windowId = AddWindow(&sContextMenuWindowTemplates[windowType]);
-@@ -2594,3 +2696,657 @@ static void PrintTMHMMoveData(u16 itemId)
+@@ -2594,3 +2727,657 @@ static void PrintTMHMMoveData(u16 itemId)
          CopyWindowToVram(WIN_TMHM_INFO, COPYWIN_GFX);
      }
  }
@@ -25043,7 +25281,7 @@ index 909b86ab8c667cd0ad2eb625860c705b30f98334..3c4b5abbe303854470444e246a199c1c
      sSpritePics[i].images = images;
      sSpritePics[i].paletteTag = paletteTag;
 diff --git a/src/trainer_see.c b/src/trainer_see.c
-index f7b19aa8d9248316751b4e623530954ab7d3f856..ec70c2234f0ac93010e055752be65b1b86f472cc 100644
+index f7b19aa8d9248316751b4e623530954ab7d3f856..309e75f62c9f87855105af9b8407679f8159a583 100644
 --- a/src/trainer_see.c
 +++ b/src/trainer_see.c
 @@ -1,4 +1,7 @@
@@ -25054,7 +25292,23 @@ index f7b19aa8d9248316751b4e623530954ab7d3f856..ec70c2234f0ac93010e055752be65b1b
  #include "battle_setup.h"
  #include "event_data.h"
  #include "event_object_movement.h"
-@@ -256,6 +259,10 @@ static u8 CheckTrainer(u8 objectEventId)
+@@ -203,6 +206,15 @@ bool8 CheckForTrainersWantingBattle(void)
+             continue;
+         if (gObjectEvents[i].trainerType != TRAINER_TYPE_NORMAL && gObjectEvents[i].trainerType != TRAINER_TYPE_BURIED)
+             continue;
++#ifdef PLATFORM_3DS
++        // A trainer of a joined map (made ahead of the crossing,
++        // TrySpawnConnectedObjectEvents, or left behind by it) waits for the
++        // player to be on its map: its script moves people by this map's
++        // local ids.
++        if (gObjectEvents[i].mapNum != gSaveBlock1Ptr->location.mapNum
++         || gObjectEvents[i].mapGroup != gSaveBlock1Ptr->location.mapGroup)
++            continue;
++#endif
+ 
+         numTrainers = CheckTrainer(i);
+         if (numTrainers == 2)
+@@ -256,6 +268,10 @@ static u8 CheckTrainer(u8 objectEventId)
      else
          scriptPtr = GetObjectEventScriptPointerByObjectEventId(objectEventId);
  
@@ -25065,7 +25319,7 @@ index f7b19aa8d9248316751b4e623530954ab7d3f856..ec70c2234f0ac93010e055752be65b1b
      if (CurrentBattlePyramidLocation() != PYRAMID_LOCATION_NONE)
      {
          if (GetBattlePyramidTrainerFlag(objectEventId))
-@@ -699,6 +706,9 @@ u8 FldEff_ExclamationMarkIcon(void)
+@@ -699,6 +715,9 @@ u8 FldEff_ExclamationMarkIcon(void)
  
      if (spriteId != MAX_SPRITES)
          SetIconSpriteData(&gSprites[spriteId], FLDEFF_EXCLAMATION_MARK_ICON, 0);
@@ -25075,7 +25329,7 @@ index f7b19aa8d9248316751b4e623530954ab7d3f856..ec70c2234f0ac93010e055752be65b1b
  
      return 0;
  }
-@@ -709,6 +719,8 @@ u8 FldEff_QuestionMarkIcon(void)
+@@ -709,6 +728,8 @@ u8 FldEff_QuestionMarkIcon(void)
  
      if (spriteId != MAX_SPRITES)
          SetIconSpriteData(&gSprites[spriteId], FLDEFF_QUESTION_MARK_ICON, 1);
@@ -25084,7 +25338,7 @@ index f7b19aa8d9248316751b4e623530954ab7d3f856..ec70c2234f0ac93010e055752be65b1b
  
      return 0;
  }
-@@ -724,6 +736,10 @@ u8 FldEff_HeartIcon(void)
+@@ -724,6 +745,10 @@ u8 FldEff_HeartIcon(void)
          SetIconSpriteData(sprite, FLDEFF_HEART_ICON, 0);
          sprite->oam.paletteNum = 2;
      }

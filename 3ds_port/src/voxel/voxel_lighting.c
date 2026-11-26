@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "voxel_lighting.h"
+#include "voxel_who.h"
 #include "voxel_tree.h"
 #include "voxel_building.h"
 #include "voxel_relief.h"
@@ -53,6 +54,10 @@ typedef struct
      * map's eased rows. */
     float rayCeiling;
     uint8_t rayKnown; /* 0: not yet; 1: known; 2: known, and stretched */
+    /* The sun they were read for (sSunGeneration): the box a ray sweeps
+     * runs towards the sun, and the moon's at night is on the other side
+     * of the sky from the evening sun's. */
+    uint16_t raySun;
     const VoxelMapInstance *reliefOn; /* the map whose table it is read from */
     uint32_t generation;
     int8_t crownPart; /* VoxelTree_Part when the cell is a crown, else -1 */
@@ -69,7 +74,8 @@ typedef struct
     int8_t from[DRAWN_FROM];
     const uint16_t *mask; /* a model over part of the cell: its footprint */
 } LightCell;
-static LightCell sCells[CELL_CACHE_SIZE];
+static LightCell sCellsOf[VOXEL_THREADS][CELL_CACHE_SIZE];
+#define sCells (sCellsOf[VOXEL_WHO])
 
 /* Adjacent ground quads share their half-tile samples. Cache the final ray/AO
  * result as well as casters; exact coordinates keep walls and sloped crowns
@@ -87,14 +93,22 @@ typedef struct
     uint16_t sun;
     uint32_t generation;
 } LightSample;
-static LightSample sSamples[SAMPLE_CACHE_SIZE];
+static LightSample sSamplesOf[VOXEL_THREADS][SAMPLE_CACHE_SIZE];
+#define sSamples (sSamplesOf[VOXEL_WHO])
 #define SAMPLE_WAYS 4u
 #define SAMPLE_SETS (SAMPLE_CACHE_SIZE / SAMPLE_WAYS)
-static uint8_t sSampleNext[SAMPLE_SETS];
-static uint32_t sGeneration;
-static uint32_t sSampleGeneration;
+static uint8_t sSampleNextOf[VOXEL_THREADS][SAMPLE_SETS];
+#define sSampleNext (sSampleNextOf[VOXEL_WHO])
+/* (a thread its own, the worker's latched from the render thread's as a run
+ * of its job begins - VoxelLighting_Latch: what it caches during a job the
+ * world has since left stays that world's) */
+static uint32_t sGenerationOf[VOXEL_THREADS];
+static uint32_t sSampleGenerationOf[VOXEL_THREADS];
+#define sGeneration (sGenerationOf[VOXEL_WHO])
+#define sSampleGeneration (sSampleGenerationOf[VOXEL_WHO])
 /* Bumped by every new sun (VoxelLighting_SetSun); never 0, which no sun is. */
-static uint16_t sSunGeneration = 1;
+static uint16_t sSunGenerationOf[VOXEL_THREADS] = {[0 ... VOXEL_THREADS - 1] = 1};
+#define sSunGeneration (sSunGenerationOf[VOXEL_WHO])
 VoxelSun gVoxelSun = {0.85f, 0.55f, 1.0f, 0};
 static float sAmbient = VOXEL_AMBIENT;
 /*
@@ -114,9 +128,11 @@ static float AmbientOf(float strength)
     return 1.0f - (1.0f - ambient) * strength;
 }
 static float sStepInverseX = 4.0f / 0.85f, sStepInverseZ = 4.0f / 0.55f;
-static unsigned sRays;
+static unsigned sRaysOf[VOXEL_THREADS];
+#define sRays (sRaysOf[VOXEL_WHO])
 /* Lit without the blocks' bound (VoxelLighting_SampleAlone). */
-static bool sAlone;
+static bool sAloneOf[VOXEL_THREADS];
+#define sAlone (sAloneOf[VOXEL_WHO])
 
 /*
  * No caster anywhere on screen is taller than this, so a ray that has climbed
@@ -158,7 +174,8 @@ typedef struct
     float ceiling;    /* world height; -1000 where nothing casts */
     uint32_t generation;
 } LightBlock;
-static LightBlock sBlocks[BLOCK_CACHE_SIZE];
+static LightBlock sBlocksOf[VOXEL_THREADS][BLOCK_CACHE_SIZE];
+#define sBlocks (sBlocksOf[VOXEL_WHO])
 /*
  * The tallest of a block and the two blocks west and north of it (3x3): all
  * a ray from inside the block can reach (VOXEL_LIGHT_REACH runs 6.8 cells
@@ -183,18 +200,35 @@ static int DrawnReach(const VoxelMapInstance *inst)
 
     return (int)ceilf(reach) + (VoxelRelief_IsDrawn(inst) ? SHIFT_ROWS : 0);
 }
-static LightBlock sReach[BLOCK_CACHE_SIZE];
+static LightBlock sReachOf[VOXEL_THREADS][BLOCK_CACHE_SIZE];
+#define sReach (sReachOf[VOXEL_WHO])
 /* Read for a ray with more than this left to climb to the map's bound. */
 #define BLOCK_CLIMB 1.0f
 
 /* The work rays do, for the slow chunk log: points marched, and of those (and
  * of the contact tests) how many were tested against a relief's surface. */
-static unsigned sSteps, sSurfaceTests;
+static unsigned sStepsOf[VOXEL_THREADS], sSurfaceTestsOf[VOXEL_THREADS];
+#define sSteps (sStepsOf[VOXEL_WHO])
+#define sSurfaceTests (sSurfaceTestsOf[VOXEL_WHO])
 
 static int Tile(float n)
 {
     int i = (int)n;
     return n < (float)i ? i - 1 : i;
+}
+
+/* fminf and fmaxf, NaN handling included (the number, not the NaN), inline:
+ * on the console's VFPv2 both are library calls, and Lit took two per cell a
+ * ray crosses. They only differ from them on which zero they give for -0 and
+ * +0, which is used here only where the sign of a zero changes nothing. */
+static inline float MinF(float a, float b)
+{
+    return a < b || b != b ? a : b;
+}
+
+static inline float MaxF(float a, float b)
+{
+    return a > b || b != b ? a : b;
 }
 
 /*
@@ -209,8 +243,11 @@ typedef struct
 {
     float x0, x1, from, to, add;
 } LightStretch;
-static LightStretch sStretches[MAX_VOXEL_MAP_INSTANCES];
-static unsigned sStretchCount, sStretchMaps = ~0u;
+static LightStretch sStretchesOf[VOXEL_THREADS][MAX_VOXEL_MAP_INSTANCES];
+#define sStretches (sStretchesOf[VOXEL_WHO])
+static unsigned sStretchCountOf[VOXEL_THREADS], sStretchMapsOf[VOXEL_THREADS] = {[0 ... VOXEL_THREADS - 1] = ~0u};
+#define sStretchCount (sStretchCountOf[VOXEL_WHO])
+#define sStretchMaps (sStretchMapsOf[VOXEL_WHO])
 
 static void ReadStretches(void)
 {
@@ -316,9 +353,26 @@ static void ResetSamples(void)
 {
     if (++sSampleGeneration == 0)
     {
-        memset(sSamples, 0, sizeof(sSamples));
+        memset(sSamplesOf, 0, sizeof(sSamplesOf)); /* every thread's */
         sSampleGeneration = 1;
     }
+}
+
+void VoxelLighting_Latch(void)
+{
+    unsigned who = VOXEL_WHO;
+
+    if (who == 0)
+        return;
+    sGenerationOf[who] = sGenerationOf[0];
+    sSampleGenerationOf[who] = sSampleGenerationOf[0];
+    sSunGenerationOf[who] = sSunGenerationOf[0];
+}
+
+bool VoxelLighting_SunIs(float dx, float dz, float strength, uint32_t key)
+{
+    return gVoxelSun.dx == dx && gVoxelSun.dz == dz
+        && gVoxelSun.strength == strength && gVoxelSun.key == key;
 }
 
 bool VoxelLighting_SetSun(float dx, float dz, float strength, uint32_t key)
@@ -373,13 +427,16 @@ void VoxelLighting_Reset(void)
 {
     if (++sGeneration == 0)
     {
-        memset(sCells, 0, sizeof(sCells));
-        memset(sBlocks, 0, sizeof(sBlocks));
-        memset(sReach, 0, sizeof(sReach));
+        memset(sCellsOf, 0, sizeof(sCellsOf)); /* every thread's */
+        memset(sBlocksOf, 0, sizeof(sBlocksOf));
+        memset(sReachOf, 0, sizeof(sReachOf));
         sGeneration = 1;
     }
     ResetSamples();
     sCeiling = CasterCeiling();
+    /* (each thread reads its own eased rows again, MapCeilings this one's) */
+    for (unsigned t = 0; t < VOXEL_THREADS; ++t)
+        sStretchMapsOf[t] = ~0u;
     MapCeilings();
 }
 
@@ -437,16 +494,16 @@ static void RayBounds(float x, float z, float *ceiling, bool *stretched)
         *stretched = RayStretched(x, z);
         return;
     }
-    if (cell->rayKnown != 0)
+    if (cell->rayKnown != 0 && cell->raySun == sSunGeneration)
     {
         *ceiling = cell->rayCeiling;
         *stretched = cell->rayKnown == 2;
         return;
     }
-    x0 = fminf((float)tx, (float)tx - VOXEL_SUN_DX * VOXEL_LIGHT_REACH) - 1.0f;
-    x1 = fmaxf((float)tx, (float)tx - VOXEL_SUN_DX * VOXEL_LIGHT_REACH) + 2.0f;
-    z0 = fminf((float)tz, (float)tz - VOXEL_SUN_DZ * VOXEL_LIGHT_REACH) - 1.0f;
-    z1 = fmaxf((float)tz, (float)tz - VOXEL_SUN_DZ * VOXEL_LIGHT_REACH) + 2.0f;
+    x0 = MinF((float)tx, (float)tx - VOXEL_SUN_DX * VOXEL_LIGHT_REACH) - 1.0f;
+    x1 = MaxF((float)tx, (float)tx - VOXEL_SUN_DX * VOXEL_LIGHT_REACH) + 2.0f;
+    z0 = MinF((float)tz, (float)tz - VOXEL_SUN_DZ * VOXEL_LIGHT_REACH) - 1.0f;
+    z1 = MaxF((float)tz, (float)tz - VOXEL_SUN_DZ * VOXEL_LIGHT_REACH) + 2.0f;
     for (unsigned i = 0; i < count; ++i)
     {
         const VoxelMapInstance *inst = VoxelWorld_Instance(i);
@@ -469,6 +526,7 @@ static void RayBounds(float x, float z, float *ceiling, bool *stretched)
     }
     cell->rayCeiling = top;
     cell->rayKnown = eased ? 2 : 1;
+    cell->raySun = sSunGeneration;
     *ceiling = top;
     *stretched = eased;
 }
@@ -827,8 +885,8 @@ static float Drawn(int tx, int tz)
      * side for a slope's cell, lifted as its middle is. Every row a cell
      * could be drawn from was a score of lookups a cell, most of them a
      * search of the relief's cells: a fifth of a cold chunk's build. */
-    low = cell->base + fminf(cell->reliefBottom, 0.0f);
-    high = cell->base + fmaxf(cell->reliefTop, 0.0f);
+    low = cell->base + MinF(cell->reliefBottom, 0.0f);
+    high = cell->base + MaxF(cell->reliefTop, 0.0f);
     /* (and, by a seam, what the map past it draws on from its own base) */
     for (unsigned i = 0; i < VoxelWorld_InstanceCount(); ++i)
     {
@@ -841,8 +899,9 @@ static float Drawn(int tx, int tz)
         if (base < low) low = base;
         if (base > high) high = base;
     }
-    lo = (int)floorf(low) - 1;
-    hi = (int)ceilf(high) + 1;
+    /* floorf and ceilf, without their library calls */
+    lo = Tile(low) - 1;
+    hi = -Tile(-high) + 1;
     own = VoxelWorld_GetInstanceAt(tx, tz);
     memset(from, 0, sizeof(from));
     for (int k = lo; k <= hi; ++k)
@@ -923,11 +982,11 @@ static bool ObjectAt(int tx, float x, float y, float z, const LightCell **seen)
     return false;
 }
 
-/* A drawn cell's `clear` (Drawn). */
-static inline float ShiftedClear(int tx, int tz)
+/* A drawn cell's `clear` (Drawn), from the cell (tx, tz) the caller holds:
+ * Lit has just found it, and looking it up again cost a hash and a compare
+ * at every step of every ray over a drawn map. */
+static inline float ShiftedClear(const LightCell *cell, int tx, int tz)
 {
-    const LightCell *cell = Cell(tx, tz);
-
     return cell->clearKnown ? cell->clear : Drawn(tx, tz);
 }
 
@@ -1037,7 +1096,7 @@ static bool Lit(float x, float y, float z)
             /* What is drawn across a shifted cell comes from the rows its
              * drawing lies over: point by point until the ray is over it
              * all, then past the cell at once. */
-            if (ShiftedClear(tx, tz) > ry)
+            if (ShiftedClear(cell, tx, tz) > ry)
                 continue;
         }
         else if ((cell->crownPart >= 0 || cell->surface || cell->sign || cell->mask != NULL)
@@ -1052,7 +1111,7 @@ static bool Lit(float x, float y, float z)
             float exitZ = (float)tz + (VOXEL_SUN_DZ < 0.0f ? 1.0f : 0.0f);
             float ex = sStepInverseX != 0.0f ? (x - exitX) * sStepInverseX : 33.0f;
             float ez = sStepInverseZ != 0.0f ? (z - exitZ) * sStepInverseZ : 33.0f;
-            int guess = (int)fminf(33.0f, fminf(ex, ez)) - 1;
+            int guess = (int)MinF(33.0f, MinF(ex, ez)) - 1;
             const float left = (float)tx, top = (float)tz;
 
             if (guess > step)
@@ -1187,9 +1246,58 @@ static float Contact(float x, float y, float z)
  * shared each bucket, one evicting the other, so a slope cell's shared
  * corners cast their rays again for each quad that met them. The bucket is
  * only where to look; the match is exact.
+ *
+ * In front of it, the samples last found, by the bits of their coordinates:
+ * a point is asked for again and again within a few cells (the lattice's
+ * shades, then its quads' corners; a level quad's nine points, three of them
+ * its west neighbour's), and each time paid three float-to-int conversions,
+ * the hash and the set's scan. A front entry is only a guess where the sample
+ * is: it is used if that way still holds the point in this generation - the
+ * one way of its set that can (a point is only stored where it was not
+ * found), so exactly the way the scan would return. Anything else (evicted,
+ * reused, a reset since) is a miss there and the set is searched as before.
+ * Nothing here changes which way a sample goes to or which it evicts.
  */
+#define SAMPLE_FRONT 256u
+static LightSample *sSampleFrontOf[VOXEL_THREADS][SAMPLE_FRONT];
+#define sSampleFront (sSampleFrontOf[VOXEL_WHO])
+
+static inline unsigned SampleFrontSlot(float x, float y, float z)
+{
+    uint32_t a, b, c, h;
+
+    memcpy(&a, &x, 4);
+    memcpy(&b, &y, 4);
+    memcpy(&c, &z, 4);
+    h = a ^ b * 0x9E3779B1u ^ c * 0x85EBCA77u;
+    h ^= h >> 15;
+    h *= 0x2C1B3C6Du;
+    h ^= h >> 13;
+    return h & (SAMPLE_FRONT - 1u);
+}
+
+/* The sample of (x, y, z) if the front has it, else NULL; nothing changes. */
+static inline LightSample *FrontSample(unsigned front, float x, float y, float z)
+{
+    LightSample *known = sSampleFront[front];
+
+    if (known != NULL && known->generation == sSampleGeneration
+     && known->x == x && known->y == y && known->z == z)
+        return known;
+    return NULL;
+}
+
 static LightSample *FindSample(float x, float y, float z)
 {
+    unsigned front;
+    LightSample *known;
+
+    if (sGeneration == 0)
+        VoxelLighting_Reset();
+    front = SampleFrontSlot(x, y, z);
+    if ((known = FrontSample(front, x, y, z)) != NULL)
+        return known;
+
     uint32_t hash = (uint32_t)Tile(x * 8.0f) * 73856093u
                   ^ (uint32_t)Tile(z * 8.0f) * 19349663u
                   ^ (uint32_t)Tile(y * 16.0f) * 83492791u;
@@ -1202,14 +1310,15 @@ static LightSample *FindSample(float x, float y, float z)
     unsigned set = hash & (SAMPLE_SETS - 1u);
     LightSample *ways = &sSamples[set * SAMPLE_WAYS], *sample = NULL;
 
-    if (sGeneration == 0)
-        VoxelLighting_Reset();
     for (unsigned i = 0; i < SAMPLE_WAYS; ++i)
     {
         if (ways[i].generation == sSampleGeneration)
         {
             if (ways[i].x == x && ways[i].y == y && ways[i].z == z)
+            {
+                sSampleFront[front] = &ways[i];
                 return &ways[i];
+            }
         }
         else if (sample == NULL)
             sample = &ways[i];
@@ -1225,6 +1334,7 @@ static LightSample *FindSample(float x, float y, float z)
     sample->y = y;
     sample->z = z;
     sample->generation = sSampleGeneration;
+    sSampleFront[front] = sample;
     return sample;
 }
 
@@ -1287,6 +1397,16 @@ float VoxelLighting_SampleAlone(float x, float y, float z)
     shade = VoxelLighting_Sample(x, y, z);
     sAlone = false;
     return shade;
+}
+
+float VoxelLighting_LitAlone(float x, float y, float z)
+{
+    const LightSample *sample;
+
+    sAlone = true;
+    sample = CachedSample(x, y, z);
+    sAlone = false;
+    return sample->lit ? 1.0f : sAmbient;
 }
 
 uint32_t VoxelLighting_Hash(int x0, int z0, int x1, int z1)

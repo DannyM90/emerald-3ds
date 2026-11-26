@@ -63,6 +63,8 @@ void VoxelEntities_Reset(void);
  * every update; this is for the rest.
  */
 void VoxelEntities_WorldChanged(void);
+/* A crossing: the cards may keep what they knew for a few frames (see the .c). */
+void VoxelEntities_Crossed(void);
 /* The cards' memo forced on (1) or off (0), or left to settings.txt (-1). */
 void VoxelEntities_SetMemo(int on);
 
@@ -81,6 +83,15 @@ float VoxelEntities_PlayerDeck(void);
  * relief read there is that of a cell further south: on Route 120's bridges,
  * three tiles up, it was the water's, and the camera dipped. */
 float VoxelEntities_PlayerGround(void);
+/*
+ * SPRITE FILTER (ctr_voxel.c samples the atlas bilinearly with it on): the
+ * slots are decoded for that - each picture one texel into its cell where
+ * it fits, with its outline's ring bled (VoxelSlots_Bleed) - and the cards
+ * keep a picture that fills its cell half a texel off that edge. Taken at
+ * the next VoxelEntities_Emit, which then decodes every slot again. Off
+ * (the default), the atlas and the cards are as they always were.
+ */
+void VoxelEntities_SetSmooth(bool smooth);
 /* First vertex of the emitted player quad, or -1 when invisible/not emitted. */
 int VoxelEntities_PlayerVertexFirst(void);
 

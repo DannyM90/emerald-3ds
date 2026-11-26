@@ -1,6 +1,3 @@
-Emerald 3DS changes to pret/pokeemerald 76463dac15cad36aca5e2b3f6366abf9e53f814f: Danny edition game hooks
-Applies after 0081-german-layout.patch; apply with tools/bootstrap.py.
-
 diff --git a/data/scripts/pc.inc b/data/scripts/pc.inc
 index 1993aaf..7e00284 100644
 --- a/data/scripts/pc.inc
@@ -34,7 +31,7 @@ index 1993aaf..7e00284 100644
 +	releaseall
 +	end
 diff --git a/src/event_object_movement.c b/src/event_object_movement.c
-index 6f0c7a7..d6e7473 100644
+index 64517d7..db30079 100644
 --- a/src/event_object_movement.c
 +++ b/src/event_object_movement.c
 @@ -33,11 +33,14 @@
@@ -52,8 +49,8 @@ index 6f0c7a7..d6e7473 100644
  #endif
  
  #define SPECIAL_LOCALIDS_START (min(LOCALID_CAMERA, \
-@@ -1785,6 +1788,66 @@ static bool8 EvictFurthestObjectEvent(float score, s16 left, s16 right, s16 top,
-     return TRUE;
+@@ -1841,6 +1844,66 @@ static void TrySpawnConnectedObjectEvents(s16 left, s16 right, s16 top, s16 bott
+     }
  }
  
 +// Town life (OPTIONS, EXTRAS; with DAY / NIGHT on): in a town or a city the
@@ -119,7 +116,7 @@ index 6f0c7a7..d6e7473 100644
  void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
  {
      u8 i, j, objectCount, waiting = 0;
-@@ -1811,6 +1874,7 @@ void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
+@@ -1867,6 +1930,7 @@ void TrySpawnObjectEvents(s16 cameraX, s16 cameraY)
          float npcScore;
  
          if (!IsInObjectEventWindow(npcX, npcY, left, right, top, bottom) || FlagGet(template->flagId)
@@ -128,7 +125,7 @@ index 6f0c7a7..d6e7473 100644
              continue;
          npcScore = ObjectEventViewScore(npcX, npcY);
 diff --git a/src/text.c b/src/text.c
-index 0799a09..5cae582 100644
+index be57b4f..9beb5d0 100644
 --- a/src/text.c
 +++ b/src/text.c
 @@ -14,6 +14,9 @@
@@ -141,7 +138,7 @@ index 0799a09..5cae582 100644
  #endif
  
  static u16 RenderText(struct TextPrinter *);
-@@ -336,6 +339,20 @@ void RunTextPrinters(void)
+@@ -350,6 +353,20 @@ void RunTextPrinters(void)
              if (sTextPrinters[i].active)
              {
                  u16 renderCmd = RenderFont(&sTextPrinters[i]);
@@ -163,7 +160,7 @@ index 0799a09..5cae582 100644
                  {
                  case RENDER_PRINT:
 diff --git a/src/trainer_see.c b/src/trainer_see.c
-index ec70c22..8811ccb 100644
+index 309e75f..cb9e6af 100644
 --- a/src/trainer_see.c
 +++ b/src/trainer_see.c
 @@ -21,6 +21,9 @@

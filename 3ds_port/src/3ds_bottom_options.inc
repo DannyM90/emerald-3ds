@@ -144,6 +144,7 @@ static const OptRowDef sRowsGraphics[] = {
     EXTRA_ROW("voxel_shadows"),
     EXTRA_ROW("pass_style"),
     EXTRA_ROW("dex_top"),
+    EXTRA_ROW("voxel_sprite_filter"),
 };
 
 static const OptGroupDef sGroupsGeneral[] = {
